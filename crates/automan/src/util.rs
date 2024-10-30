@@ -20,7 +20,6 @@ pub fn split_last(in_string: &str, sep: char) -> (&str, &str) {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_split_once() {
         let (first, second) = split_first("assets/templates/lib/mylib.h", '/');
@@ -31,7 +30,7 @@ mod tests {
     #[test]
     fn test_split_last() {
         let (first, second) = split_last("assets/templates/lib/mylib.h", '/');
-        assert_eq!(first, "mylib.h");
-        assert_eq!(second, "assets/templates/lib");
+        assert_eq!(first, "assets/templates/lib");
+        assert_eq!(second, "mylib.h");
     }
 }

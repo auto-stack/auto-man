@@ -2,6 +2,7 @@ pub mod man;
 pub mod fs;
 pub mod asset;
 pub mod util;
+pub mod pull;
 
 use man::Man;
 
@@ -21,6 +22,8 @@ struct AutoMan {
 enum Commands {
     #[command(about = "New Project")]
     New{name: String},
+    #[command(about = "Pull dependencies and resources")]
+    Pull,
     #[command(about = "Build Project")]
     Build,
     #[command(about = "Run Executable")]
@@ -37,6 +40,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::New { name }) => {
             println!("Creating new project {}", name);
             man.create(&name)?;
+        }
+        Some(Commands::Pull) => {
+            println!("Pulling dependencies and resources");
+            man.pull()?;
         }
         Some(Commands::Build) => {
             println!("Building");
