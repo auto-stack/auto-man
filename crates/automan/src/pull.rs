@@ -8,13 +8,13 @@ mod tests {
     #[test]
     fn test_read_config() {
         let config = r#"
-name: "hello"
-version: "0.1.0"
+            name: "hello"
+            version: "0.1.0"
 
-exe("hello") {
-    dir: "src"
-    main: "main.c"
-}
+            exe("hello") {
+                dir: "src"
+                main: "main.c"
+            }
         "#;
 
         let auto = parse(config).unwrap();

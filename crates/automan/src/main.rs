@@ -3,6 +3,7 @@ pub mod fs;
 pub mod asset;
 pub mod util;
 pub mod pull;
+pub mod pac;
 
 use man::Man;
 
