@@ -1,9 +1,9 @@
-use autolang::parse;
-use autolang::util::s_form;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use autolang::parse;
+    use autolang::util::pretty;
 
     #[test]
     fn test_read_config() {
@@ -19,6 +19,6 @@ mod tests {
 
         let auto = parse(config).unwrap();
         println!("{}", auto);
-        println!("{}", s_form(&auto.to_string()));
+        println!("{}", pretty(&auto.to_string()));
     }
 }

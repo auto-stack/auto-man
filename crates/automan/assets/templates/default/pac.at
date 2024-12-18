@@ -2,6 +2,6 @@ name: "hello"
 version: "0.1.0"
 
 exe(hello) {
-    dir: src
-    main: main.c
+    dir: "src"
+    main: "main.c"
 }

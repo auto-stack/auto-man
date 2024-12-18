@@ -6,14 +6,16 @@ use crate::fs::copy_dir_all;
 use rust_embed::RustEmbed;
 use crate::asset::Templates;
 use crate::util::{split_first, split_last};
+use autolang::AutoConfig;
+use crate::Pac;
 
-pub struct Man {
+pub struct Builder {
 }
 
 
 
 // API
-impl Man {
+impl Builder {
     pub fn new() -> Self {
         Self { }
     }
@@ -37,7 +39,21 @@ impl Man {
         Ok(())
     }
 
-    pub fn build(&self) -> Result<(), AutoError> {
+    pub fn build(&self, path: &String) -> Result<(), AutoError> {
+        // 1. Find pac.at
+        let config = Path::new(path).join("pac.at");
+        if !config.is_file() {
+            return Err(format!("No pac.at file found in {}", path).into());
+        }
+        // 2. Parse pac.at
+        let config = AutoConfig::from_file(config.as_path())?;
+        println!("Config: {}", config.obj);
+        // 3. Find build targets with dependency ordering
+        let pac = Pac::new(config);
+        pac.resolve()?;
+        // 4. Generate build script (CMake)
+        // 5. Invode build script
+        pac.build()?;
         Ok(())
     }
 
@@ -52,7 +68,7 @@ impl Man {
 
 
 // Implementations
-impl Man {
+impl Builder {
     fn copy_template(&self, template: &str, path: &str) -> Result<(), AutoError> {
         println!("Copying template from {}", template);
         Templates::copy(template, path)?;

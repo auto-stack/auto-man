@@ -1,11 +1,12 @@
-pub mod man;
 pub mod fs;
 pub mod asset;
 pub mod util;
 pub mod pull;
-pub mod pac;
+mod pac;
+mod builder;
 
-use man::Man;
+pub use builder::*;
+pub use pac::*;
 
 pub type AutoError = Box<dyn std::error::Error>;
 
@@ -22,11 +23,13 @@ struct AutoMan {
 #[derive(Subcommand, Debug)]
 enum Commands {
     #[command(about = "New Project")]
-    New{name: String},
+    New { name: String },
     #[command(about = "Pull dependencies and resources")]
     Pull,
     #[command(about = "Build Project")]
-    Build,
+    Build {
+        dir: Option<String>,
+    },
     #[command(about = "Run Executable")]
     Run,
     #[command(about = "Clean Project")]
@@ -36,27 +39,27 @@ enum Commands {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let automan = AutoMan::parse();
-    let man = Man::new();
+    let builder = Builder::new();
     match automan.command {
         Some(Commands::New { name }) => {
             println!("Creating new project {}", name);
-            man.create(&name)?;
+            builder.create(&name)?;
         }
         Some(Commands::Pull) => {
             println!("Pulling dependencies and resources");
-            man.pull()?;
+            builder.pull()?;
         }
-        Some(Commands::Build) => {
-            println!("Building");
-            man.build()?;
+        Some(Commands::Build { dir }) => {
+            let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
+            builder.build(&dir)?;
         }
         Some(Commands::Run) => {
-            println!("Running");
-            man.run()?;
+            println!("Running at the moment");
+            builder.run()?;
         }
         Some(Commands::Clean) => {
             println!("Cleaning");
-            man.clean()?;
+            builder.clean()?;
         }
         None => {
             AutoMan::command().print_help()?;
