@@ -4,9 +4,11 @@ pub mod util;
 pub mod pull;
 mod pac;
 mod builder;
+mod target;
 
 pub use builder::*;
 pub use pac::*;
+pub use target::*;
 
 pub type AutoError = Box<dyn std::error::Error>;
 

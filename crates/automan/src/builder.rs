@@ -1,12 +1,7 @@
 use std::path::Path;
-use std::fs::{create_dir_all, File};
-use std::io::Write;
 use crate::AutoError;
-use crate::fs::copy_dir_all;
-use rust_embed::RustEmbed;
 use crate::asset::Templates;
-use crate::util::{split_first, split_last};
-use autolang::AutoConfig;
+use autolang::config::AutoConfig;
 use crate::Pac;
 
 pub struct Builder {
@@ -47,10 +42,9 @@ impl Builder {
         }
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path())?;
-        println!("Config: {}", config.obj);
+        println!("Config: {}", config.root);
         // 3. Find build targets with dependency ordering
         let pac = Pac::new(config);
-        pac.resolve()?;
         // 4. Generate build script (CMake)
         // 5. Invode build script
         pac.build()?;
