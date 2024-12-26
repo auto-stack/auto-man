@@ -1,5 +1,4 @@
 use crate::{Pac, Target};
-use crate::AutoError;
 use crate::AutoResult;
 use std::io::Write;
 use std::path::Path;
@@ -9,6 +8,7 @@ pub trait Builder {
     fn setup(&mut self, pac: &Pac) -> AutoResult<()>;
     fn finish(&mut self, pac: &Pac) -> AutoResult<()>;
     fn target(&mut self, target: &Target) -> AutoResult<()>;
+    fn clean(&mut self) -> AutoResult<()>;
 }
 
 pub enum BuilderKind {
@@ -32,7 +32,8 @@ impl CMakeBuilder {
     pub fn new(path: &str) -> Self {
         // check if path exists
         if Path::new(path).is_file() {
-            panic!("File {} already exists", path);
+            // remove file
+            std::fs::remove_file(path).unwrap();
         }
         let out = File::create(path).unwrap();
         Self {
@@ -75,6 +76,14 @@ impl Builder for CMakeBuilder {
         out.write(b"\n")?;
         Ok(())
     }
+
+    fn clean(&mut self) -> AutoResult<()> {
+        // remove CMakeLists.txt
+        std::fs::remove_file(&self.cmake_path)?;
+        // remove build directory
+        std::fs::remove_dir_all("build")?;
+        Ok(())
+    }
 }   
 
 pub struct MSVCBuilder {
@@ -106,6 +115,10 @@ impl Builder for MSVCBuilder {
 
     fn target(&mut self, target: &Target) -> AutoResult<()> {
         println!("add_executable({} {})", target.name, target.config.args.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" "));
+        Ok(())
+    }
+
+    fn clean(&mut self) -> AutoResult<()> {
         Ok(())
     }
 }

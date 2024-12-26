@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand, CommandFactory};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
-struct AutoMan {
+struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -37,36 +37,37 @@ enum Commands {
     #[command(about = "Run Executable")]
     Run,
     #[command(about = "Clean Project")]
-    Clean,
+    Clean {
+        dir: Option<String>,
+    },
 }
 
 
 fn main() -> Result<(), AutoError> {
-    let automan = AutoMan::parse();
-    let builder = Automan::new();
-    match automan.command {
+    let cli = Cli::parse();
+    match cli.command {
         Some(Commands::New { name }) => {
             println!("Creating new project {}", name);
-            builder.create(&name)?;
         }
         Some(Commands::Pull) => {
             println!("Pulling dependencies and resources");
-            builder.pull()?;
         }
         Some(Commands::Build { dir }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
-            builder.build(&dir)?;
+            let mut am = Automan::new(&dir)?;
+            am.build()?;
         }
         Some(Commands::Run) => {
             println!("Running at the moment");
-            builder.run()?;
         }
-        Some(Commands::Clean) => {
+        Some(Commands::Clean { dir }) => {
             println!("Cleaning");
-            builder.clean()?;
+            let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
+            let mut am = Automan::new(&dir)?;
+            am.clean()?;    
         }
         None => {
-            AutoMan::command().print_help()?;
+            Cli::command().print_help()?;
         }
     }
     Ok(())

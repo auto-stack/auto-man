@@ -1,7 +1,26 @@
 use autoval::Node;
 
+pub enum TargetKind {
+    Exe,
+    StaticLib,
+    SharedLib,
+    Obj,
+}
+
+impl TargetKind {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "exe" => TargetKind::Exe,
+            "lib" => TargetKind::StaticLib,
+            "dll" => TargetKind::SharedLib,
+            "obj" => TargetKind::Obj,
+            _ => panic!("Invalid target kind: {}", s),
+        }
+    }
+}
+
 pub struct Target {
-    pub kind: String,
+    pub kind: TargetKind,
     pub name: String,
     pub config: Node,
 }
@@ -15,7 +34,7 @@ impl Target {
         }
 
         Self {
-            kind: node.name.clone(),
+            kind: TargetKind::from_str(&node.name),
             name: name,
             config: node,
         }

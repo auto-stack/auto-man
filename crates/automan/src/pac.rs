@@ -1,6 +1,7 @@
 use autolang::config::AutoConfig;
 use crate::AutoError;
 use crate::Target;
+use crate::builder::Builder;
 use crate::builder::new_builder;
 use crate::builder::BuilderKind;
 
@@ -25,15 +26,6 @@ impl Pac {
 
     pub fn resolve(&self) -> Result<(), AutoError> {
         println!("Resolving dependencies");
-        Ok(())
-    }
-
-    pub fn build(&self) -> Result<(), AutoError> {
-        println!("Building project");
-
-        // TODO: get builder from config
-        let mut builder = new_builder(BuilderKind::CMake("CMakeLists.txt".to_string()));
-        builder.build(self)?;
         Ok(())
     }
 

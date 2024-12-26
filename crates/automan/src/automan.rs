@@ -3,16 +3,36 @@ use crate::AutoError;
 use crate::asset::Templates;
 use autolang::config::AutoConfig;
 use crate::Pac;
-
+use crate::builder::Builder;
+use crate::builder::BuilderKind;
+use crate::builder::new_builder;
 pub struct Automan {
+    pac: Pac,
+    builder: Box<dyn Builder>,
 }
 
 
 
 // API
 impl Automan {
-    pub fn new() -> Self {
-        Self { }
+    pub fn parse_pac(path: &str) -> Result<Pac, AutoError> {
+        // 1. Find pac.at
+        let config = Path::new(path).join("pac.at");
+        if !config.is_file() {
+            return Err(format!("No pac.at file found in {}", path).into());
+        }
+        // 2. Parse pac.at
+        let config = AutoConfig::from_file(config.as_path())?;
+        println!("Config: {}", config.root);
+        // 3. Find build targets with dependency ordering
+        let pac = Pac::new(config);
+        // 4. Generate build script (CMake)
+        // 5. Invode build script
+        Ok(pac)
+    }
+
+    pub fn new(path: &str) -> Result<Self, AutoError> {
+        Ok(Self { pac: Self::parse_pac(path)?, builder: new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())) })
     }
 
     pub fn create(&self, name: &str) -> Result<(), AutoError> {
@@ -34,20 +54,8 @@ impl Automan {
         Ok(())
     }
 
-    pub fn build(&self, path: &String) -> Result<(), AutoError> {
-        // 1. Find pac.at
-        let config = Path::new(path).join("pac.at");
-        if !config.is_file() {
-            return Err(format!("No pac.at file found in {}", path).into());
-        }
-        // 2. Parse pac.at
-        let config = AutoConfig::from_file(config.as_path())?;
-        println!("Config: {}", config.root);
-        // 3. Find build targets with dependency ordering
-        let pac = Pac::new(config);
-        // 4. Generate build script (CMake)
-        // 5. Invode build script
-        pac.build()?;
+    pub fn build(&mut self) -> Result<(), AutoError> {
+        self.builder.build(&self.pac)?;
         Ok(())
     }
 
@@ -55,7 +63,8 @@ impl Automan {
         Ok(())
     }
 
-    pub fn clean(&self) -> Result<(), AutoError> {
+    pub fn clean(&mut self) -> Result<(), AutoError> {
+        self.builder.clean()?;
         Ok(())
     }
 }
