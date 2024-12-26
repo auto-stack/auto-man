@@ -1,71 +1,111 @@
-use std::path::Path;
+use crate::{Pac, Target};
 use crate::AutoError;
-use crate::asset::Templates;
-use autolang::config::AutoConfig;
-use crate::Pac;
-
-pub struct Builder {
+use crate::AutoResult;
+use std::io::Write;
+use std::path::Path;
+use std::fs::File;
+pub trait Builder {
+    fn build(&mut self, pac: &Pac) -> AutoResult<()>;
+    fn setup(&mut self, pac: &Pac) -> AutoResult<()>;
+    fn finish(&mut self, pac: &Pac) -> AutoResult<()>;
+    fn target(&mut self, target: &Target) -> AutoResult<()>;
 }
 
+pub enum BuilderKind {
+    CMake(String), // Cmake with path to CMakeLists.txt
+    MSVC, // MSVC
+}
 
+pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
+    match kind {
+        BuilderKind::CMake(path) => Box::new(CMakeBuilder::new(&path)),
+        BuilderKind::MSVC => Box::new(MSVCBuilder::new()),
+    }
+}
 
-// API
-impl Builder {
+pub struct CMakeBuilder {
+    pub cmake_path: String,
+    pub out: Box<dyn Write>,
+}
+
+impl CMakeBuilder {
+    pub fn new(path: &str) -> Self {
+        // check if path exists
+        if Path::new(path).is_file() {
+            panic!("File {} already exists", path);
+        }
+        let out = File::create(path).unwrap();
+        Self {
+            cmake_path: path.to_string(),
+            out: Box::new(out),
+        }
+    }
+}
+
+impl Builder for CMakeBuilder {
+    fn build(&mut self, pac: &Pac) -> AutoResult<()> {
+        println!("Building with CMake");
+        self.setup(pac)?;
+        for t in &pac.targets {
+            self.target(t)?;
+        }
+        self.finish(pac)
+    }
+
+    fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+        let out = self.out.as_mut();
+        out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
+        out.write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
+        out.write(b"\n")?;
+        Ok(())
+    }
+
+    fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
+        let out = self.out.as_mut();
+        out.flush()?;
+        println!("End of build");
+        Ok(())
+    }
+
+    fn target(&mut self, target: &Target) -> AutoResult<()> {
+        println!("building target {}", target.name);
+        let out = self.out.as_mut();
+        let sources = "src/main.c";
+        out.write(format!("add_executable({} {})", target.name, sources).as_bytes())?;
+        out.write(b"\n")?;
+        Ok(())
+    }
+}   
+
+pub struct MSVCBuilder {
+
+}
+
+impl MSVCBuilder {
     pub fn new() -> Self {
-        Self { }
-    }
-
-    pub fn create(&self, name: &str) -> Result<(), AutoError> {
-        // 1. Check if project already exists
-        let path = Path::new(name);
-        if path.is_file() {
-            return Err(format!("A file named with {} already exists", name).into());
+        Self {
         }
-        if path.is_dir() {
-            // TODO: Let the user choose to replace the directory
-            return Err(format!("A directory named with {} already exists", name).into());
-        }
-        // 2. Copy default template to destination
-        self.copy_template("default", name)?;
-        Ok(())
-    }
-
-    pub fn pull(&self) -> Result<(), AutoError> {
-        Ok(())
-    }
-
-    pub fn build(&self, path: &String) -> Result<(), AutoError> {
-        // 1. Find pac.at
-        let config = Path::new(path).join("pac.at");
-        if !config.is_file() {
-            return Err(format!("No pac.at file found in {}", path).into());
-        }
-        // 2. Parse pac.at
-        let config = AutoConfig::from_file(config.as_path())?;
-        println!("Config: {}", config.root);
-        // 3. Find build targets with dependency ordering
-        let pac = Pac::new(config);
-        // 4. Generate build script (CMake)
-        // 5. Invode build script
-        pac.build()?;
-        Ok(())
-    }
-
-    pub fn run(&self) -> Result<(), AutoError> {
-        Ok(())
-    }
-
-    pub fn clean(&self) -> Result<(), AutoError> {
-        Ok(())
     }
 }
 
+impl Builder for MSVCBuilder {
+    fn build(&mut self, pac: &Pac) -> AutoResult<()> {
+        println!("Building with MSVC");
+        Ok(())
+    }
 
-// Implementations
-impl Builder {
-    fn copy_template(&self, template: &str, path: &str) -> Result<(), AutoError> {
-        println!("Copying template from {}", template);
-        Templates::copy(template, path)?;
+    fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+        println!("project({})", pac.name);
+        Ok(())
+    }
+
+    fn finish(&mut self, pac: &Pac) -> AutoResult<()> {
+        println!("target_link_libraries(main PRIVATE {})", pac.targets.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(" "));
+        Ok(())
+    }   
+
+    fn target(&mut self, target: &Target) -> AutoResult<()> {
+        println!("add_executable({} {})", target.name, target.config.args.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" "));
         Ok(())
     }
 }

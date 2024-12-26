@@ -2,18 +2,20 @@ pub mod fs;
 pub mod asset;
 pub mod util;
 pub mod pull;
-mod pac;
 mod builder;
+mod pac;
+mod automan;
 mod target;
 
-pub use builder::*;
+pub use automan::*;
 pub use pac::*;
 pub use target::*;
+pub use builder::*;
 
 pub type AutoError = Box<dyn std::error::Error>;
+pub type AutoResult<T> = Result<T, AutoError>;
 
 use clap::{Parser, Subcommand, CommandFactory};
-use std::error::Error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
@@ -39,9 +41,9 @@ enum Commands {
 }
 
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), AutoError> {
     let automan = AutoMan::parse();
-    let builder = Builder::new();
+    let builder = Automan::new();
     match automan.command {
         Some(Commands::New { name }) => {
             println!("Creating new project {}", name);

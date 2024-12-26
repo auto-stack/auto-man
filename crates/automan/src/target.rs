@@ -1,14 +1,14 @@
 use autoval::Node;
 
-pub struct Target<'a> {
+pub struct Target {
     pub kind: String,
     pub name: String,
-    pub config: &'a Node,
+    pub config: Node,
 }
 
 
-impl<'a> Target<'a> {
-    pub fn from_node(node: &'a Node) -> Self {
+impl Target {
+    pub fn from_node(node: Node) -> Self {
         let mut name = "".to_string();
         if !node.args.is_empty() {
             name = node.args.args[0].to_string();
