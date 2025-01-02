@@ -58,10 +58,10 @@ fn main() -> Result<(), AutoError> {
             am.build()?;
         }
         Some(Commands::Run) => {
-            println!("Running at the moment");
+            let mut am = Automan::new(".")?;
+            am.run()?;
         }
         Some(Commands::Clean { dir }) => {
-            println!("Cleaning");
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
             let mut am = Automan::new(&dir)?;
             am.clean()?;    

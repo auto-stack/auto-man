@@ -1,9 +1,6 @@
 use autolang::config::AutoConfig;
 use crate::AutoError;
-use crate::Target;
-use crate::builder::Builder;
-use crate::builder::new_builder;
-use crate::builder::BuilderKind;
+use crate::{Target, TargetKind};
 
 pub struct Pac {
     pub name: String,
@@ -29,4 +26,18 @@ impl Pac {
         Ok(())
     }
 
+    pub fn exe_path(&self) -> String {
+        // TODO: check Debug/Release, check exe name
+        let mode = "Debug";
+        // find first exe in targets
+        for target in &self.targets {
+            match target.kind {
+                TargetKind::Exe => {
+                    return format!("build/{}/{}", mode, target.name);
+                }
+                _ => {}
+            }
+        }
+        format!("build/{}/{}", mode, self.name)
+    }
 }

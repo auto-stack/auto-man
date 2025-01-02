@@ -59,7 +59,8 @@ impl Automan {
         Ok(())
     }
 
-    pub fn run(&self) -> Result<(), AutoError> {
+    pub fn run(&mut self) -> Result<(), AutoError> {
+        self.builder.run(&self.pac)?;
         Ok(())
     }
 

@@ -9,6 +9,7 @@ pub trait Builder {
     fn finish(&mut self, pac: &Pac) -> AutoResult<()>;
     fn target(&mut self, target: &Target) -> AutoResult<()>;
     fn clean(&mut self) -> AutoResult<()>;
+    fn run(&mut self, pac: &Pac) -> AutoResult<()>;
 }
 
 pub enum BuilderKind {
@@ -64,6 +65,24 @@ impl Builder for CMakeBuilder {
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
         let out = self.out.as_mut();
         out.flush()?;
+        // run cmake build to generate the win32 project
+        let status = std::process::Command::new("cmake")
+            .arg("-A")
+            .arg("win32")
+            .arg("-B")
+            .arg("build")
+            .status()?;
+        if !status.success() {
+            return Err(format!("Failed to run cmake").into());
+        }
+        // run cmake build to generate the executable
+        let status = std::process::Command::new("cmake")
+            .arg("--build")
+            .arg("build")
+            .status()?;
+        if !status.success() {
+            return Err(format!("Failed to run cmake").into());
+        }
         println!("End of build");
         Ok(())
     }
@@ -82,6 +101,17 @@ impl Builder for CMakeBuilder {
         std::fs::remove_file(&self.cmake_path)?;
         // remove build directory
         std::fs::remove_dir_all("build")?;
+        Ok(())
+    }
+
+    fn run(&mut self, pac: &Pac) -> AutoResult<()> {
+        // run target
+        let target = pac.exe_path();
+        let status = std::process::Command::new(target)
+            .status()?;
+        if !status.success() {
+            return Err(format!("Failed to run cmake").into());
+        }
         Ok(())
     }
 }   
@@ -119,6 +149,10 @@ impl Builder for MSVCBuilder {
     }
 
     fn clean(&mut self) -> AutoResult<()> {
+        Ok(())
+    }
+
+    fn run(&mut self, _pac: &Pac) -> AutoResult<()> {
         Ok(())
     }
 }
