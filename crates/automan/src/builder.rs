@@ -144,7 +144,7 @@ impl Builder for MSVCBuilder {
     }   
 
     fn target(&mut self, target: &Target) -> AutoResult<()> {
-        println!("add_executable({} {})", target.name, target.config.args.args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" "));
+        println!("add_executable({} {})", target.name, target.name);
         Ok(())
     }
 

@@ -25,8 +25,11 @@ impl Automan {
         let config = AutoConfig::from_file(config.as_path())?;
         println!("Config: {}", config.root);
         // 3. Find build targets with dependency ordering
-        let pac = Pac::new(config);
-        // 4. Generate build script (CMake)
+        let mut pac = Pac::new(config);
+        // 4. For each target, scan for source files
+        for target in pac.targets.iter_mut() {
+            target.scan()?;
+        }
         // 5. Invode build script
         Ok(pac)
     }
