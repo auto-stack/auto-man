@@ -11,7 +11,79 @@ AutoMan（Auto Manager）是Auto/C语言的混合工程管理工具，功能包�
 
 AutoMan的配置文件是`AutoConfig`格式。
 
-## 简单示例：纯C语言工程
+## 示例：Auto语言工程
+
+要建立Auto语言的工程，直接使用`am new`和`am newlib`命令即可。
+
+```bash
+am new hello
+```
+
+会得到如下目录结构：
+
+```
+hello
+├── pac.at
+└── apps
+    └── hello
+        └── hello.at
+```
+
+和纯C工程唯一的区别，是生成的`hello.at`文件是Auto语言的代码文件。
+
+`hello.at`内容如下：
+
+```rust
+fn main {
+  print("Hello, World!")
+}
+```
+
+如果要新建代码库的工程，则使用`am newlib`命令。
+
+```bash
+amc newlib mymath
+```
+
+得到如下目录结构：
+
+```
+mymath
+├── pac.at
+└── libs
+    └── mymath
+        └── mymath.at
+```
+
+mymath.at内容如下：
+
+```rust
+fn add(a int, b int) int {
+  a + b
+}
+```
+
+用`am build`编译工程时，会先把Auto语言的`*.at`文件转译成对应的C语言的`*.h`和`*.c`文件。
+然后再按照纯C语言的工程进行编译。
+
+`am build`会把`mymath.at`转译成和前面的纯C工程里生成的`mymath.h`和`mymath.c`文件。
+
+在Windows下，Automan默认会生成基于CMake的Visual Studio工程。这是由于CMake对Visual Studio的支持很好，因此我就没有单独制作专门生成Visual Studio工程的逻辑了。
+
+在Windows下，`am build`会执行如下操作：
+
+1. 生成一个`CMakeLists.txt`文件
+2. 调用`cmake -A win32 -B build`，在`build`目录下生成Visual Studio工程
+3. 调用`cmake --build build`，在`build`目录下编译工程
+
+此时会在`build/Debug/`目录下生成`hello.exe`可执行文件或`mymath.lib`库文件。
+
+对于`app`包，我们也可以直接调用`am run`来运行程序。它相当于：
+
+1. 调用`am build`编译工程
+2. 调用`build/Debug/hello.exe`来运行程序
+
+## 示例：纯C语言工程
 
 新建工程:
 
@@ -103,78 +175,6 @@ int add(int a, int b) {
 }
 ```
 
-## 简单示例：Auto语言工程
-
-要建立Auto语言的工程，直接使用`am new`和`am newlib`命令即可。
-
-```bash
-am new hello
-```
-
-会得到如下目录结构：
-
-```
-hello
-├── pac.at
-└── apps
-    └── hello
-        └── hello.at
-```
-
-和纯C工程唯一的区别，是生成的`hello.at`文件是Auto语言的代码文件。
-
-`hello.at`内容如下：
-
-```rust
-fn main {
-  print("Hello, World!")
-}
-```
-
-如果要新建代码库的工程，则使用`am newlib`命令。
-
-```bash
-amc newlib mymath
-```
-
-得到如下目录结构：
-
-```
-mymath
-├── pac.at
-└── libs
-    └── mymath
-        └── mymath.at
-```
-
-mymath.at内容如下：
-
-```rust
-fn add(a int, b int) int {
-  a + b
-}
-```
-
-用`am build`编译工程时，会先把Auto语言的`*.at`文件转译成对应的C语言的`*.h`和`*.c`文件。
-然后再按照纯C语言的工程进行编译。
-
-`am build`会把`mymath.at`转译成和前面的纯C工程里生成的`mymath.h`和`mymath.c`文件。
-
-在Windows下，Automan默认会生成基于CMake的Visual Studio工程。这是由于CMake对Visual Studio的支持很好，因此我就没有单独制作专门生成Visual Studio工程的逻辑了。
-
-在Windows下，`am build`会执行如下操作：
-
-1. 生成一个`CMakeLists.txt`文件
-2. 调用`cmake -A win32 -B build`，在`build`目录下生成Visual Studio工程
-3. 调用`cmake --build build`，在`build`目录下编译工程
-
-此时会在`build/Debug/`目录下生成`hello.exe`可执行文件或`mymath.lib`库文件。
-
-对于`app`包，我们也可以直接调用`am run`来运行程序。它相当于：
-
-1. 调用`am build`编译工程
-2. 调用`build/Debug/hello.exe`来运行程序
-
 ## 多个`target`
 
 上面的示例中，我们新建了一个`hello`的应用程序，以及一个叫`mymath`的代码库。
@@ -184,13 +184,9 @@ fn add(a int, b int) int {
 除了可执行的应用程序和代码库，AutoMan还支持如下类型的`target`：
 
 - `app`：可执行的应用程序
-- `lib`：静态代码库
-- `dylib`：动态链接库，即`Dyamic Library`（在Windows下，被称为`DLL`；在Linux下，被称为`so`）
-- `obj`：目标文件，即`Object File`。这是一种中间文件格式，可以用来拼接成上述三种文件。
+- `lib`：代码库
+- `test`：测试库
 - `doc`：文档
-
-注意，`dylib`其实就是`lib(<name>, kind = "dylib")`的缩写；
-而`obj`其实就是`lib(<name>, kind = "obj")`的缩写。
 
 一个代码包`pac`可以包含多个`target`：
 
@@ -201,7 +197,7 @@ version: "0.0.1"
 app("hello") {}
 app("hi") {}
 lib("mymath") {}
-dylib("mystr") {}
+lib("mystr") {}
 ```
 
 上述的`pac.at`对应于如下的代码结构：
@@ -216,8 +212,6 @@ hello
     ├── mymath.at
     └── mystr.at
 ```
-
-注意，`lib`、`dylib`和`obj`都放在`lib`目录下，因为他们都是不同形式的库文件。
 
 如果是C文件，则会生成不同的子目录：
 
@@ -263,5 +257,227 @@ Hello, World!
 
 选择`1`，则执行`hello.exe`；选择`2`，则执行`hi.exe`。
 如果直接回车，则会选择第一个执行目标，即`hello.exe`。
+
+新建好工程之后，可以通过`am add`命令，向工程中添加新的`target`。
+
+```bash
+am add hi  # 添加一个名称为hi的应用程序，默认为Auto代码
+amc addlib mymath  # 添加一个名称为mymath的C代码库
+```
+
+可以看出，`add`命令和`new`命令的逻辑是一致的。
+
+在AutoMan的工程中，Auto和C的`target`是可以混合使用的，
+这是因为AutoMan编译Auto和C的过程是相互独立的：
+
+1. 首先扫描所有`target`，检查是否包含Auto源码（即`*.at`文件）。
+2. 将所有的`*.at`文件转译为对应的C代码，即`*.h`和`*.c`文件。
+3. 然后再扫描一遍，这次只扫描C的源码（即`*.c`文件和`*.h`文件）。
+4. 最后，编译C的源码。
+
+作为类比，Auto和C的关系与TypeScript和JavaScript的关系类似。
+
+Auto和TypeScript都有一道“预编译”的过程。
+预编译之后，工程可以当作普通的纯C或纯JavaScript工程来处理。
+
+## 测试
+
+AutoMan的测试功能是基于Auto语言来实现的。
+AutoMan的测试功能包括单元测试、黑盒测试与网络测试。
+
+当前版本只实现了简单的单元测试，未来会添加黑盒测试和网络测试。
+
+AutoMan的单元测试是基于代码包和Auto语言的模块来组织的。
+
+对于一个代码包，例如`mymath`，我们可以添加一个`test`的`target`：
+
+```bash
+am addtest mymath
+```
+
+注意，由于`test`这种编译目标只支持Auto语言，所以不能使用`amc`命令来添加。
+
+上面的命令会生成一个针对`mymath`包的单元测试文件`test_mymath.at`，
+内容如下：
+
+```rust
+// test_mymath.at
+fn test_add {
+  assert(false)
+}
+```
+
+默认情况下，`addtest`命令会给`mymath`包的每一个公开的函数（定义在`mymath.at`）
+生成一个测试用例。
+
+测试用例的函数名以`test_`开头。默认是无法通过的。
+
+```bash
+bash> am test
+Testing package mymath...
+
+case 1: test_add: failed
+
+Failed: 0/1 tests passed.
+```
+
+我们修改上面的`test_add`用例：
+
+```rust
+fn test_add {
+    assert_eq(5, add(2, 3))
+}
+```
+
+此时再次调用测试命令：
+
+```bash
+bash> am test
+Testing package mymath...
+
+case 1: test_add: passed
+
+Passed: 1/1 tests passed.
+```
+
+## 文档
+
+TODO: 此功能暂时未实现
+
+
+## 依赖管理
+
+除了组织本地工程，AutoMan还实现了基于Git的依赖管理和自动下载功能。
+
+AutoMan的依赖管理类似于Rust的Cargo/Crates:
+
+1. 有一个中心的资源库，统一存放所有依赖包的信息，以及查询的索引。类似于crates.io
+2. 每个独立的代码包，都有自己的名称。
+3. 代码包也有基于版本号的管理。TODO：暂时未实现。
+
+与Cargo/Crates不同的是：
+
+1. 为了避免代码包重名，AutoMan还增加了一个`vendor`的概念，不同的`vendor`可以提供相同名称的代码包。
+2. 在引用依赖包的时候，如果没有重名，直接用代码包名称即可；如果有重名，系统会提示添加`vendor`名称来区分。
+
+`vendor/pac`的双层结构和Github的`user/project`结构类似。
+
+下面是一个代码包的示例，例如，我们新建的`mymath`代码包，`vendor`是`soutek`：
+
+```rust
+name: "mymath"
+vendor: "soutek"
+version: "0.0.1"
+
+lib("mymath") {}
+```
+
+如果新建一个应用工程`hallo`，想要引入`mymath`包，则可以使用如下命令：
+
+```bash
+bash> am new hallo
+bash> cd hello
+bash> am dep mymath
+```
+
+如果没有重名，那么AutoMan会直接找到`soutek/mymath`库，并自动下载；
+如果有其他`vendor`也上传了`mymath`库，则会提示用户：
+
+```bash
+bash> am dep mymath
+....
+Found 2 pacs with the name `mymath`:
+
+1. soutek/mymath
+2. gigi/mymath
+
+Please select a number, or press Enter for the first one:
+
+> 1
+`soutek/mymath` selected.
+
+Please choose a version, or press Enter for the latest:
+
+1. 0.1.5
+2. 0.1.4
+3. 0.1.3
+...
+
+> 1
+
+... `soutek/mymath:0.1.5` selected.
+... Downloading dependency...
+... Done.
+```
+
+如果已经知道需要的`vendor`和`version`，可以直接指定：
+
+```bash
+bash> am dep soutek/mymath:0.1.5
+```
+
+注意，`vendor`和`pac`之间用`/`分隔，而`pac`和`version`之间用`:`分隔
+
+也可以忽略`vendor`，只指定`pac`和`version`：
+
+```bash
+bash> am dep mymath:0.1.5
+```
+
+上述命令的效果，相当于先修改`pac.at`，再执行`am update`：
+
+添加了依赖的`pac.at`如下：
+
+```rust
+name: "hallo"
+version: "0.0.1"
+
+dep("mymath", vendor: "soutek", version: "0.1.5")
+
+app("hallo") {}
+```
+
+注意，依赖虽然已经下载过来，但是实际上我们的`hallo`应用并没有和它关联起来。
+
+我们需要调用`link`命令把它们关联起来：
+
+```bash
+bash> am link hallo mymath
+```
+
+如果有多个依赖，可以一起写：
+
+```bash
+bash> am link hallo mymath mystr myio
+```
+
+`link`命令的效果相当于修改`pac.at`：
+
+```rust
+app("hello") {
+    link("mymath") {}
+    link("mystr") {}
+    link("myio") {}
+}
+```
+
+注意：`dep`和`link`命令只会修改工程的属性，但并不会修改代码本身。
+因此，即使加上了对`mymath`的依赖，我们仍然需要在代码中自己写下`use`或`include`语句：
+
+```rust
+// Auto文件
+use mymath;
+use mystr;
+use myio;
+```
+
+或者C文件：
+
+```c
+// C文件
+#include "mymath.h"
+#include "mystr.h"
+#include "myio.h"
+```
 
 
