@@ -1,4 +1,4 @@
-name: "mylib"
+name: "$pac"
 version: "0.1.0"
 
-lib(mylib)
+lib($pac)

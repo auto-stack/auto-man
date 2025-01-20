@@ -36,7 +36,7 @@ impl Pac {
         // find first exe in targets
         for target in &self.targets {
             match target.kind {
-                TargetKind::Exe => {
+                TargetKind::App => {
                     return format!("build/{}/{}", mode, target.name);
                 }
                 _ => {}
@@ -72,7 +72,7 @@ mod tests {
                 assert_eq!(pac.version, "0.0.1");
                 assert_eq!(pac.targets.len(), 1);
                 assert_eq!(pac.targets[0].name, "main");
-                assert_eq!(pac.targets[0].kind, TargetKind::Exe);
+                assert_eq!(pac.targets[0].kind, TargetKind::App);
             }
             Err(e) => {
                 assert!(false, "{}", e);
