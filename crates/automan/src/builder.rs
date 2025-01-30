@@ -51,7 +51,8 @@ impl Builder for CMakeBuilder {
         for t in &pac.targets {
             self.target(t)?;
         }
-        self.finish(pac)
+        self.finish(pac)?;
+        Ok(())
     }
 
     fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
@@ -90,7 +91,8 @@ impl Builder for CMakeBuilder {
     fn target(&mut self, target: &Target) -> AutoResult<()> {
         println!("building target {}", target.name);
         let out = self.out.as_mut();
-        let sources = "src/main.c";
+        let sources = target.srcs.join(" ");
+        println!("soruces: {}", sources);
         out.write(format!("add_executable({} {})", target.name, sources).as_bytes())?;
         out.write(b"\n")?;
         Ok(())

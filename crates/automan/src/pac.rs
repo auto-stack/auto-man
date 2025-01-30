@@ -1,6 +1,6 @@
 use autolang::config::AutoConfig;
 use autoval::AutoStr;
-use crate::AutoError;
+use crate::{AutoResult, AutoError};
 use crate::{Target, TargetKind};
 use std::fmt;
 pub struct Pac {
@@ -23,6 +23,13 @@ impl Pac {
             version,
             targets,
         }
+    }
+
+    pub fn scan(&mut self) -> AutoResult<()> {
+        for target in &mut self.targets {
+            target.scan()?;
+        }
+        Ok(())
     }
 
     pub fn resolve(&self) -> Result<(), AutoError> {

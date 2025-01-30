@@ -11,8 +11,6 @@ pub struct Automan {
     builder: Box<dyn Builder>,
 }
 
-
-
 // API
 impl Automan {
     pub fn parse_pac(path: &str) -> Result<Pac, AutoError> {
@@ -27,10 +25,7 @@ impl Automan {
         // 3. Find build targets with dependency ordering
         let mut pac = Pac::new(config);
         // 4. For each target, scan for source files
-        for target in pac.targets.iter_mut() {
-            target.scan()?;
-        }
-        // 5. Invode build script
+        pac.scan()?;
         Ok(pac)
     }
 

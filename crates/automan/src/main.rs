@@ -45,7 +45,6 @@ enum Commands {
 
 fn main() -> Result<(), AutoError> {
     println!("Hello, world!");
-    /*
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::New { name }) => {
@@ -72,7 +71,6 @@ fn main() -> Result<(), AutoError> {
             Cli::command().print_help()?;
         }
      }
-     */
     Ok(())
 
 }
