@@ -3,6 +3,8 @@ use crate::AutoResult;
 use std::io::Write;
 use std::path::Path;
 use std::fs::File;
+
+
 pub trait Builder {
     fn build(&mut self, pac: &Pac) -> AutoResult<()>;
     fn setup(&mut self, pac: &Pac) -> AutoResult<()>;
@@ -56,23 +58,21 @@ impl Builder for CMakeBuilder {
     }
 
     fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
-        let out = self.out.as_mut();
-        out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
-        out.write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
-        out.write(b"\n")?;
+        self.out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
+        self.out.write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
+        self.out.write(b"\n")?;
         Ok(())
     }
 
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
         let out = self.out.as_mut();
         out.flush()?;
+        self.out = Box::new(std::io::sink());
+
         // run cmake build to generate the win32 project
-        let status = std::process::Command::new("cmake")
-            .arg("-A")
-            .arg("win32")
-            .arg("-B")
-            .arg("build")
-            .status()?;
+        let mut cmd = std::process::Command::new("cmake");
+        cmd.arg("-A win32").arg("-B build");
+        let status = cmd.status()?;
         if !status.success() {
             return Err(format!("Failed to run cmake").into());
         }

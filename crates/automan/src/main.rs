@@ -26,8 +26,10 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    #[command(about = "New Project")]
+    #[command(about = "New App Package")]
     New { name: String },
+    #[command(about = "New Library Package")]
+    Newlib { name: String },
     #[command(about = "Pull dependencies and resources")]
     Pull,
     #[command(about = "Build Project")]
@@ -48,7 +50,12 @@ fn main() -> Result<(), AutoError> {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::New { name }) => {
-            println!("Creating new project {}", name);
+            println!("Creating new app package {}", name);
+            Automan::create_app(&name)?;
+        }
+        Some(Commands::Newlib { name }) => {
+            println!("Creating new library package {}", name);
+            Automan::create_lib(&name)?;
         }
         Some(Commands::Pull) => {
             println!("Pulling dependencies and resources");

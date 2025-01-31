@@ -11,6 +11,32 @@ pub struct Automan {
     builder: Box<dyn Builder>,
 }
 
+// Static API
+impl Automan {
+    pub fn create_app(name: &str) -> Result<(), AutoError> {
+        Self::create_by_template(name, "app")
+    }
+
+    pub fn create_lib(name: &str) -> Result<(), AutoError> {
+        Self::create_by_template(name, "lib")
+    }
+
+    pub fn create_by_template(name: &str, template: &str) -> Result<(), AutoError> {
+        // 1. Check if project already exists
+        let path = Path::new(name);
+        if path.is_file() {
+            return Err(format!("A file named with {} already exists", name).into());
+        }
+        if path.is_dir() {
+            // TODO: Let the user choose to replace the directory
+            return Err(format!("A directory named with {} already exists", name).into());
+        }
+        // 2. Copy template to destination
+        Templates::copy(template, name)?;
+        Ok(())
+    }
+}
+
 // API
 impl Automan {
     pub fn parse_pac(path: &str) -> Result<Pac, AutoError> {
@@ -33,21 +59,6 @@ impl Automan {
         Ok(Self { pac: Self::parse_pac(path)?, builder: new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())) })
     }
 
-    pub fn create(&self, name: &str) -> Result<(), AutoError> {
-        // 1. Check if project already exists
-        let path = Path::new(name);
-        if path.is_file() {
-            return Err(format!("A file named with {} already exists", name).into());
-        }
-        if path.is_dir() {
-            // TODO: Let the user choose to replace the directory
-            return Err(format!("A directory named with {} already exists", name).into());
-        }
-        // 2. Copy default template to destination
-        self.copy_template("default", name)?;
-        Ok(())
-    }
-
     pub fn pull(&self) -> Result<(), AutoError> {
         Ok(())
     }
@@ -64,16 +75,6 @@ impl Automan {
 
     pub fn clean(&mut self) -> Result<(), AutoError> {
         self.builder.clean()?;
-        Ok(())
-    }
-}
-
-
-// Implementations
-impl Automan {
-    fn copy_template(&self, template: &str, path: &str) -> Result<(), AutoError> {
-        println!("Copying template from {}", template);
-        Templates::copy(template, path)?;
         Ok(())
     }
 }

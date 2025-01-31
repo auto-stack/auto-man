@@ -1,7 +1,6 @@
-name: "hello"
+name: "${name}"
 version: "0.1.0"
 
-exe(hello) {
-    dir: "src"
-    main: "main.c"
+app("${name}") {
 }
+
