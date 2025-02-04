@@ -6,5 +6,5 @@ lib("${name}") {
 
 app("${name}_demo") {
     srcs: ["apps/${name}/${name}_demo.c"]
-    link: ["${name}"]
+    links: ["${name}"]
 }
