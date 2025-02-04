@@ -1,4 +1,4 @@
-use crate::{Pac, Target};
+use crate::{Pac, Target, TargetKind};
 use crate::AutoResult;
 use std::io::Write;
 use std::path::Path;
@@ -92,9 +92,28 @@ impl Builder for CMakeBuilder {
         println!("building target {}", target.name);
         let out = self.out.as_mut();
         let sources = target.srcs.join(" ");
-        println!("soruces: {}", sources);
-        out.write(format!("add_executable({} {})", target.name, sources).as_bytes())?;
+
+        match target.kind {
+            TargetKind::App => {
+                out.write(format!("add_executable({} {})\n", target.name, sources).as_bytes())?;
+            }
+            TargetKind::Lib => {
+                out.write(format!("add_library({} {})\n", target.name, sources).as_bytes())?;
+            }
+        }
+        let incs = target.incs.join(" ");
+        if !incs.is_empty() {
+            out.write(format!("target_include_directories({} PUBLIC {})\n", target.name, incs).as_bytes())?;
+        }
+
+        if target.links.len() > 0 {
+            for link in target.links.iter() {
+                out.write(format!("target_link_libraries({} {})\n", target.name, link).as_bytes())?;
+            }
+        }
+
         out.write(b"\n")?;
+
         Ok(())
     }
 

@@ -1,4 +1,4 @@
-use autoval::{Node, AutoStr};
+use autoval::{AutoStr, Node, Value, ValueKey};
 use crate::AutoResult;
 use std::path::Path;
 
@@ -29,6 +29,8 @@ pub struct Target {
     pub srcs: Vec<AutoStr>,
     // C header files
     pub incs: Vec<AutoStr>,
+
+    pub links: Vec<AutoStr>,
 }
 
 
@@ -53,6 +55,18 @@ impl Target {
         } 
         dirs.push(AutoStr::from(Path::new(dir_root).join(name.as_str()).to_str().unwrap()));
 
+        let mut links = Vec::new();
+        // check for links
+        let key = ValueKey::Str("links".to_string());
+        if let Some(arr) = node.props.get(&key) {
+            if let Value::Array(a) = arr {
+                for i in a {
+                    links.push(AutoStr::from(i.to_string()))
+                }
+            }
+        }
+        println!("links: {:?}", links);
+
         Self {
             kind,
             name,
@@ -60,6 +74,7 @@ impl Target {
             autos: Vec::new(),
             srcs: Vec::new(),
             incs: Vec::new(),
+            links
         }
     }
 
@@ -80,6 +95,13 @@ impl Target {
             }
         }
         self.dirs = succ_dirs;
+        // TODO: reduce include files into include directories
+        let mut incs = Vec::new();
+        for inc in self.incs.iter() {
+            let dir = Path::new(inc.as_str()).parent().unwrap();
+            incs.push(AutoStr::from(dir.to_str().unwrap()));
+        }
+        self.incs = incs;
         Ok(())
     }
 
