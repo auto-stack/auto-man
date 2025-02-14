@@ -1,11 +1,12 @@
 use autoval::{AutoStr, Node, Value, ValueKey};
 use crate::AutoResult;
 use std::path::Path;
-
+use std::fmt;
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
     App, // 应用程序
     Lib, // 静态代码库
+    Dep, // 依赖库
 }
 
 impl TargetKind {
@@ -13,7 +14,34 @@ impl TargetKind {
         match s {
             "app" => TargetKind::App,
             "lib" => TargetKind::Lib,
+            "dep" => TargetKind::Dep,
             _ => panic!("Invalid target kind: {}", s),
+        }
+    }
+}
+
+impl fmt::Display for TargetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TargetKind::App => write!(f, "App"),
+            TargetKind::Lib => write!(f, "Lib"),
+            TargetKind::Dep => write!(f, "Dep"),
+        }
+    }
+}
+
+
+#[derive(Tabled)]
+pub struct TargetMsg {
+    pub name: &'static str,
+    pub kind: &'static str,
+}
+
+impl From<Target> for TargetMsg {
+    fn from(target: Target) -> Self {
+        TargetMsg {
+            name: &target.name.as_str()[..],
+            kind: &target.kind.to_string()[..],
         }
     }
 }
@@ -31,6 +59,8 @@ pub struct Target {
     pub incs: Vec<AutoStr>,
 
     pub links: Vec<AutoStr>,
+
+    pub is_resolved: bool,
 }
 
 
@@ -46,6 +76,7 @@ impl Target {
         let dir_root = match kind {
             TargetKind::App => "apps",
             TargetKind::Lib => "libs",
+            TargetKind::Dep => "libs", // Dependencies are downloaded into libs folder
         };
 
         // TODO: interaction with Path and AutoStr is too verbose
@@ -55,17 +86,11 @@ impl Target {
         } 
         dirs.push(AutoStr::from(Path::new(dir_root).join(name.as_str()).to_str().unwrap()));
 
-        let mut links = Vec::new();
         // check for links
-        let key = ValueKey::Str("links".to_string());
-        if let Some(arr) = node.props.get(&key) {
-            if let Value::Array(a) = arr {
-                for i in a {
-                    links.push(AutoStr::from(i.to_string()))
-                }
-            }
-        }
+        let links = node.props.get_array_of("links");
         println!("links: {:?}", links);
+        // to auto str
+        let links = links.iter().map(|v| AutoStr::from(v.to_string())).collect();
 
         Self {
             kind,
@@ -74,11 +99,26 @@ impl Target {
             autos: Vec::new(),
             srcs: Vec::new(),
             incs: Vec::new(),
-            links
+            links,
+            is_resolved: false,
         }
     }
 
-    pub fn scan(&mut self) -> AutoResult<()> {
+    /**
+     * If the target has links to dependency targets, check whether the links are valid.
+     */
+    pub fn check_links(&mut self) -> AutoResult<()> {
+        // 2. If the targets links to a dep target, recursively resolve the linked target
+        if !self.links.is_empty() {
+            for link in self.links.iter() {
+                let link = link.as_str();
+                // TODO:
+            }
+        }
+        Ok(())
+    }
+
+    pub fn scan_sources(&mut self) -> AutoResult<()> {
         // TODO: why do we need to clone dirs?
         let dirs = self.dirs.clone();
         println!("Scanning dirs {:?}", dirs);

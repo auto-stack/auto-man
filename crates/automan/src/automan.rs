@@ -48,10 +48,13 @@ impl Automan {
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path())?;
         println!("Config: {}", config.root);
-        // 3. Find build targets with dependency ordering
         let mut pac = Pac::new(config);
-        // 4. For each target, scan for source files
-        pac.scan()?;
+        pac.print_targets();
+        // 3. Resolve targets in the pac, including:
+        // 3.1. Resolve dependencies
+        // 3.2. Link targets with dependencies
+        // 3.3. Scan targets for its local source files
+        pac.resolve()?;
         Ok(pac)
     }
 

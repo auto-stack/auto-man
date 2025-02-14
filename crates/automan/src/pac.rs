@@ -3,10 +3,40 @@ use autoval::AutoStr;
 use crate::{AutoResult, AutoError};
 use crate::{Target, TargetKind};
 use std::fmt;
+use std::collections::HashMap;
+pub struct PacInfo {
+    pub name: AutoStr,
+    pub version: AutoStr,
+    pub repo: AutoStr,
+}
+
+pub struct Index {
+    map: HashMap<AutoStr, PacInfo>,
+}
+
+impl Index {
+    pub fn new() -> Self {
+        let mut map = HashMap::new();
+        map.insert("utils".into(), PacInfo {
+            name: "utils".into(),
+            version: "0.0.1".into(),
+            repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/utils.git".into(),
+        });
+        Self {
+            map,
+        }
+    }
+
+    pub fn lookup(&self, name: &AutoStr) -> Option<&PacInfo> {
+        self.map.get(name)
+    }
+}
+
 pub struct Pac {
     pub name: AutoStr,
     pub version: AutoStr,
     pub targets: Vec<Target>,
+    pub index: Index,
 }
 
 impl Pac {
@@ -22,19 +52,87 @@ impl Pac {
             name,
             version,
             targets,
+            index: Index::new(),
         }
     }
 
-    pub fn scan(&mut self) -> AutoResult<()> {
+    // print targets as a table
+    pub fn print_targets(&self) {
+
+        let mut msgs = Vec::new();
+        for target in &self.targets {
+            msgs.push(TargetMsg::from(*target));
+        }
+        let table = tabled::Table::new(msgs);
+        println!("{}", table);
+    }
+
+    pub fn resolve(&mut self) -> AutoResult<()> {
+        // 1. resolve dependencies: download dep targets recursively if needed
+        self.download_deps()?;
+
+        // 2. link targets with dependencies
         for target in &mut self.targets {
-            target.scan()?;
+            target.check_links()?;
+        }
+        // 3. scan targets for its local source files
+        for target in &mut self.targets {
+            target.scan_sources()?;
         }
         Ok(())
     }
 
-    pub fn resolve(&self) -> Result<(), AutoError> {
-        println!("Resolving dependencies");
+    pub fn download_deps(&mut self) -> AutoResult<()> {
+        let mut targets = std::mem::take(&mut self.targets);
+        for target in &targets {
+            if matches!(target.kind, TargetKind::Dep) {
+                let pac = self.download_dep(target)?;
+            }
+        }
+        self.targets = targets;
         Ok(())
+    }
+
+    // 下载dep的源码包
+    pub fn download_dep(&mut self, dep: &Target) -> AutoResult<()> {
+        // 查询索引
+        let name = dep.name.clone();
+        let info = self.index.lookup(&name);
+        match info {
+            Some(info) => {
+                self.download_repo(&info.name, &info.repo)?;
+                return Ok(());
+            }
+            None => {
+                return Err(format!("Dependency {} not found", name).into());
+            }
+        }
+    }
+
+    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr) -> AutoResult<Pac> {
+        println!("Downloading dependency from {}", repo);
+        // 1. make libs folder if not exists
+        let libs_dir = "libs";
+        if !std::path::Path::new(libs_dir).exists() {
+            std::fs::create_dir_all(libs_dir)?;
+        }
+        // 2. use git to download the repo
+        let url = format!("{}", repo);
+        let path = format!("{}/{}", libs_dir, name);
+        let output = std::process::Command::new("git")
+            .arg("clone")
+            .arg(url)
+            .arg(path.clone())
+            .output()?;
+        if output.status.success() {
+            println!("Downloaded dependency {} from {}", name, repo);
+        }
+        // 3. TODO: checkout wanted version
+        // 4. parse pac.at
+        let code = std::fs::read_to_string(format!("{}/pac.at", path))?;
+        let config = AutoConfig::from_code(&code)?;
+        let pac = Pac::new(config);
+        Ok(pac)
     }
 
     pub fn exe_path(&self) -> String {

@@ -16,3 +16,6 @@ autoui = { git = "https://gitee.com/auto-stack/auto-ui" }
 gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", package = "gpui-dynamic" }
 # switch to this static lib for release mode
 # gpui = { git = "https://github.com/zed-industries/zed" }
+
+# print table in console
+tabled = "0.18.0"

@@ -8,3 +8,4 @@ clap = { workspace = true }
 autolang = { workspace = true }
 autoval = { workspace = true }
 rust-embed = { workspace = true }
+tabled = { workspace = true }

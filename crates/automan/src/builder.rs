@@ -100,6 +100,10 @@ impl Builder for CMakeBuilder {
             TargetKind::Lib => {
                 out.write(format!("add_library({} {})\n", target.name, sources).as_bytes())?;
             }
+            TargetKind::Dep => {
+                // after download, a dep target is the same as a lib target
+                out.write(format!("add_library({} {})\n", target.name, sources).as_bytes())?;
+            }
         }
         let incs = target.incs.join(" ");
         if !incs.is_empty() {
