@@ -17,8 +17,16 @@ impl Automan {
         Self::create_by_template(name, "app")
     }
 
+    pub fn create_capp(name: &str) -> Result<(), AutoError> {
+        Self::create_by_template(name, "capp")
+    }
+
     pub fn create_lib(name: &str) -> Result<(), AutoError> {
         Self::create_by_template(name, "lib")
+    }
+
+    pub fn create_clib(name: &str) -> Result<(), AutoError> {
+        Self::create_by_template(name, "clib")
     }
 
     pub fn create_by_template(name: &str, template: &str) -> Result<(), AutoError> {
