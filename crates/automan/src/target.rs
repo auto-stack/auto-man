@@ -3,6 +3,7 @@ use crate::AutoResult;
 use std::path::Path;
 use std::fmt;
 use tabled::Tabled;
+use autolang::transpiler::transpile_c;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
@@ -32,22 +33,6 @@ impl fmt::Display for TargetKind {
     }
 }
 
-
-// #[derive(Tabled)]
-// pub struct TargetMsg {
-//     pub name: &'static str,
-//     pub kind: &'static str,
-// }
-
-// impl From<Target> for TargetMsg {
-//     fn from(target: Target) -> Self {
-//         TargetMsg {
-//             name: &target.name.as_str()[..],
-//             kind: &target.kind.to_string()[..],
-//         }
-//     }
-// }
-
 #[derive(Tabled)]
 pub struct Target {
     pub name: AutoStr,
@@ -74,6 +59,7 @@ pub struct Target {
 
     #[tabled(skip)]
     pub is_main: bool,
+
 }
 
 
@@ -104,6 +90,27 @@ impl Target {
             is_resolved: false,
             is_main,
         }
+    }
+
+    pub fn has_auto(&self) -> bool {
+        !self.autos.is_empty()
+    }
+
+    pub fn transpile(&mut self) -> AutoResult<()> {
+        for path in self.autos.iter() {
+            println!("Transpiling {}", path.as_str());
+            // read the file
+            let content = std::fs::read_to_string(path.as_str())?;
+            // transpile the content to c code
+            let c_content = transpile_c(&content)?;
+            // write the c code to the file
+            let c_path = path.as_str().replace(".at", ".c");
+
+            std::fs::write(Path::new(c_path.as_str()), c_content)?;
+            // add the file to the srcs
+            self.srcs.push(AutoStr::from(c_path));
+        }
+        Ok(())
     }
 
     pub fn check_dirs(&mut self) -> AutoResult<()> {
@@ -197,13 +204,20 @@ impl Target {
             println!("{}", path.display());
 
             let ext = path.extension();
+            let file_name = path.file_stem();
             let path_str = AutoStr::from(path.to_str().unwrap());
             // replace \ with /
             let path_str = path_str.replace("\\", "/");
             if let Some(ext) = ext {
                 match ext.to_str().unwrap() {
                     "at" => {
-                        self.autos.push(path_str);
+                        if let Some(file_name) = file_name {
+                            if let Some(name) = file_name.to_str() {
+                                if !name.eq("pac") {
+                                    self.autos.push(path_str);
+                                }
+                            }
+                        }
                     }
                     "c" => {
                         self.srcs.push(path_str);

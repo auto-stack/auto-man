@@ -67,6 +67,7 @@ impl Automan {
     }
 
     pub fn new(path: &str) -> Result<Self, AutoError> {
+        // Currently, only CMake builder is supported
         Ok(Self { pac: Self::parse_pac(path)?, builder: new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())) })
     }
 
@@ -75,7 +76,15 @@ impl Automan {
     }
 
     pub fn build(&mut self) -> Result<(), AutoError> {
+        // 1. Transpile auto code to c code
+        self.transpile()?;
+        // 2. Build the project with a specific builder
         self.builder.build(&self.pac)?;
+        Ok(())
+    }
+
+    pub fn transpile(&mut self) -> Result<(), AutoError> {
+        self.pac.transpile()?;
         Ok(())
     }
 

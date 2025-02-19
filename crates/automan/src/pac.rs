@@ -66,6 +66,15 @@ impl Pac {
         }
     }
 
+    pub fn transpile(&mut self) -> AutoResult<()> {
+        for target in &mut self.targets {
+            if target.has_auto() {
+                target.transpile()?;
+            }
+        }
+        Ok(())
+    }
+
     // print targets as a table
     pub fn print_targets(&self) {
         println!("\n--- pac: {} ---\n", self.name);
