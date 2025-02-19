@@ -102,11 +102,13 @@ impl Target {
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
-            let c_content = transpile_c(&content)?;
+            let c_code = transpile_c(&self.name, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
-
-            std::fs::write(Path::new(c_path.as_str()), c_content)?;
+            std::fs::write(Path::new(c_path.as_str()), c_code.source)?;
+            // write the header file
+            let h_path = path.as_str().replace(".at", ".h");
+            std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
             // add the file to the srcs
             self.srcs.push(AutoStr::from(c_path));
         }
@@ -245,7 +247,7 @@ mod tests {
         "#;
         let config = AutoConfig::from_code(code);
         let node = config.unwrap().root.nodes[0].clone();
-        let mut target = Target::from_node(node);
+        let mut target = Target::from_node(node, "main".into());
         assert_eq!(target.name, "main");
         assert_eq!(target.dirs, vec![".", "main"]);
         assert_eq!(target.kind, TargetKind::App);
