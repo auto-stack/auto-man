@@ -11,12 +11,19 @@ AutoMan（Auto Manager）是Auto/C语言的混合工程管理工具，功能包�
 
 AutoMan的配置文件是`AutoConfig`格式。
 
-## 示例：Auto语言工程
+## 示例：新建工程
 
-要建立Auto语言的工程，直接使用`am new`和`am newlib`命令即可。
+新建工程有如下几个命令：
+
+- `am app`：新建Auto语言的可执行工程
+- `am lib`：新建Auto语言的代码库工程
+- `am capp`：新建C语言的可执行工程
+- `am clib`：新建C语言的代码库工程
+
+要建立Auto语言的可执行工程，直接使用`am app`命令。
 
 ```bash
-am new hello
+am app hello
 ```
 
 会得到如下目录结构：
@@ -24,12 +31,11 @@ am new hello
 ```
 hello
 ├── pac.at
-└── apps
-    └── hello
-        └── hello.at
+└── hello.at
 ```
 
-和纯C工程唯一的区别，是生成的`hello.at`文件是Auto语言的代码文件。
+- `pac.at`是工程的配置文件，`pac`是`package`的缩写，表示一个代码包。
+- `hello.at`是Auto语言的代码文件。
 
 `hello.at`内容如下：
 
@@ -39,10 +45,34 @@ fn main {
 }
 ```
 
-如果要新建代码库的工程，则使用`am newlib`命令。
+编译和运行：
 
 ```bash
-amc newlib mymath
+> am build
+> am run
+Hello, World!
+```
+
+如果想要生成C语言的工程，则使用`am capp`命令：
+
+```bash
+am capp hello
+```
+
+得到如下目录结构：
+
+```
+hello
+├── pac.at
+└── hello.c
+```
+
+C语言工程的编译和运行也是`build`和`run`命令。
+
+如果要新建代码库的工程，则使用`am lib`命令。
+
+```bash
+am lib mymath
 ```
 
 得到如下目录结构：
@@ -50,9 +80,7 @@ amc newlib mymath
 ```
 mymath
 ├── pac.at
-└── libs
-    └── mymath
-        └── mymath.at
+└── mymath.at
 ```
 
 mymath.at内容如下：
@@ -62,6 +90,97 @@ fn add(a int, b int) int {
   a + b
 }
 ```
+
+这个工程可以用作依赖库，给其他的Auto语言工程使用。
+
+如果想要C语言的库工程，使用`am clib`命令：
+
+```bash
+am clib mymath
+```
+
+得到如下目录结构：
+
+```
+mymath
+├── pac.at
+├── mymath.h
+└── mymath.c
+```
+
+这里的`mymath.h`是头文件，`mymath.c`是源文件。
+
+## 依赖管理
+
+
+例如，假设我们已经建立了一个`mymath`的工程，并且上传到了repo中（具体如何上传，后面再介绍）。
+
+现在我们新建一个`hello`工程，其`pac.at`内容如下：
+
+```rust
+name: "hello"
+version: "0.0.1"
+
+app("hello") {}
+```
+
+AutoMan的依赖管理是基于Git的，配置的方式是在`pac.at`中添加`dep`节点。
+要添加对`mymath`的依赖，可以在`pac.at`中添加如下内容：
+
+```rust
+name: "hello"
+version: "0.0.1"
+
+// 添加对mymath的依赖
+dep("mymath") {
+    // 版本也可以不指定，会自动使用最新版
+    version: "0.0.1"
+}
+
+app("hello") {
+    // 把mymath链接到hello包
+    links: ["mymath"]
+}
+```
+
+此时，再运行`am build`时，会自动下载`mymath`库，得到如下结构：
+
+```
+hello
+├── pac.at
+├── hello.at
+└── deps
+    └── mymath
+        ├── pac.at
+        ├── mymath.h
+        └── mymath.c
+
+```
+
+此时修改`hello.at`源码，就可以使用`mymath`库了。
+
+```rust
+use mymath:add
+
+fn main {
+    print(add(1, 2))
+}
+```
+
+如果是C语言的`app`项目，过程也是类似，只不过引用库时需要使用`#include`语句。
+
+```c
+#include "mymath.h"
+
+int main(void) {
+    printf("%d\n", mymath_add(1, 2));
+    return 0;
+}
+```
+
+注意，在C语言中，函数名是包含了包名前缀`mymath_`的。
+
+## 编译流程
 
 用`am build`编译工程时，会先把Auto语言的`*.at`文件转译成对应的C语言的`*.h`和`*.c`文件。
 然后再按照纯C语言的工程进行编译。
@@ -83,98 +202,6 @@ fn add(a int, b int) int {
 1. 调用`am build`编译工程
 2. 调用`build/Debug/hello.exe`来运行程序
 
-## 示例：纯C语言工程
-
-新建工程:
-
-```bash
-amc new hello
-```
-
-`amc`命令是`automan -c`命令的缩写，其中`new`表示新建一个纯C语言的工程。
-这个命令会生成一个`hello`工程，工程目录结构如下：
-
-```
-hello
-├── pac.at
-├── apps
-    └── hello
-        └── hello.c
-```
-
-这里:
-
-- `pac.at`是工程的配置文件，`pac`是`package`的缩写，表示一个代码包。
-- `apps`目录是应用程序的代码目录；相对应的，`libs`目录则表示代码库的目录。
-- `hello/hello.c`是`hello`包所对应的可执行程序。
-
-`pac.at`格式是AutoConfig，默认内容如下：
-
-```rust
-name: "hello"
-version: "0.0.1"
-
-app("hello") {}
-```
-
-`hello.c`内容如下：
-
-```c
-#include <stdio.h>
-
-int main(void) {
-    printf("Hello, World!\n");
-    return 0;
-}
-```
-
-如果需要新建一个代码库工程，而不是可执行应用程序，可以使用`amc newlib`命令。
-
-```bash
-amc newlib mymath
-```
-
-这个命令会生成如下的目录结构：
-
-```
-mymath
-├── pac.at
-└── libs
-    └── mymath
-        ├── mymath.h
-        └── mymath.c
-```
-
-此时`pac.at`内容如下：
-
-```rust
-name: "mymath"
-version: "0.0.1"
-
-lib("mymath") {}
-```
-
-`mymath/mymath.h`内容如下：
-
-```c
-#ifndef MYMATH_H
-#define MYMATH_H
-
-int add(int a, int b);
-
-#endif // MYMATH_H
-```
-
-`mymath/mymath.c`内容如下：
-
-```c
-#include "mymath.h"
-
-int add(int a, int b) {
-    return a + b;
-}
-```
-
 ## 多个`target`
 
 上面的示例中，我们新建了一个`hello`的应用程序，以及一个叫`mymath`的代码库。
@@ -185,6 +212,7 @@ int add(int a, int b) {
 
 - `app`：可执行的应用程序
 - `lib`：代码库
+- `dep`：依赖库，它本身是一个`lib`代码包
 - `test`：测试库
 - `doc`：文档
 
@@ -205,22 +233,24 @@ lib("mystr") {}
 ```
 hello
 ├── pac.at
+├── hello.at
 ├── apps
-│   ├── hello.at
 │   └── hi.at
 └── libs
     ├── mymath.at
     └── mystr.at
 ```
 
+注意，由于目标`hello`名字和整个代码包相同，说明它是项目的主目标，
+因此放在项目的根目录中，而不是放在`apps`或`libs`目录中。
+
 如果是C文件，则会生成不同的子目录：
 
 ```
 hello
 ├── pac.at
+├── hello.c
 ├── apps
-│   ├── hello
-│   │   └── hello.c
 │   └── hi
 │       └── hi.c
 └── libs
@@ -231,6 +261,8 @@ hello
         ├── mystr.h
         └── mystr.c
 ```
+
+注意，这里的`hello`也是主目标，因此它的原文件放在根目录中，而不是放在`apps`或`libs`目录中。
 
 `hello`和`hi`都是应用程序文件，因此调用`am build`时，会生成两个不同的可执行文件：
 
@@ -246,26 +278,19 @@ shell> am run
 
 Please select a target to run：
 
-1. hello
+1. hello (main target)
 2. hi
 
-If you press Enter, the first target will be run.
+If you press Enter, the main target `hello` will be selected.
 
 > 1
 Hello, World!
 ```
 
 选择`1`，则执行`hello.exe`；选择`2`，则执行`hi.exe`。
-如果直接回车，则会选择第一个执行目标，即`hello.exe`。
+如果直接回车，则会选择主目标，即`hello.exe`。
 
-新建好工程之后，可以通过`am add`命令，向工程中添加新的`target`。
-
-```bash
-am add hi  # 添加一个名称为hi的应用程序，默认为Auto代码
-amc addlib mymath  # 添加一个名称为mymath的C代码库
-```
-
-可以看出，`add`命令和`new`命令的逻辑是一致的。
+## Auto和C的混合工程
 
 在AutoMan的工程中，Auto和C的`target`是可以混合使用的，
 这是因为AutoMan编译Auto和C的过程是相互独立的：
