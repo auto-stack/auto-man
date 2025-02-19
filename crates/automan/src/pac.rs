@@ -1,9 +1,19 @@
 use autolang::config::AutoConfig;
 use autoval::AutoStr;
-use crate::{AutoResult, AutoError};
+use crate::AutoResult;
 use crate::{Target, TargetKind};
 use std::fmt;
 use std::collections::HashMap;
+use tabled::{
+    Table,
+    settings::{
+        style::Style,
+        object::Rows,
+        themes::Colorization,
+        Color,
+    },
+};
+
 pub struct PacInfo {
     pub name: AutoStr,
     pub version: AutoStr,
@@ -42,14 +52,14 @@ pub struct Pac {
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
         let mut targets = vec![];
-        let name = config.name();
+        let pac_name = config.name();
         let version = config.version();
         for n in config.root.nodes.into_iter() {
-            let target = Target::from_node(n);
+            let target = Target::from_node(n, pac_name.clone());
             targets.push(target);
         }
         Self {
-            name,
+            name: pac_name,
             version,
             targets,
             index: Index::new(),
@@ -58,12 +68,12 @@ impl Pac {
 
     // print targets as a table
     pub fn print_targets(&self) {
+        println!("\n--- pac: {} ---\n", self.name);
 
-        let mut msgs = Vec::new();
-        for target in &self.targets {
-            msgs.push(TargetMsg::from(*target));
-        }
-        let table = tabled::Table::new(msgs);
+        let mut table = Table::new(&self.targets);
+        table.with(Style::modern_rounded())
+            .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
+
         println!("{}", table);
     }
 
@@ -75,6 +85,7 @@ impl Pac {
         for target in &mut self.targets {
             target.check_links()?;
         }
+
         // 3. scan targets for its local source files
         for target in &mut self.targets {
             target.scan_sources()?;
@@ -86,6 +97,9 @@ impl Pac {
         let mut targets = std::mem::take(&mut self.targets);
         for target in &targets {
             if matches!(target.kind, TargetKind::Dep) {
+                if target.exists() {
+                    continue;
+                }
                 let pac = self.download_dep(target)?;
             }
         }
@@ -111,14 +125,14 @@ impl Pac {
 
     pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr) -> AutoResult<Pac> {
         println!("Downloading dependency from {}", repo);
-        // 1. make libs folder if not exists
-        let libs_dir = "libs";
-        if !std::path::Path::new(libs_dir).exists() {
-            std::fs::create_dir_all(libs_dir)?;
+        // 1. make deps folder if not exists
+        let deps_dir = "deps";
+        if !std::path::Path::new(deps_dir).exists() {
+            std::fs::create_dir_all(deps_dir)?;
         }
         // 2. use git to download the repo
         let url = format!("{}", repo);
-        let path = format!("{}/{}", libs_dir, name);
+        let path = format!("{}/{}", deps_dir, name);
         let output = std::process::Command::new("git")
             .arg("clone")
             .arg(url)
@@ -183,5 +197,17 @@ mod tests {
                 assert!(false, "{}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_tabled() {
+        let code = r#"
+        name: "test"
+        app("main") {}
+        lib("lib") {}
+        "#;
+        let config = AutoConfig::from_code(code);
+        let pac = Pac::new(config.unwrap());
+        pac.print_targets();
     }
 }

@@ -2,6 +2,8 @@ use autoval::{AutoStr, Node, Value, ValueKey};
 use crate::AutoResult;
 use std::path::Path;
 use std::fmt;
+use tabled::Tabled;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
     App, // 应用程序
@@ -31,41 +33,52 @@ impl fmt::Display for TargetKind {
 }
 
 
+// #[derive(Tabled)]
+// pub struct TargetMsg {
+//     pub name: &'static str,
+//     pub kind: &'static str,
+// }
+
+// impl From<Target> for TargetMsg {
+//     fn from(target: Target) -> Self {
+//         TargetMsg {
+//             name: &target.name.as_str()[..],
+//             kind: &target.kind.to_string()[..],
+//         }
+//     }
+// }
+
 #[derive(Tabled)]
-pub struct TargetMsg {
-    pub name: &'static str,
-    pub kind: &'static str,
-}
-
-impl From<Target> for TargetMsg {
-    fn from(target: Target) -> Self {
-        TargetMsg {
-            name: &target.name.as_str()[..],
-            kind: &target.kind.to_string()[..],
-        }
-    }
-}
-
 pub struct Target {
-    pub kind: TargetKind,
     pub name: AutoStr,
+    pub kind: TargetKind,
+
+    #[tabled(skip)]
     pub dirs: Vec<AutoStr>,
 
     // Auto Source files
+    #[tabled(skip)]
     pub autos: Vec<AutoStr>,
     // C Source files
+    #[tabled(skip)]
     pub srcs: Vec<AutoStr>,
     // C header files
+    #[tabled(skip)]
     pub incs: Vec<AutoStr>,
 
+    #[tabled(skip)]
     pub links: Vec<AutoStr>,
 
+    #[tabled(skip)]
     pub is_resolved: bool,
+
+    #[tabled(skip)]
+    pub is_main: bool,
 }
 
 
 impl Target {
-    pub fn from_node(node: Node) -> Self {
+    pub fn from_node(node: Node, pac_name: AutoStr) -> Self {
         let mut name = AutoStr::new();
         if !node.args.is_empty() {
             name = node.args.args[0].auto_str()
@@ -73,35 +86,54 @@ impl Target {
 
         let kind = TargetKind::from_str(&node.name);
 
-        let dir_root = match kind {
-            TargetKind::App => "apps",
-            TargetKind::Lib => "libs",
-            TargetKind::Dep => "libs", // Dependencies are downloaded into libs folder
-        };
-
-        // TODO: interaction with Path and AutoStr is too verbose
-        let mut dirs = Vec::new();
-        if name == "main" {
-            dirs.push(AutoStr::from(Path::new(dir_root).to_str().unwrap()));
-        } 
-        dirs.push(AutoStr::from(Path::new(dir_root).join(name.as_str()).to_str().unwrap()));
-
         // check for links
         let links = node.props.get_array_of("links");
-        println!("links: {:?}", links);
         // to auto str
-        let links = links.iter().map(|v| AutoStr::from(v.to_string())).collect();
+        let links = links.iter().map(|v| AutoStr::from(v.repr())).collect();
+
+        let is_main = name == pac_name;
 
         Self {
             kind,
             name,
-            dirs,
+            dirs: Vec::new(),
             autos: Vec::new(),
             srcs: Vec::new(),
             incs: Vec::new(),
             links,
             is_resolved: false,
+            is_main,
         }
+    }
+
+    pub fn check_dirs(&mut self) -> AutoResult<()> {
+        // 现在只支持最简单的当前目录
+        let mut dirs = Vec::new();
+        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
+        if self.is_main {
+            dirs.push(AutoStr::from("."));
+        } else { // 否则，使用libs/apps/deps中的目录
+            let target_dir = match self.kind {
+                TargetKind::App => "apps",
+                TargetKind::Lib => "libs",
+                TargetKind::Dep => "deps",
+            };
+            dirs.push(AutoStr::from(format!("{}/{}", target_dir, self.name)));
+        }
+        self.dirs = dirs;
+        Ok(())
+    }
+
+    pub fn exists(&self) -> bool {
+        if self.is_main {
+            return true;
+        }
+        for dir in self.dirs.iter() {
+            if dir != "." && Path::new(dir.as_str()).is_dir() {
+                return true;
+            }
+        }
+        false
     }
 
     /**
@@ -120,6 +152,9 @@ impl Target {
 
     pub fn scan_sources(&mut self) -> AutoResult<()> {
         // TODO: why do we need to clone dirs?
+        // 1. check dirs
+        self.check_dirs()?;
+
         let dirs = self.dirs.clone();
         println!("Scanning dirs {:?}", dirs);
         let mut succ_dirs = Vec::new();
@@ -205,7 +240,8 @@ mod tests {
         // assert_eq!(target.autos, vec!["main.at"]);
         // assert_eq!(target.srcs, vec!["main.c"]);
         // assert_eq!(target.incs, vec!["main.h"]);
-
     }
+
+
 }
 
