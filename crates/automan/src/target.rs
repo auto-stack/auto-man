@@ -4,7 +4,7 @@ use std::path::Path;
 use std::fmt;
 use tabled::Tabled;
 use autolang::transpiler::transpile_c;
-
+use std::collections::HashSet;
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
     App, // 应用程序
@@ -52,6 +52,9 @@ pub struct Target {
     pub incs: Vec<AutoStr>,
 
     #[tabled(skip)]
+    pub skips: Vec<AutoStr>,
+
+    #[tabled(skip)]
     pub links: Vec<AutoStr>,
 
     #[tabled(skip)]
@@ -59,6 +62,7 @@ pub struct Target {
 
     #[tabled(skip)]
     pub is_main: bool,
+
 
 }
 
@@ -72,6 +76,9 @@ impl Target {
 
         let kind = TargetKind::from_str(&node.name);
 
+        // check for dirs
+        let dirs = node.props.get_array_of_str("dirs");
+
         // check for srcs
         let srcs = node.props.get_array_of_str("srcs");
 
@@ -81,16 +88,20 @@ impl Target {
         // check for links
         let links = node.props.get_array_of_str("links");
 
+        // check for skips
+        let skips = node.props.get_array_of_str("skips");
+
         let is_main = name == pac_name;
 
         Self {
             kind,
             name,
-            dirs: Vec::new(),
+            dirs,
             autos: Vec::new(),
             srcs,
             incs,
             links,
+            skips,
             is_resolved: false,
             is_main,
         }
@@ -133,7 +144,8 @@ impl Target {
             };
             dirs.push(AutoStr::from(format!("{}/{}", target_dir, self.name)));
         }
-        self.dirs = dirs;
+        self.dirs.extend(dirs);
+        println!("dirs: {:?}", self.dirs);
         Ok(())
     }
 
@@ -168,12 +180,34 @@ impl Target {
         // 1. check dirs
         self.check_dirs()?;
 
+        // 2. check specified source files
+        let mut succ_srcs = Vec::new();
+        for src in self.srcs.iter() {
+            let path = Path::new(src.as_str());
+            if path.is_file() {
+                succ_srcs.push(src.clone());
+            } else {
+                for dir in self.dirs.iter() {
+                    let path = Path::new(dir.as_str()).join(src.as_str());
+                    if path.is_file() {
+                        let path_str = path.to_str().unwrap();
+                        let path_str = path_str.replace("\\", "/");
+                        succ_srcs.push(AutoStr::from(path_str));
+                        break;
+                    }
+                }
+            }
+        }
+        self.srcs = succ_srcs;
+        println!("existing source files: {:?}", self.srcs);
+
+        // 3. scan dirs for existing source files
         let dirs = self.dirs.clone();
-        println!("Scanning dirs {:?}", dirs);
+        println!("--- {} --- scanning dirs {:?}", self.name, dirs);
         let mut succ_dirs = Vec::new();
         for dir in dirs {
             // if dir scan fails, 
-            match self.scan_dir(&dir) {
+            match self.scan_srcs_in_dir(&dir) {
                 Ok(_) => {
                     succ_dirs.push(dir);
                 }
@@ -182,23 +216,43 @@ impl Target {
                 }
             }
         }
-        self.dirs = succ_dirs;
+
         // TODO: reduce include files into include directories
-        let mut incs = Vec::new();
+        let mut incs = HashSet::new();
         for inc in self.incs.iter() {
             let path = Path::new(inc.as_str());
+            println!("chekcing inc: {}", path.display());
             if path.is_file() {
-                incs.push(AutoStr::from(path.parent().unwrap().to_str().unwrap()));
+                incs.insert(AutoStr::from(path.parent().unwrap().to_str().unwrap()));
+            } else if path.is_dir() {
+                incs.insert(AutoStr::from(path.to_str().unwrap()));
             } else {
-                incs.push(AutoStr::from(path.to_str().unwrap()));
+                println!("{} is not a file or directory", path.display());
+                // try to find the file in the dirs
+                for dir in self.dirs.iter() {
+                    let path = Path::new(dir.as_str()).join(inc.as_str());
+                    println!("checking inc in path: {}", path.display());
+                    if path.is_file() {
+                        let path_str = path.parent().unwrap().to_str().unwrap();
+                        let path_str = path_str.replace("\\", "/");
+                        incs.insert(AutoStr::from(path_str));
+                        break;
+                    } else if path.is_dir() {
+                        let path_str = path.to_str().unwrap();
+                        let path_str = path_str.replace("\\", "/");
+                        incs.insert(AutoStr::from(path_str));
+                        break;
+                    }
+                }
             }
         }
-        self.incs = incs;
+        self.incs = incs.into_iter().collect();
+        println!("existing include files: {:?}", self.incs);
         Ok(())
     }
 
     // Scan the target directory for source/include files
-    pub fn scan_dir(&mut self, dir: &str) -> AutoResult<()> {
+    pub fn scan_srcs_in_dir(&mut self, dir: &str) -> AutoResult<()> {
         let dir = Path::new(dir);
         if !dir.is_dir() {
             return Err(format!("{} is not a directory", dir.display()).into());
@@ -212,6 +266,11 @@ impl Target {
                 continue;
             }
             println!("{}", path.display());
+            let file_name = AutoStr::from(path.file_name().unwrap().to_str().unwrap());
+            if self.skips.contains(&file_name) {
+                println!("skipping {}", file_name.as_str());
+                continue;
+            }
 
             let ext = path.extension();
             let file_name = path.file_stem();
