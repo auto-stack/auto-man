@@ -72,10 +72,14 @@ impl Target {
 
         let kind = TargetKind::from_str(&node.name);
 
+        // check for srcs
+        let srcs = node.props.get_array_of_str("srcs");
+
+        // check for incs
+        let incs = node.props.get_array_of_str("incs");
+
         // check for links
-        let links = node.props.get_array_of("links");
-        // to auto str
-        let links = links.iter().map(|v| AutoStr::from(v.repr())).collect();
+        let links = node.props.get_array_of_str("links");
 
         let is_main = name == pac_name;
 
@@ -84,8 +88,8 @@ impl Target {
             name,
             dirs: Vec::new(),
             autos: Vec::new(),
-            srcs: Vec::new(),
-            incs: Vec::new(),
+            srcs,
+            incs,
             links,
             is_resolved: false,
             is_main,
@@ -182,8 +186,12 @@ impl Target {
         // TODO: reduce include files into include directories
         let mut incs = Vec::new();
         for inc in self.incs.iter() {
-            let dir = Path::new(inc.as_str()).parent().unwrap();
-            incs.push(AutoStr::from(dir.to_str().unwrap()));
+            let path = Path::new(inc.as_str());
+            if path.is_file() {
+                incs.push(AutoStr::from(path.parent().unwrap().to_str().unwrap()));
+            } else {
+                incs.push(AutoStr::from(path.to_str().unwrap()));
+            }
         }
         self.incs = incs;
         Ok(())

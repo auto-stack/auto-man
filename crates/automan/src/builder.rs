@@ -1,5 +1,6 @@
 use crate::{Pac, Target, TargetKind};
 use crate::AutoResult;
+use autoval::AutoStr;
 use std::io::Write;
 use std::path::Path;
 use std::fs::File;
@@ -33,17 +34,34 @@ pub struct CMakeBuilder {
 
 impl CMakeBuilder {
     pub fn new(path: &str) -> Self {
-        // check if path exists
-        if Path::new(path).is_file() {
-            // remove file
-            std::fs::remove_file(path).unwrap();
-        }
-        let out = File::create(path).unwrap();
         Self {
             cmake_path: path.to_string(),
-            out: Box::new(out),
+            out: Box::new(std::io::sink()),
         }
     }
+
+    fn clear_cmake_file(&mut self) -> AutoResult<()> {
+        // check if path exists
+        if Path::new(&self.cmake_path).is_file() {
+            // remove file
+            std::fs::remove_file(&self.cmake_path)?;
+        }
+        let out = File::create(&self.cmake_path)?;
+        self.out = Box::new(out);
+        Ok(())
+    }
+}
+
+fn print_list(list: &[AutoStr], out: &mut dyn Write) -> AutoResult<()> {
+    if list.len() == 1 {
+        out.write(format!("{}", list[0].as_str()).as_bytes())?;
+    } else {
+        out.write(b"\n")?;
+        for item in list.iter() {
+            out.write(format!("    {}\n", item.as_str()).as_bytes())?;
+        }
+    }
+    Ok(())
 }
 
 impl Builder for CMakeBuilder {
@@ -58,6 +76,7 @@ impl Builder for CMakeBuilder {
     }
 
     fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+        self.clear_cmake_file()?;
         self.out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
         self.out.write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
         self.out.write(b"\n")?;
@@ -91,23 +110,22 @@ impl Builder for CMakeBuilder {
     fn target(&mut self, target: &Target) -> AutoResult<()> {
         println!("building target {}", target.name);
         let out = self.out.as_mut();
-        let sources = target.srcs.join(" ");
 
-        match target.kind {
-            TargetKind::App => {
-                out.write(format!("add_executable({} {})\n", target.name, sources).as_bytes())?;
-            }
-            TargetKind::Lib => {
-                out.write(format!("add_library({} {})\n", target.name, sources).as_bytes())?;
-            }
-            TargetKind::Dep => {
-                // after download, a dep target is the same as a lib target
-                out.write(format!("add_library({} {})\n", target.name, sources).as_bytes())?;
-            }
-        }
+        let cmd = match target.kind {
+            TargetKind::App => "add_executable",
+            TargetKind::Lib => "add_library",
+            TargetKind::Dep => "add_library",
+        };
+
+        out.write(format!("{}({} ", cmd, target.name).as_bytes())?;
+        print_list(&target.srcs, out)?;
+        out.write(b")\n\n")?;
+
         let incs = target.incs.join(" ");
         if !incs.is_empty() {
-            out.write(format!("target_include_directories({} PUBLIC {})\n", target.name, incs).as_bytes())?;
+            out.write(format!("target_include_directories({} PUBLIC ", target.name).as_bytes())?;
+            print_list(&target.incs, out)?;
+            out.write(b")\n")?;
         }
 
         if target.links.len() > 0 {
