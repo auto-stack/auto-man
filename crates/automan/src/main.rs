@@ -36,11 +36,11 @@ enum Commands {
     Clib { name: String },
     #[command(about = "Pull dependencies and resources")]
     Pull,
-    #[command(about = "Build Project")]
+    #[command(about = "Build Project", alias = "b")]
     Build {
         dir: Option<String>,
     },
-    #[command(about = "Run Executable")]
+    #[command(about = "Run Executable", alias = "r")]
     Run,
     #[command(about = "Clean Project")]
     Clean {

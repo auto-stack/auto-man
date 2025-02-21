@@ -243,13 +243,14 @@ mod tests {
     #[test]
     fn test_target() {
         let code = r#"
-        exe("main") {}
+        app("main") {}
         "#;
         let config = AutoConfig::from_code(code);
         let node = config.unwrap().root.nodes[0].clone();
         let mut target = Target::from_node(node, "main".into());
+        target.check_dirs().unwrap();
         assert_eq!(target.name, "main");
-        assert_eq!(target.dirs, vec![".", "main"]);
+        assert_eq!(target.dirs, vec!["."]);
         assert_eq!(target.kind, TargetKind::App);
 
         // target.scan().unwrap();
