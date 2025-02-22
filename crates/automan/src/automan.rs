@@ -6,6 +6,7 @@ use crate::Pac;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
 use crate::builder::new_builder;
+use autoval::Obj;
 pub struct Automan {
     pac: Pac,
     builder: Box<dyn Builder>,
@@ -54,7 +55,7 @@ impl Automan {
             return Err(format!("No pac.at file found in {}", path).into());
         }
         // 2. Parse pac.at
-        let config = AutoConfig::from_file(config.as_path())?;
+        let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
         println!("Config: {}", config.root);
         let mut pac = Pac::new(config);
         pac.print_targets();

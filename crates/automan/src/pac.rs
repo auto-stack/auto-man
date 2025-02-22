@@ -1,5 +1,6 @@
 use autolang::config::AutoConfig;
 use autoval::AutoStr;
+use std::path::Path;
 use crate::AutoResult;
 use crate::{Target, TargetKind};
 use std::fmt;
@@ -31,6 +32,11 @@ impl Index {
             name: "utils".into(),
             version: "0.0.1".into(),
             repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/utils.git".into(),
+        });
+        map.insert("FreeRTOS".into(), PacInfo {
+            name: "FreeRTOS".into(),
+            version: "0.0.1".into(),
+            repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/FreeRTOS.git".into(),
         });
         Self {
             map,
@@ -104,12 +110,25 @@ impl Pac {
 
     pub fn download_deps(&mut self) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
-        for target in &targets {
+        for target in &mut targets {
             if matches!(target.kind, TargetKind::Dep) {
                 if target.exists() {
                     continue;
                 }
-                let pac = self.download_dep(target)?;
+                self.download_dep(target)?;
+                // get args from dep node props
+                // read pac.at from dep and parse the lib target
+                let dep_config = AutoConfig::from_file(Path::new(format!("deps/{}/pac.at", target.name).as_str()), &target.props)?;
+                let pac = Pac::new(dep_config);
+                // TODO: recursively download dep targets from the dep
+                // get the lib target
+                let dep_name = target.name.clone();
+                let lib_target = pac.targets.into_iter().find(|t| t.name == dep_name);
+                if let Some(lib_target) = lib_target {
+                    // merge the lib target into current dep target
+                    target.merge(&lib_target);
+                    self.targets.push(lib_target);
+                }
             }
         }
         self.targets = targets;
@@ -120,6 +139,7 @@ impl Pac {
     pub fn download_dep(&mut self, dep: &Target) -> AutoResult<()> {
         // 查询索引
         let name = dep.name.clone();
+        println!("looking up dependency from index: {}", name);
         let info = self.index.lookup(&name);
         match info {
             Some(info) => {
@@ -132,7 +152,7 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr) -> AutoResult<Pac> {
+    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr) -> AutoResult<()> {
         println!("Downloading dependency from {}", repo);
         // 1. make deps folder if not exists
         let deps_dir = "deps";
@@ -151,11 +171,7 @@ impl Pac {
             println!("Downloaded dependency {} from {}", name, repo);
         }
         // 3. TODO: checkout wanted version
-        // 4. parse pac.at
-        let code = std::fs::read_to_string(format!("{}/pac.at", path))?;
-        let config = AutoConfig::from_code(&code)?;
-        let pac = Pac::new(config);
-        Ok(pac)
+        Ok(())
     }
 
     pub fn exe_path(&self) -> String {
@@ -183,7 +199,7 @@ impl fmt::Display for Pac {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use autoval::Obj;
     #[test]
     fn test_pac() {
         let code = r#"
@@ -192,7 +208,7 @@ mod tests {
 
         exe("main") {}
         "#;
-        let config = AutoConfig::from_code(code);
+        let config = AutoConfig::from_code(code, &Obj::new());
         match config {
             Ok(config) => {
                 let pac = Pac::new(config);
@@ -215,7 +231,7 @@ mod tests {
         app("main") {}
         lib("lib") {}
         "#;
-        let config = AutoConfig::from_code(code);
+        let config = AutoConfig::from_code(code, &Obj::new());
         let pac = Pac::new(config.unwrap());
         pac.print_targets();
     }

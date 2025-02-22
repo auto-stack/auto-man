@@ -5,6 +5,8 @@ use std::fmt;
 use tabled::Tabled;
 use autolang::transpiler::transpile_c;
 use std::collections::HashSet;
+use autoval::Obj;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
     App, // 应用程序
@@ -63,6 +65,8 @@ pub struct Target {
     #[tabled(skip)]
     pub is_main: bool,
 
+    #[tabled(skip)]
+    pub props: Obj,
 
 }
 
@@ -73,6 +77,8 @@ impl Target {
         if !node.args.is_empty() {
             name = node.args.args[0].auto_str()
         }
+
+        let props = node.props.clone();
 
         let kind = TargetKind::from_str(&node.name);
 
@@ -102,6 +108,7 @@ impl Target {
             incs,
             links,
             skips,
+            props,
             is_resolved: false,
             is_main,
         }
@@ -159,6 +166,16 @@ impl Target {
             }
         }
         false
+    }
+
+    pub fn merge(&mut self, other: &Target) {
+        self.props.merge(&other.props);
+        self.autos.extend(other.autos.clone());
+        self.dirs.extend(other.dirs.clone());
+        self.srcs.extend(other.srcs.clone());
+        self.incs.extend(other.incs.clone());
+        self.links.extend(other.links.clone());
+        self.skips.extend(other.skips.clone());
     }
 
     /**
