@@ -19,3 +19,8 @@ gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", packag
 
 # print table in console
 tabled = "0.18.0"
+
+# logging
+simplelog = "0.12.0"
+log = "0.4.26"
+normalize-path = "0.2.1"

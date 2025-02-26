@@ -2,7 +2,8 @@ use autolang::config::AutoConfig;
 use autoval::AutoStr;
 use std::path::Path;
 use crate::AutoResult;
-use crate::{Target, TargetKind};
+use crate::{Target, TargetKind, TargetStatus, TargetConfig};
+use log::*;
 use std::fmt;
 use std::collections::HashMap;
 use tabled::{
@@ -36,7 +37,23 @@ impl Index {
         map.insert("FreeRTOS".into(), PacInfo {
             name: "FreeRTOS".into(),
             version: "0.0.1".into(),
-            repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/FreeRTOS.git".into(),
+            // repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/FreeRTOS.git".into(),
+            repo: "D:/am/bare/FreeRTOS".into(),
+        });
+        map.insert("osal".into(), PacInfo {
+            name: "osal".into(),
+            version: "0.0.1".into(),
+            repo: "D:/am/bare/osal".into(),
+        });
+        map.insert("kernel".into(), PacInfo {
+            name: "kernel".into(),
+            version: "0.0.1".into(),
+            repo: "D:/am/bare/kernel".into(),
+        });
+        map.insert("common".into(), PacInfo {
+            name: "common".into(),
+            version: "0.0.1".into(),
+            repo: "D:/am/bare/common".into(),
         });
         Self {
             map,
@@ -61,7 +78,7 @@ impl Pac {
         let pac_name = config.name();
         let version = config.version();
         for n in config.root.nodes.into_iter() {
-            let target = Target::from_node(n, pac_name.clone());
+            let target = Target::from(TargetConfig::from_node(n, pac_name.clone()));
             targets.push(target);
         }
         Self {
@@ -83,51 +100,68 @@ impl Pac {
 
     // print targets as a table
     pub fn print_targets(&self) {
-        println!("\n--- pac: {} ---\n", self.name);
+        info!("\n--- pac: {} ---\n", self.name);
+        let mut statuses = vec![];
+        for target in &self.targets {
+            statuses.push(TargetStatus::from(target));
+        }
 
-        let mut table = Table::new(&self.targets);
+        let mut table = Table::new(&statuses);
         table.with(Style::modern_rounded())
             .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
 
         println!("{}", table);
     }
 
+    pub fn get_target(&self, name: impl Into<AutoStr>) -> Option<&Target> {
+        let name = name.into();
+        self.targets.iter().find(|t| t.name == name)
+    }
+
     pub fn resolve(&mut self) -> AutoResult<()> {
         // 1. resolve dependencies: download dep targets recursively if needed
+        info!("downloading dependencies");
         self.download_deps()?;
 
         // 2. link targets with dependencies
+        info!("linking targets with dependencies");
         for target in &mut self.targets {
             target.check_links()?;
         }
 
         // 3. scan targets for its local source files
+        info!("scanning targets for local source files");
         for target in &mut self.targets {
-            target.scan_sources()?;
+            target.scan()?;
         }
         Ok(())
     }
 
     pub fn download_deps(&mut self) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
-        for target in &mut targets {
+        for target in targets.iter_mut() {
             if matches!(target.kind, TargetKind::Dep) {
                 if target.exists() {
                     continue;
                 }
-                self.download_dep(target)?;
+                self.download_dep(&target)?;
                 // get args from dep node props
                 // read pac.at from dep and parse the lib target
-                let dep_config = AutoConfig::from_file(Path::new(format!("deps/{}/pac.at", target.name).as_str()), &target.props)?;
+                info!("reading pac with override props: {:?}", target.props);
+                let dep_config = AutoConfig::from_file(
+                    Path::new(format!("deps/{}/pac.at", target.name).as_str()),
+                    // override dep props
+                    &target.props)?;
                 let pac = Pac::new(dep_config);
                 // TODO: recursively download dep targets from the dep
                 // get the lib target
                 let dep_name = target.name.clone();
-                let lib_target = pac.targets.into_iter().find(|t| t.name == dep_name);
+                let lib_target = pac.get_target(dep_name);
                 if let Some(lib_target) = lib_target {
                     // merge the lib target into current dep target
-                    target.merge(&lib_target);
-                    self.targets.push(lib_target);
+                    info!("target root: {}", target.root);
+                    target.merge(lib_target);
+                    info!("target root updated: {}", target.root);
                 }
             }
         }

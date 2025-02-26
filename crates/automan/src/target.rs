@@ -1,11 +1,14 @@
 use autoval::{AutoStr, Node, Value, ValueKey};
 use crate::AutoResult;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::fmt;
 use tabled::Tabled;
 use autolang::transpiler::transpile_c;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use autoval::Obj;
+use autolang::util::*;
+use log::*;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TargetKind {
@@ -35,55 +38,250 @@ impl fmt::Display for TargetKind {
     }
 }
 
-#[derive(Tabled)]
-pub struct Target {
+
+#[derive(Clone)]
+pub struct Dir {
     pub name: AutoStr,
-    pub kind: TargetKind,
-
-    #[tabled(skip)]
-    pub dirs: Vec<AutoStr>,
-
-    // Auto Source files
-    #[tabled(skip)]
-    pub autos: Vec<AutoStr>,
-    // C Source files
-    #[tabled(skip)]
+    pub root: AutoStr,
+    // TODO: add sub dirs
+    pub dirs: Vec<Dir>,
     pub srcs: Vec<AutoStr>,
-    // C header files
-    #[tabled(skip)]
     pub incs: Vec<AutoStr>,
+    pub skips: HashSet<AutoStr>,
+}
 
-    #[tabled(skip)]
-    pub skips: Vec<AutoStr>,
+fn scan_dir_flat(path: &Path, skips: &HashSet<AutoStr>) -> AutoResult<(HashSet<AutoStr>, bool)> {
+    if !path.is_dir() {
+        return Err(format!("scanning flat dir:{} is not a directory", path.display()).into());
+    }
 
-    #[tabled(skip)]
-    pub links: Vec<AutoStr>,
+    let mut files_found = HashSet::new();
+    let mut headers_found = false;
+    let files = std::fs::read_dir(path)?;
+    for file in files {
+        let file = file?;
+        // check for Auto Source files
+        let path = file.path();
+        if !path.is_file() {
+            continue;
+        }
+        info!("scanned {}", path.display());
+        let file_name = path.file_name();
+        match file_name {
+            Some(file_name) => {    
+                let file_name = AutoStr::from(file_name.to_str().unwrap());
+                if skips.contains(&file_name) {
+                    info!("skipping {}", file_name.as_str());
+                    continue;
+                }
+            }
+            None => {
+                return Err(format!("{} is not a file", path.display()).into());
+            }
+        }
 
-    #[tabled(skip)]
-    pub is_resolved: bool,
+        let file_name = path.file_name().unwrap();
 
-    #[tabled(skip)]
-    pub is_main: bool,
+        let ext = path.extension();
+        let path_str = path.unified();
+        if let Some(ext) = ext {
+            match ext.to_str().unwrap() {
+                "at" => {
+                    if file_name == "pac.at" {
+                        continue;
+                    }
+                    files_found.insert(path_str);
+                }
+                "c" => {
+                    files_found.insert(path_str);
+                 }
+                "h" => {
+                    headers_found = true;
+                 }
+                _ => {
+                    continue;
+                }
+            }
+        }
+    }
+    Ok((files_found, headers_found))
+}
 
-    #[tabled(skip)]
-    pub props: Obj,
+fn scan_specific_srcs(srcs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr>> {
+    let mut succ_srcs = HashSet::new();
+    for src in srcs {
+        let path = Path::new(root.as_str()).join(src.as_str());
+        info!("scanning absolute path src: {}", path.display());
+        // if the path itself is a file, add it to the succ_srcs
+        if path.is_file() {
+            succ_srcs.insert(path.unified());
+        } else { // try to find the path relative to the root dir
+            let rel_path = Path::new(root.as_str()).join(src.as_str());
+            info!("scanning relative path src: {}", rel_path.display());
+            if rel_path.is_file() {
+                succ_srcs.insert(rel_path.unified());
+            }
+        }
+    }
+    Ok(succ_srcs)
+}
+
+// TODO: scan recursively?
+fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr>> {
+    let mut succ_incs = HashSet::new();
+    for inc in incs.iter() {
+        info!("checking inc: {}/{}", root.as_str(), inc.as_str());
+        let path = Path::new(inc.as_str());
+        // if the absolute path itself is a dir, add it to the succ_srcs
+        if path.is_file() {
+            // NOTE: incs should be dirs, not files
+            error!("inc: {} should be directories, not files", path.unified());
+            continue;
+        }
+        if path.is_dir() {
+            info!("got inc dir: {}", path.unified());
+            succ_incs.insert(path.unified());
+        } else { // try to find the path relative to the root dir
+            let rel_path = Path::new(root.as_str()).join(inc.as_str());
+            if rel_path.is_dir() {
+                info!("got inc dir: {}", rel_path.unified());
+                succ_incs.insert(rel_path.unified());
+            }
+        }
+    }
+    Ok(succ_incs)
+}
+
+impl Dir {
+    pub fn from_str(s: AutoStr, parent: AutoStr) -> Self {
+        let name = s;
+        let root = parent;
+        Self { name, root, dirs: Vec::new(), srcs: Vec::new(), incs: Vec::new(), skips: HashSet::new() }
+    }
+
+    pub fn from_node(node: &Node, parent: AutoStr) -> Self {
+        let name = AutoStr::from(node.args.args[0].auto_str());
+        info!("making Dir {}::{}", parent, name);
+        let root = Path::new(parent.as_str()).join(name.as_str()).unified();
+        // TODO read srcs, incs, skips from node
+        let dirs = Vec::new();
+        let srcs = node.props.get_array_of_str("srcs");
+        let incs = node.props.get_array_of_str("incs");
+        let skips = node.props.get_array_of_str("skips").into_iter().map(|s| AutoStr::from(s)).collect::<HashSet<AutoStr>>();
+        info!("dir contents: {}", name);
+        info!("root: {}", root);
+        info!("srcs: {:?}", srcs);
+        info!("incs: {:?}", incs);
+        info!("skips: {:?}", skips);
+        Self { name, root, dirs, srcs, incs, skips }
+    }
+
+    pub fn scan(&mut self) -> AutoResult<()> {
+        let root_path = Path::new(self.root.as_str());
+        let (files, has_headers) = scan_dir_flat(root_path, &self.skips)?;
+        let mut all_srcs = HashSet::new();
+        all_srcs.extend(files);
+
+        // TODO: recursively scan sub dirs
+
+        // scan for additional srcs
+        let succ_srcs = scan_specific_srcs(&self.srcs, &self.root)?;
+        all_srcs.extend(succ_srcs);
+
+        self.srcs = all_srcs.into_iter().collect();
+
+
+        // scan for additional incs
+        let succ_incs = check_incs(&self.incs, &self.root)?;
+        self.incs = succ_incs.into_iter().collect();
+
+        // if current dir has header files, add current dir to incs
+        if has_headers {
+            self.incs.push(self.root.clone());
+        }
+
+        Ok(())
+    }
 
 }
 
+impl PartialEq for Dir {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.root == other.root
+    }
+}
 
-impl Target {
-    pub fn from_node(node: Node, pac_name: AutoStr) -> Self {
+impl Eq for Dir {}
+
+impl Hash for Dir {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.root.hash(state);
+    }
+}
+
+impl fmt::Debug for Dir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl fmt::Display for Dir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = Path::new(self.root.as_str());
+        write!(f, "{}", path.unified())
+    }
+}
+
+pub struct TargetConfig {
+    pub name: AutoStr,
+    pub kind: TargetKind,
+    pub root: AutoStr,
+    pub dirs: Vec<Dir>,
+    pub srcs: Vec<AutoStr>,
+    pub incs: Vec<AutoStr>,
+    pub skips: Vec<AutoStr>,
+    pub links: Vec<AutoStr>,
+    pub pac: AutoStr,
+    pub props: Obj,
+}
+
+impl TargetConfig {
+
+    pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
+        // 现在只支持最简单的当前目录
+        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
+        if name == pac {
+            AutoStr::from(".")
+        } else { // 否则，使用libs/apps/deps中的目录
+            let target_dir = match kind {
+                TargetKind::App => "apps",
+                TargetKind::Lib => "libs",
+                TargetKind::Dep => "deps",
+            };
+            AutoStr::from(format!("{}/{}", target_dir, name))
+        }
+    }
+
+    pub fn from_node(node: Node, pac: AutoStr) -> Self {
         let mut name = AutoStr::new();
         if !node.args.is_empty() {
             name = node.args.args[0].auto_str()
         }
 
-        let props = node.props.clone();
-
         let kind = TargetKind::from_str(&node.name);
 
+        // root dir
+        let root = Self::get_root_dir(&name, &kind, &pac);
+        info!("target config: {} root: {}", name, root);
         // check for dirs
-        let dirs = node.props.get_array_of_str("dirs");
+        let mut dirs = node.props.get_array_of_str("dirs");
+        dirs.push(".".into());
+        let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
+        // check for dir nodes
+        let dir_nodes = node.nodes(&"dir");
+        let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
+        dirs.extend(dirs_from_nodes);
 
         // check for srcs
         let srcs = node.props.get_array_of_str("srcs");
@@ -97,21 +295,70 @@ impl Target {
         // check for skips
         let skips = node.props.get_array_of_str("skips");
 
-        let is_main = name == pac_name;
+        // check for props (dep target only)
+        let props = node.props.clone();
 
         Self {
             kind,
+            pac,
             name,
+            root,
             dirs,
-            autos: Vec::new(),
             srcs,
             incs,
             links,
             skips,
             props,
+        }
+    }
+}
+
+pub struct Target {
+    pub name: AutoStr,
+    pub kind: TargetKind,
+    pub root: AutoStr,
+    pub dirs: HashMap<AutoStr, Dir>,
+    // Auto Source files
+    pub autos: Vec<AutoStr>,
+    // C Source files
+    pub srcs: HashSet<AutoStr>,
+    // C header files/folders
+    pub incs: HashSet<AutoStr>,
+    pub skips: Vec<AutoStr>,
+    pub links: Vec<AutoStr>,
+    pub is_resolved: bool,
+    pub is_main: bool,
+    pub props: Obj,
+}
+
+impl Target {
+    pub fn from(config: TargetConfig) -> Self {
+        let is_main = config.name == config.pac;
+        let mut dirs = HashMap::new();
+        for dir in config.dirs.into_iter() {
+            dirs.insert(dir.name.clone(), dir);
+        }
+        let mut target = Self {
+            name: config.name,
+            kind: config.kind,
+            root: config.root,
+            dirs,
+            autos: Vec::new(),
+            srcs: config.srcs.into_iter().collect(),
+            incs: config.incs.into_iter().collect(),
+            skips: config.skips,
+            links: config.links,
             is_resolved: false,
             is_main,
-        }
+            props: config.props,
+        };
+        target.check_root().unwrap();
+        target
+    }
+
+    pub fn get_dir(&self, name: impl Into<AutoStr>) -> Option<&Dir> {
+        let name = name.into();
+        self.dirs.get(&name)
     }
 
     pub fn has_auto(&self) -> bool {
@@ -120,7 +367,7 @@ impl Target {
 
     pub fn transpile(&mut self) -> AutoResult<()> {
         for path in self.autos.iter() {
-            println!("Transpiling {}", path.as_str());
+            info!("Transpiling {}", path.as_str());
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
@@ -132,36 +379,32 @@ impl Target {
             let h_path = path.as_str().replace(".at", ".h");
             std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
             // add the file to the srcs
-            self.srcs.push(AutoStr::from(c_path));
+            self.srcs.insert(AutoStr::from(c_path));
         }
         Ok(())
     }
 
-    pub fn check_dirs(&mut self) -> AutoResult<()> {
+    pub fn get_root_dir(&self) -> AutoStr {
         // 现在只支持最简单的当前目录
-        let mut dirs = Vec::new();
         // 如果target的名称和pac名称相同，说明是主target，使用当前目录
         if self.is_main {
-            dirs.push(AutoStr::from("."));
+            AutoStr::from(".")
         } else { // 否则，使用libs/apps/deps中的目录
             let target_dir = match self.kind {
                 TargetKind::App => "apps",
                 TargetKind::Lib => "libs",
                 TargetKind::Dep => "deps",
             };
-            dirs.push(AutoStr::from(format!("{}/{}", target_dir, self.name)));
+            AutoStr::from(format!("{}/{}", target_dir, self.name))
         }
-        self.dirs.extend(dirs);
-        println!("dirs: {:?}", self.dirs);
-        Ok(())
     }
 
     pub fn exists(&self) -> bool {
         if self.is_main {
             return true;
         }
-        for dir in self.dirs.iter() {
-            if dir != "." && Path::new(dir.as_str()).is_dir() {
+        for dir in self.dirs.values() {
+            if dir.name != "." && Path::new(dir.to_string().as_str()).is_dir() {
                 return true;
             }
         }
@@ -171,7 +414,16 @@ impl Target {
     pub fn merge(&mut self, other: &Target) {
         self.props.merge(&other.props);
         self.autos.extend(other.autos.clone());
-        self.dirs.extend(other.dirs.clone());
+        // TODO: merge dirs
+        for (k, v) in other.dirs.iter() {
+            let mut dir = v.clone();
+            // check new root dir
+            let path = Path::new(self.root.as_str()).join(dir.root.as_str());
+            if path.is_dir() {
+                dir.root = path.unified();
+            }
+            self.dirs.insert(k.clone(), dir);
+        }
         self.srcs.extend(other.srcs.clone());
         self.incs.extend(other.incs.clone());
         self.links.extend(other.links.clone());
@@ -192,130 +444,71 @@ impl Target {
         Ok(())
     }
 
-    pub fn scan_sources(&mut self) -> AutoResult<()> {
-        // TODO: why do we need to clone dirs?
-        // 1. check dirs
-        self.check_dirs()?;
-
-        // 2. check specified source files
-        let mut succ_srcs = Vec::new();
-        for src in self.srcs.iter() {
-            let path = Path::new(src.as_str());
-            if path.is_file() {
-                succ_srcs.push(src.clone());
-            } else {
-                for dir in self.dirs.iter() {
-                    let path = Path::new(dir.as_str()).join(src.as_str());
-                    if path.is_file() {
-                        let path_str = path.to_str().unwrap();
-                        let path_str = path_str.replace("\\", "/");
-                        succ_srcs.push(AutoStr::from(path_str));
-                        break;
-                    }
-                }
-            }
-        }
-        self.srcs = succ_srcs;
-        println!("existing source files: {:?}", self.srcs);
-
-        // 3. scan dirs for existing source files
-        let dirs = self.dirs.clone();
-        println!("--- {} --- scanning dirs {:?}", self.name, dirs);
-        let mut succ_dirs = Vec::new();
-        for dir in dirs {
-            // if dir scan fails, 
-            match self.scan_srcs_in_dir(&dir) {
-                Ok(_) => {
-                    succ_dirs.push(dir);
-                }
-                Err(e) => {
-                    println!("{}", e);
-                }
-            }
-        }
-
-        // TODO: reduce include files into include directories
-        let mut incs = HashSet::new();
-        for inc in self.incs.iter() {
-            let path = Path::new(inc.as_str());
-            println!("chekcing inc: {}", path.display());
-            if path.is_file() {
-                incs.insert(AutoStr::from(path.parent().unwrap().to_str().unwrap()));
-            } else if path.is_dir() {
-                incs.insert(AutoStr::from(path.to_str().unwrap()));
-            } else {
-                println!("{} is not a file or directory", path.display());
-                // try to find the file in the dirs
-                for dir in self.dirs.iter() {
-                    let path = Path::new(dir.as_str()).join(inc.as_str());
-                    println!("checking inc in path: {}", path.display());
-                    if path.is_file() {
-                        let path_str = path.parent().unwrap().to_str().unwrap();
-                        let path_str = path_str.replace("\\", "/");
-                        incs.insert(AutoStr::from(path_str));
-                        break;
-                    } else if path.is_dir() {
-                        let path_str = path.to_str().unwrap();
-                        let path_str = path_str.replace("\\", "/");
-                        incs.insert(AutoStr::from(path_str));
-                        break;
-                    }
-                }
-            }
-        }
-        self.incs = incs.into_iter().collect();
-        println!("existing include files: {:?}", self.incs);
+    fn check_root(&mut self) -> AutoResult<()> {
+        let root = self.get_root_dir();
+        info!("{} root: {}", self.name, root.as_str());
+        self.root = root;
         Ok(())
     }
 
-    // Scan the target directory for source/include files
-    pub fn scan_srcs_in_dir(&mut self, dir: &str) -> AutoResult<()> {
-        let dir = Path::new(dir);
-        if !dir.is_dir() {
-            return Err(format!("{} is not a directory", dir.display()).into());
-        }
-        let files = dir.read_dir()?;
-        for file in files {
-            let file = file?;
-            // check for Auto Source files
-            let path = file.path();
-            if !path.is_file() {
-                continue;
-            }
-            println!("{}", path.display());
-            let file_name = AutoStr::from(path.file_name().unwrap().to_str().unwrap());
-            if self.skips.contains(&file_name) {
-                println!("skipping {}", file_name.as_str());
-                continue;
-            }
-
-            let ext = path.extension();
-            let file_name = path.file_stem();
-            let path_str = AutoStr::from(path.to_str().unwrap());
-            // replace \ with /
-            let path_str = path_str.replace("\\", "/");
-            if let Some(ext) = ext {
-                match ext.to_str().unwrap() {
-                    "at" => {
-                        if let Some(file_name) = file_name {
-                            if let Some(name) = file_name.to_str() {
-                                if !name.eq("pac") {
-                                    self.autos.push(path_str);
-                                }
-                            }
-                        }
-                    }
-                    "c" => {
-                        self.srcs.push(path_str);
-                    }
-                    "h" => {
-                        self.incs.push(path_str);
-                    }
-                    _ => {}
-                }
+    fn check_dirs(&mut self) -> AutoResult<()> {
+        // 1. check prop `dirs` for existing dirs
+        for dir in self.dirs.values() {
+            let path = dir.to_string();
+            let path = Path::new(path.as_str());
+            if !path.is_dir() {
+                return Err(format!("checking dir: {} is not a directory", path.display()).into());
             }
         }
         Ok(())
+    }
+
+    pub fn scan(&mut self) -> AutoResult<()> {
+        info!("scanning sources for {}", self.name);
+        // TODO: why do we need to clone dirs?
+        // 1. check dirs for existence
+        self.check_dirs()?;
+
+        // 2. check for target level additional srcs/incs
+        let srcs = self.srcs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
+        let succ_srcs = scan_specific_srcs(&srcs, &self.root)?;
+        self.srcs = succ_srcs.into_iter().collect();
+
+        let incs = self.incs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
+        let succ_incs = check_incs(&incs, &self.root)?;
+        self.incs = succ_incs.into_iter().collect();
+
+        // 3. for each dir, scan for source files, include dirs
+        for dir in self.dirs.values_mut() {
+            info!("scanning dir: {}", dir.to_string());
+            dir.scan()?;
+            self.srcs.extend(dir.srcs.clone());
+            info!("extended srcs: {:?}", self.srcs);
+            self.incs.extend(dir.incs.clone());
+            info!("extended incs: {:?}", self.incs);
+        }
+
+        Ok(())
+    }
+
+}
+
+#[derive(Tabled)]
+pub struct TargetStatus {
+    pub name: AutoStr,
+    pub kind: AutoStr,
+    pub root: AutoStr,
+    pub dirs: AutoStr,
+}
+
+impl TargetStatus {
+    pub fn from(target: &Target) -> Self {
+        Self {
+            name: target.name.clone(),
+            kind: target.kind.to_string().into(),
+            root: target.root.clone(),
+            dirs: target.dirs.values().map(|d| d.to_string()).collect::<Vec<String>>().join(", ").into(),
+        }
     }
 }
 
@@ -323,18 +516,80 @@ impl Target {
 mod tests {
     use super::*;
     use autolang::config::AutoConfig;
+    use crate::Pac;
+
+    #[test]
+    fn test_dirs() {
+        let dir = Dir::from_str("main".into(), ".".into());
+        assert_eq!(dir.to_string(), "./main");
+
+    }
+
+    #[test]
+    fn test_dir_from_node_with_main() {
+        let code = r#"
+        app("main") {
+            dir("src") {
+                src("main.at")
+            }
+            dir("util") {
+                src("util.at")
+            }
+        }
+        "#;
+        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let app_node = config.root.nodes[0].clone();
+        let target = Target::from(TargetConfig::from_node(app_node, "main".into()));
+        let root = target.root.clone();
+        assert_eq!(root, ".");
+
+        let src_dir = target.get_dir("src");
+        if let Some(dir) = src_dir {
+            assert_eq!(dir.to_string(), "./src");
+            assert_eq!(dir.root, root);
+            assert_eq!(dir.name, "src");
+        } else {
+            panic!("src_dir is None");
+        }
+
+        let util_dir = target.get_dir("util");
+        if let Some(dir) = util_dir {
+            assert_eq!(dir.to_string(), "./util");
+            assert_eq!(dir.root, root);
+            assert_eq!(dir.name, "util");
+        } else {
+            panic!("util_dir is None");
+        }
+    }
+
+    #[test]
+    fn test_dir_from_node_with_demo() {
+        let code = r#"
+        name: "math"
+
+        app("demo") {
+        }
+        "#;
+        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let pac = Pac::new(config);
+        let target = pac.get_target("demo").unwrap();
+        let root = target.root.clone();
+        assert_eq!(root, "apps/demo");
+    }
+
+    
 
     #[test]
     fn test_target() {
         let code = r#"
         app("main") {}
         "#;
-        let config = AutoConfig::from_code(code);
-        let node = config.unwrap().root.nodes[0].clone();
-        let mut target = Target::from_node(node, "main".into());
-        target.check_dirs().unwrap();
+        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let node = config.root.nodes[0].clone();
+        let target = Target::from(TargetConfig::from_node(node, "main".into()));
+        let root_dir = target.get_root_dir();
+        assert_eq!(root_dir, ".");
         assert_eq!(target.name, "main");
-        assert_eq!(target.dirs, vec!["."]);
         assert_eq!(target.kind, TargetKind::App);
 
         // target.scan().unwrap();
@@ -343,6 +598,16 @@ mod tests {
         // assert_eq!(target.incs, vec!["main.h"]);
     }
 
+    #[test]
+    fn test_current_dir() {
+        use autolang::util::*;
+        let root = "apps/demo";
+        let cur = ".";
+        let path = Path::new(root).join(cur);
+        let path = path.unified();
+        println!("{}", path);
+        assert_eq!(path, "apps/demo");
+    }
 
 }
 

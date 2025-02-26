@@ -4,7 +4,7 @@ use autoval::AutoStr;
 use std::io::Write;
 use std::path::Path;
 use std::fs::File;
-
+use std::collections::HashSet;
 
 pub trait Builder {
     fn build(&mut self, pac: &Pac) -> AutoResult<()>;
@@ -52,12 +52,16 @@ impl CMakeBuilder {
     }
 }
 
-fn print_list(list: &[AutoStr], out: &mut dyn Write) -> AutoResult<()> {
-    if list.len() == 1 {
-        out.write(format!("{}", list[0].as_str()).as_bytes())?;
+fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
+    // sort the list
+    let mut sorted_list = list.iter().collect::<Vec<_>>();
+    sorted_list.sort();
+
+    if sorted_list.len() == 1 {
+        out.write(format!("{}", sorted_list[0].as_str()).as_bytes())?;
     } else {
         out.write(b"\n")?;
-        for item in list.iter() {
+        for item in sorted_list.iter() {
             out.write(format!("    {}\n", item.as_str()).as_bytes())?;
         }
     }
@@ -117,13 +121,20 @@ impl Builder for CMakeBuilder {
             TargetKind::Dep => "add_library",
         };
 
+        let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
+
         out.write(format!("{}({} ", cmd, target.name).as_bytes())?;
-        print_list(&target.srcs, out)?;
+        if is_header_only {
+            out.write(b"INTERFACE")?;
+        } else {
+            print_list(&target.srcs, out)?;
+        }
         out.write(b")\n\n")?;
 
-        let incs = target.incs.join(" ");
+        let incs = target.incs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
         if !incs.is_empty() {
-            out.write(format!("target_include_directories({} PUBLIC ", target.name).as_bytes())?;
+            let attr = if is_header_only { "INTERFACE" } else { "PUBLIC" };
+            out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
             print_list(&target.incs, out)?;
             out.write(b")\n")?;
         }

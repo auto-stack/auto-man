@@ -12,6 +12,9 @@ pub use pac::*;
 pub use target::*;
 pub use builder::*;
 
+use log::*;
+use simplelog::*;
+use std::fs::File;
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
 
@@ -48,29 +51,38 @@ enum Commands {
     },
 }
 
+fn init_logger() {
+    CombinedLogger::init(
+        vec![
+            TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("automan.log").unwrap()),
+        ]
+    ).unwrap();
+}
 
 fn main() -> Result<(), AutoError> {
-    println!("Hello, world!");
+    init_logger();
+    info!("Hello, I'm Automan!");
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::App { name }) => {
-            println!("Creating new app package {}", name);
+            info!("Creating new app package {}", name);
             Automan::create_app(&name)?;
         }
         Some(Commands::Lib { name }) => {
-            println!("Creating new library package {}", name);
+            info!("Creating new library package {}", name);
             Automan::create_lib(&name)?;
         }
         Some(Commands::Capp { name }) => {
-            println!("Creating new C app package {}", name);
+            info!("Creating new C app package {}", name);
             Automan::create_capp(&name)?;
         }
         Some(Commands::Clib { name }) => {
-            println!("Creating new C library package {}", name);
+            info!("Creating new C library package {}", name);
             Automan::create_clib(&name)?;
         }
         Some(Commands::Pull) => {
-            println!("Pulling dependencies and resources");
+            info!("Pulling dependencies and resources");
         }
         Some(Commands::Build { dir }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };

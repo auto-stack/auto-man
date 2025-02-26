@@ -7,6 +7,7 @@ use crate::builder::Builder;
 use crate::builder::BuilderKind;
 use crate::builder::new_builder;
 use autoval::Obj;
+use log::*;
 pub struct Automan {
     pac: Pac,
     builder: Box<dyn Builder>,
@@ -56,7 +57,7 @@ impl Automan {
         }
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
-        println!("Config: {}", config.root);
+        info!("Config: {}", config.root);
         let mut pac = Pac::new(config);
         pac.print_targets();
         // 3. Resolve targets in the pac, including:
@@ -64,6 +65,7 @@ impl Automan {
         // 3.2. Link targets with dependencies
         // 3.3. Scan targets for its local source files
         pac.resolve()?;
+        pac.print_targets();
         Ok(pac)
     }
 
