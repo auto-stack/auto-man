@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/*"]
 resolver = "2"
-default-run = "automan"
+default-run = "auto-man"
 
 [workspace.dependencies]
 clap = { version = "4.5.17", features = ["derive"] }
@@ -10,10 +10,10 @@ rust-embed = { version = "8.5.0", features = ["compression"] }
 # autolang = { git = "https://gitee.com/auto-stack/auto-lang"}
 autolang = { path = "../auto-lang/crates/autolang" }
 autoval = { path = "../auto-lang/crates/autoval" }
-autoui = { git = "https://gitee.com/auto-stack/auto-ui" }
+# utoui = { git = "https://gitee.com/auto-stack/auto-ui" }
 
 # switch to this dynamic lib for debug mode
-gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", package = "gpui-dynamic" }
+# gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", package = "gpui-dynamic" }
 # switch to this static lib for release mode
 # gpui = { git = "https://github.com/zed-industries/zed" }
 

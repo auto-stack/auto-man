@@ -1,5 +1,5 @@
 use autolang::config::AutoConfig;
-use autoval::AutoStr;
+use autoval::{AutoStr, Obj};
 use std::path::Path;
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus, TargetConfig};
@@ -27,37 +27,23 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new() -> Self {
+    pub fn load(path: AutoStr) -> AutoResult<Self> {
+        let path = Path::new(path.as_str());
         let mut map = HashMap::new();
-        map.insert("utils".into(), PacInfo {
-            name: "utils".into(),
-            version: "0.0.1".into(),
-            repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/utils.git".into(),
-        });
-        map.insert("FreeRTOS".into(), PacInfo {
-            name: "FreeRTOS".into(),
-            version: "0.0.1".into(),
-            // repo: "ssh://git@gitlab.boevxa.lan:2424/9100004/FreeRTOS.git".into(),
-            repo: "D:/am/bare/FreeRTOS".into(),
-        });
-        map.insert("osal".into(), PacInfo {
-            name: "osal".into(),
-            version: "0.0.1".into(),
-            repo: "D:/am/bare/osal".into(),
-        });
-        map.insert("kernel".into(), PacInfo {
-            name: "kernel".into(),
-            version: "0.0.1".into(),
-            repo: "D:/am/bare/kernel".into(),
-        });
-        map.insert("common".into(), PacInfo {
-            name: "common".into(),
-            version: "0.0.1".into(),
-            repo: "D:/am/bare/common".into(),
-        });
-        Self {
-            map,
+        if !path.exists() {
+            return Err(format!("index file {} not found", path.display()).into());
         }
+        let code = std::fs::read_to_string(path)?;
+        let config = AutoConfig::from_code(&code, &Obj::new())?;
+        // config is a bunch of index nodes
+        let root = config.root;
+        root.nodes.iter().filter(|n| n.name == "pac").for_each(|n| {
+            let name = n.id();
+            let version = n.get_prop("version").auto_str();
+            let repo = n.get_prop("repo").auto_str();
+            map.insert(name.clone(), PacInfo { name, repo, version });
+        });
+        Ok(Index { map })
     }
 
     pub fn lookup(&self, name: &AutoStr) -> Option<&PacInfo> {
@@ -72,6 +58,9 @@ pub struct Pac {
     pub index: Index,
 }
 
+// TODO: read from default locations by OS and Env
+const INDEX_PATH: &str = "D:/am/index.at";
+
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
         let mut targets = vec![];
@@ -85,7 +74,7 @@ impl Pac {
             name: pac_name,
             version,
             targets,
-            index: Index::new(),
+            index: Index::load(INDEX_PATH.into()).unwrap(),
         }
     }
 
