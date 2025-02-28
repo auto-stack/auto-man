@@ -1,12 +1,12 @@
 use std::path::Path;
 use crate::AutoError;
 use crate::asset::Templates;
-use autolang::config::AutoConfig;
+use auto_lang::config::AutoConfig;
 use crate::Pac;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
 use crate::builder::new_builder;
-use autoval::Obj;
+use auto_val::Obj;
 use log::*;
 pub struct Automan {
     pac: Pac,

@@ -4,8 +4,8 @@ use std::fs::{create_dir_all, File};
 use std::path::Path;
 use std::io::Write;
 use crate::AutoError;
-use autolang::scope::Universe;
-use autoval::Value;
+use auto_lang::scope::Universe;
+use auto_val::Value;
 
 #[derive(Embed)]
 #[folder = "assets/templates"]
@@ -33,7 +33,7 @@ impl Templates {
                 // 替换模板中的 ${name} 为 pac_name
                 let mut universe = Universe::new();
                 universe.set_global("name", Value::from(pac_name));
-                let auto_code = autolang::eval_template(&code, universe);
+                let auto_code = auto_lang::eval_template(&code, universe);
                 let result = auto_code.unwrap().result;
                 let code = result.repr();
                 println!("code: {}", code);

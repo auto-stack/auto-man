@@ -1,5 +1,5 @@
-use autolang::config::AutoConfig;
-use autoval::{AutoStr, Obj};
+use auto_lang::config::AutoConfig;
+use auto_val::{AutoStr, Obj};
 use std::path::Path;
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus, TargetConfig};
@@ -222,7 +222,7 @@ impl fmt::Display for Pac {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use autoval::Obj;
+    use auto_val::Obj;
     #[test]
     fn test_pac() {
         let code = r#"

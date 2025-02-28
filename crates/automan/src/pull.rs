@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use autolang::parse;
-    use autolang::util::pretty;
+    use auto_lang::parse;
+    use auto_lang::util::pretty;
 
     #[test]
     fn test_read_config() {

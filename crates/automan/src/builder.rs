@@ -1,6 +1,6 @@
 use crate::{Pac, Target, TargetKind};
 use crate::AutoResult;
-use autoval::AutoStr;
+use auto_val::AutoStr;
 use std::io::Write;
 use std::path::Path;
 use std::fs::File;
@@ -182,7 +182,7 @@ impl MSVCBuilder {
 }
 
 impl Builder for MSVCBuilder {
-    fn build(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn build(&mut self, _pac: &Pac) -> AutoResult<()> {
         println!("Building with MSVC");
         Ok(())
     }

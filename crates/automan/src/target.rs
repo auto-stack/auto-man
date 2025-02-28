@@ -1,13 +1,13 @@
-use autoval::{AutoStr, Node, Value, ValueKey};
+use auto_val::{AutoStr, Node};
 use crate::AutoResult;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::fmt;
 use tabled::Tabled;
-use autolang::transpiler::transpile_c;
+use auto_lang::transpiler::transpile_c;
 use std::collections::{HashSet, HashMap};
-use autoval::Obj;
-use autolang::util::*;
+use auto_val::Obj;
+use auto_lang::util::*;
 use log::*;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -437,7 +437,7 @@ impl Target {
         // 2. If the targets links to a dep target, recursively resolve the linked target
         if !self.links.is_empty() {
             for link in self.links.iter() {
-                let link = link.as_str();
+                let _ = link.as_str();
                 // TODO:
             }
         }
@@ -515,7 +515,7 @@ impl TargetStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use autolang::config::AutoConfig;
+    use auto_lang::config::AutoConfig;
     use crate::Pac;
 
     #[test]
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn test_current_dir() {
-        use autolang::util::*;
+        use auto_lang::util::*;
         let root = "apps/demo";
         let cur = ".";
         let path = Path::new(root).join(cur);

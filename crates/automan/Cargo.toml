@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+auto-lang = { workspace = true }
+auto-val = { workspace = true }
 clap = { workspace = true }
-autolang = { workspace = true }
-autoval = { workspace = true }
 rust-embed = { workspace = true }
 tabled = { workspace = true }
 simplelog = { workspace = true }
