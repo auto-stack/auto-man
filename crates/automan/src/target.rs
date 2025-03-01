@@ -160,7 +160,7 @@ impl Dir {
     }
 
     pub fn from_node(node: &Node, parent: AutoStr) -> Self {
-        let name = AutoStr::from(node.args.args[0].auto_str());
+        let name = AutoStr::from(node.args.args[0].to_astr());
         info!("making Dir {}::{}", parent, name);
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
         // TODO read srcs, incs, skips from node
@@ -174,6 +174,16 @@ impl Dir {
         info!("incs: {:?}", incs);
         info!("skips: {:?}", skips);
         Self { name, root, dirs, srcs, incs, skips }
+    }
+
+    pub fn to_node(&self) -> Node {
+        let mut node = Node::new("dir");
+        node.args.add_pos(self.name.clone());
+        node.props.set("root", self.root.clone());
+        node.props.set("srcs", self.srcs.clone());
+        node.props.set("incs", self.incs.clone());
+        node.props.set("skips", self.skips.clone().into_iter().collect::<Vec<AutoStr>>());
+        node
     }
 
     pub fn scan(&mut self) -> AutoResult<()> {
@@ -266,7 +276,7 @@ impl TargetConfig {
     pub fn from_node(node: Node, pac: AutoStr) -> Self {
         let mut name = AutoStr::new();
         if !node.args.is_empty() {
-            name = node.args.args[0].auto_str()
+            name = node.args.args[0].to_astr()
         }
 
         let kind = TargetKind::from_str(&node.name);
@@ -324,11 +334,15 @@ pub struct Target {
     pub srcs: HashSet<AutoStr>,
     // C header files/folders
     pub incs: HashSet<AutoStr>,
-    pub skips: Vec<AutoStr>,
+    pub skips: HashSet<AutoStr>,
     pub links: Vec<AutoStr>,
     pub is_resolved: bool,
     pub is_main: bool,
     pub props: Obj,
+}
+
+pub fn set_to_vec<T>(set: HashSet<T>) -> Vec<T> {
+    set.into_iter().collect()
 }
 
 impl Target {
@@ -346,7 +360,7 @@ impl Target {
             autos: Vec::new(),
             srcs: config.srcs.into_iter().collect(),
             incs: config.incs.into_iter().collect(),
-            skips: config.skips,
+            skips: config.skips.into_iter().collect(),
             links: config.links,
             is_resolved: false,
             is_main,
@@ -354,6 +368,19 @@ impl Target {
         };
         target.check_root().unwrap();
         target
+    }
+    
+    pub fn to_node(&self) -> Node {
+        let mut node = Node::new("target");
+        node.args.add_pos(self.name.clone());
+        node.props.set("root", self.root.clone());
+        node.props.set("srcs", set_to_vec(self.srcs.clone()));
+        node.props.set("incs", set_to_vec(self.incs.clone()));
+        node.props.set("skips", set_to_vec(self.skips.clone()));
+        for dir in self.dirs.values() {
+            node.add_kid(dir.to_node());
+        }
+        node
     }
 
     pub fn get_dir(&self, name: impl Into<AutoStr>) -> Option<&Dir> {

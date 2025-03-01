@@ -14,7 +14,7 @@ pub use builder::*;
 
 use log::*;
 use simplelog::*;
-use std::fs::File;
+// use std::fs::File;
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
 
@@ -55,7 +55,7 @@ fn init_logger() {
     CombinedLogger::init(
         vec![
             TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("automan.log").unwrap()),
+            // WriteLogger::new(LevelFilter::Info, Config::default(), File::create("automan.log").unwrap()),
         ]
     ).unwrap();
 }

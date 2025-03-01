@@ -1,5 +1,5 @@
 use auto_lang::config::AutoConfig;
-use auto_val::{AutoStr, Obj};
+use auto_val::{AutoStr, Obj, Node};
 use std::path::Path;
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus, TargetConfig};
@@ -39,8 +39,8 @@ impl Index {
         let root = config.root;
         root.nodes.iter().filter(|n| n.name == "pac").for_each(|n| {
             let name = n.id();
-            let version = n.get_prop("version").auto_str();
-            let repo = n.get_prop("repo").auto_str();
+            let version = n.get_prop("version").to_astr();
+            let repo = n.get_prop("repo").to_astr();
             map.insert(name.clone(), PacInfo { name, repo, version });
         });
         Ok(Index { map })
@@ -210,6 +210,18 @@ impl Pac {
             }
         }
         format!("build/{}/{}", mode, self.name)
+    }
+}
+
+impl Pac {
+    pub fn to_node(&self) -> Node {
+        let mut root = Node::new("root");
+        root.set_prop("name", self.name.clone());
+        root.set_prop("version", self.version.clone());
+        for target in &self.targets {
+            root.add_kid(target.to_node());
+        }
+        root
     }
 }
 
