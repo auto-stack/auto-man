@@ -448,7 +448,7 @@ impl Target {
         !self.autos.is_empty()
     }
 
-    pub fn transpile(&mut self) -> AutoResult<()> {
+    pub fn transpile_auto(&mut self) -> AutoResult<()> {
         for path in self.autos.iter() {
             info!("Transpiling {}", path.as_str());
             // read the file

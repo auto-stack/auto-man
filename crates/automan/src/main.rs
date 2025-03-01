@@ -37,8 +37,8 @@ enum Commands {
     Capp { name: String },
     #[command(about = "New C Library Package")]
     Clib { name: String },
-    #[command(about = "Pull dependencies and resources")]
-    Pull,
+    #[command(about = "Scan Dependencies")]
+    Scan,
     #[command(about = "Build Project", alias = "b")]
     Build {
         dir: Option<String>,
@@ -81,16 +81,20 @@ fn main() -> Result<(), AutoError> {
             info!("Creating new C library package {}", name);
             Automan::create_clib(&name)?;
         }
-        Some(Commands::Pull) => {
-            info!("Pulling dependencies and resources");
+        Some(Commands::Scan) => {
+            info!("Scanning dependencies");
+            let mut am = Automan::new(".")?;
+            am.scan()?;
         }
         Some(Commands::Build { dir }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
             let mut am = Automan::new(&dir)?;
+            am.scan()?;
             am.build()?;
         }
         Some(Commands::Run) => {
             let mut am = Automan::new(".")?;
+            // TODO: add build process before running when user specified a '-b' flag
             am.run()?;
         }
         Some(Commands::Clean { dir }) => {

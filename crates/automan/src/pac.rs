@@ -15,6 +15,7 @@ use tabled::{
         Color,
     },
 };
+use auto_atom::Atom;
 
 pub struct PacInfo {
     pub name: AutoStr,
@@ -78,10 +79,10 @@ impl Pac {
         }
     }
 
-    pub fn transpile(&mut self) -> AutoResult<()> {
+    pub fn transpile_autot(&mut self) -> AutoResult<()> {
         for target in &mut self.targets {
             if target.has_auto() {
-                target.transpile()?;
+                target.transpile_auto()?;
             }
         }
         Ok(())
@@ -223,6 +224,10 @@ impl Pac {
         }
         root
     }
+
+    pub fn to_atom(&self) -> Atom {
+        Atom::node(self.to_node())
+    }
 }
 
 impl fmt::Display for Pac {
@@ -269,5 +274,7 @@ mod tests {
         let config = AutoConfig::from_code(code, &Obj::new());
         let pac = Pac::new(config.unwrap());
         pac.print_targets();
+        let atom = pac.to_atom();
+        println!("{}", atom);
     }
 }

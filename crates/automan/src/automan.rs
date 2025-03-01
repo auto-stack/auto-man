@@ -58,14 +58,9 @@ impl Automan {
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
         info!("Config: {}", config.root);
-        let mut pac = Pac::new(config);
+        let pac = Pac::new(config);
         pac.print_targets();
-        // 3. Resolve targets in the pac, including:
-        // 3.1. Resolve dependencies
-        // 3.2. Link targets with dependencies
-        // 3.3. Scan targets for its local source files
-        pac.resolve()?;
-        pac.print_targets();
+    
         Ok(pac)
     }
 
@@ -78,16 +73,27 @@ impl Automan {
         Ok(())
     }
 
+    pub fn scan(&mut self) -> Result<(), AutoError> {
+        // 3. Resolve targets in the pac, including:
+        // 3.1. Resolve dependencies
+        // 3.2. Link targets with dependencies
+        // 3.3. Scan targets for its local source files
+        self.pac.resolve()?;
+        self.pac.print_targets();
+        self.pac.print_ason();
+        Ok(())
+    }
+
     pub fn build(&mut self) -> Result<(), AutoError> {
         // 1. Transpile auto code to c code
-        self.transpile()?;
+        self.transpile_auto()?;
         // 2. Build the project with a specific builder
         self.builder.build(&self.pac)?;
         Ok(())
     }
 
-    pub fn transpile(&mut self) -> Result<(), AutoError> {
-        self.pac.transpile()?;
+    pub fn transpile_auto(&mut self) -> Result<(), AutoError> {
+        self.pac.transpile_autot()?;
         Ok(())
     }
 
