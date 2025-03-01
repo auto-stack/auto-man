@@ -153,9 +153,9 @@ fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr
 }
 
 impl Dir {
-    pub fn from_str(s: AutoStr, parent: AutoStr) -> Self {
-        let name = s;
-        let root = parent;
+    pub fn from_str(name: AutoStr, parent: AutoStr) -> Self {
+        let name = name;
+        let root = Path::new(parent.as_str()).join(name.as_str()).unified();
         Self { name, root, dirs: Vec::new(), srcs: Vec::new(), incs: Vec::new(), skips: HashSet::new() }
     }
 
@@ -355,6 +355,21 @@ impl<T: Hash + Eq> VecExt<T> for Vec<T> {
     }
 }
 
+pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
+    // 现在只支持最简单的当前目录
+    // 如果target的名称和pac名称相同，说明是主target，使用当前目录
+    if name == pac {
+        AutoStr::from(".")
+    } else { // 否则，使用libs/apps/deps中的目录
+        let target_dir = match kind {
+            TargetKind::App => "apps",
+            TargetKind::Lib => "libs",
+            TargetKind::Dep => "deps",
+        };
+        AutoStr::from(format!("{}/{}", target_dir, name))
+    }
+}
+
 impl Target {
     pub fn from(node: Node, pac: AutoStr) -> Self {
         // name
@@ -367,7 +382,7 @@ impl Target {
         let kind = TargetKind::from_str(&node.name);
 
         // root
-        let root = Self::get_root_dir(&name, &kind, &pac);
+        let root = get_root_dir(&name, &kind, &pac);
         info!("target config: {} root: {}", name, root);
 
         // dirs
@@ -411,21 +426,6 @@ impl Target {
         }
     }
     
-    pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
-        // 现在只支持最简单的当前目录
-        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
-        if name == pac {
-            AutoStr::from(".")
-        } else { // 否则，使用libs/apps/deps中的目录
-            let target_dir = match kind {
-                TargetKind::App => "apps",
-                TargetKind::Lib => "libs",
-                TargetKind::Dep => "deps",
-            };
-            AutoStr::from(format!("{}/{}", target_dir, name))
-        }
-    }
-
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("target");
         node.args.add_pos(self.name.clone());
@@ -466,8 +466,6 @@ impl Target {
         }
         Ok(())
     }
-
-
 
     pub fn exists(&self) -> bool {
         if self.is_main {
@@ -591,8 +589,7 @@ mod tests {
     #[test]
     fn test_dirs() {
         let dir = Dir::from_str("main".into(), ".".into());
-        assert_eq!(dir.to_string(), "./main");
-
+        assert_eq!(dir.to_string(), "main");
     }
 
     #[test]
@@ -609,14 +606,14 @@ mod tests {
         "#;
         let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
         let app_node = config.root.nodes[0].clone();
-        let target = Target::from(TargetConfig::from_node(app_node, "main".into()));
+        let target = Target::from(app_node, "main".into());
         let root = target.root.clone();
         assert_eq!(root, ".");
 
         let src_dir = target.get_dir("src");
         if let Some(dir) = src_dir {
-            assert_eq!(dir.to_string(), "./src");
-            assert_eq!(dir.root, root);
+            assert_eq!(dir.to_string(), "src");
+            assert_eq!(dir.root, "src");
             assert_eq!(dir.name, "src");
         } else {
             panic!("src_dir is None");
@@ -624,8 +621,8 @@ mod tests {
 
         let util_dir = target.get_dir("util");
         if let Some(dir) = util_dir {
-            assert_eq!(dir.to_string(), "./util");
-            assert_eq!(dir.root, root);
+            assert_eq!(dir.to_string(), "util");
+            assert_eq!(dir.root, "util");
             assert_eq!(dir.name, "util");
         } else {
             panic!("util_dir is None");
@@ -656,8 +653,8 @@ mod tests {
         "#;
         let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
         let node = config.root.nodes[0].clone();
-        let target = Target::from(TargetConfig::from_node(node, "main".into()));
-        let root_dir = target.get_root_dir();
+        let target = Target::from(node, "main".into());
+        let root_dir = target.root.clone();
         assert_eq!(root_dir, ".");
         assert_eq!(target.name, "main");
         assert_eq!(target.kind, TargetKind::App);

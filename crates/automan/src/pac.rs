@@ -241,7 +241,7 @@ mod tests {
         name: "test"
         version: "0.0.1"
 
-        exe("main") {}
+        app("main") {}
         "#;
         let config = AutoConfig::from_code(code, &Obj::new());
         match config {
