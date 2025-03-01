@@ -345,31 +345,87 @@ pub fn set_to_vec<T>(set: HashSet<T>) -> Vec<T> {
     set.into_iter().collect()
 }
 
+trait VecExt<T> {
+    fn to_set(self) -> HashSet<T>;
+}
+
+impl<T: Hash + Eq> VecExt<T> for Vec<T> {
+    fn to_set(self) -> HashSet<T> {
+        self.into_iter().collect()
+    }
+}
+
 impl Target {
-    pub fn from(config: TargetConfig) -> Self {
-        let is_main = config.name == config.pac;
-        let mut dirs = HashMap::new();
-        for dir in config.dirs.into_iter() {
-            dirs.insert(dir.name.clone(), dir);
+    pub fn from(node: Node, pac: AutoStr) -> Self {
+        // name
+        let mut name = AutoStr::new();
+        if !node.args.is_empty() {
+            name = node.args.args[0].to_astr()
         }
-        let mut target = Self {
-            name: config.name,
-            kind: config.kind,
-            root: config.root,
+
+        // kind
+        let kind = TargetKind::from_str(&node.name);
+
+        // root
+        let root = Self::get_root_dir(&name, &kind, &pac);
+        info!("target config: {} root: {}", name, root);
+
+        // dirs
+        let mut dirs = node.props.get_array_of_str("dirs");
+        dirs.push(".".into());
+        let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
+        // check for dir nodes
+        let dir_nodes = node.nodes(&"dir");
+        let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
+        dirs.extend(dirs_from_nodes);
+        // convert vec to hashmap
+        let dirs = dirs.into_iter().map(|d| (d.name.clone(), d)).collect::<HashMap<AutoStr, Dir>>();
+ 
+
+        // check for srcs
+        let srcs = node.props.get_array_of_str("srcs").to_set();
+        // check for incs
+        let incs = node.props.get_array_of_str("incs").to_set();
+        // check for links
+        let links = node.props.get_array_of_str("links");
+        // check for skips
+        let skips = node.props.get_array_of_str("skips").to_set();
+        // check for props (dep target only)
+        let props = node.props.clone();
+
+        let is_main = name == pac;
+
+        Self {
+            name,
+            kind,
+            root,
             dirs,
             autos: Vec::new(),
-            srcs: config.srcs.into_iter().collect(),
-            incs: config.incs.into_iter().collect(),
-            skips: config.skips.into_iter().collect(),
-            links: config.links,
+            srcs,
+            incs,
+            skips,
+            links,
             is_resolved: false,
             is_main,
-            props: config.props,
-        };
-        target.check_root().unwrap();
-        target
+            props,
+        }
     }
     
+    pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
+        // 现在只支持最简单的当前目录
+        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
+        if name == pac {
+            AutoStr::from(".")
+        } else { // 否则，使用libs/apps/deps中的目录
+            let target_dir = match kind {
+                TargetKind::App => "apps",
+                TargetKind::Lib => "libs",
+                TargetKind::Dep => "deps",
+            };
+            AutoStr::from(format!("{}/{}", target_dir, name))
+        }
+    }
+
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("target");
         node.args.add_pos(self.name.clone());
@@ -411,20 +467,7 @@ impl Target {
         Ok(())
     }
 
-    pub fn get_root_dir(&self) -> AutoStr {
-        // 现在只支持最简单的当前目录
-        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
-        if self.is_main {
-            AutoStr::from(".")
-        } else { // 否则，使用libs/apps/deps中的目录
-            let target_dir = match self.kind {
-                TargetKind::App => "apps",
-                TargetKind::Lib => "libs",
-                TargetKind::Dep => "deps",
-            };
-            AutoStr::from(format!("{}/{}", target_dir, self.name))
-        }
-    }
+
 
     pub fn exists(&self) -> bool {
         if self.is_main {
@@ -471,12 +514,12 @@ impl Target {
         Ok(())
     }
 
-    fn check_root(&mut self) -> AutoResult<()> {
-        let root = self.get_root_dir();
-        info!("{} root: {}", self.name, root.as_str());
-        self.root = root;
-        Ok(())
-    }
+    // fn check_root(&mut self) -> AutoResult<()> {
+    //     let root = self.get_root_dir();
+    //     info!("{} root: {}", self.name, root.as_str());
+    //     self.root = root;
+    //     Ok(())
+    // }
 
     fn check_dirs(&mut self) -> AutoResult<()> {
         // 1. check prop `dirs` for existing dirs

@@ -2,7 +2,7 @@ use auto_lang::config::AutoConfig;
 use auto_val::{AutoStr, Obj, Node};
 use std::path::Path;
 use crate::AutoResult;
-use crate::{Target, TargetKind, TargetStatus, TargetConfig};
+use crate::{Target, TargetKind, TargetStatus};
 use log::*;
 use std::fmt;
 use std::collections::HashMap;
@@ -67,7 +67,7 @@ impl Pac {
         let pac_name = config.name();
         let version = config.version();
         for n in config.root.nodes.into_iter() {
-            let target = Target::from(TargetConfig::from_node(n, pac_name.clone()));
+            let target = Target::from(n, pac_name.clone());
             targets.push(target);
         }
         Self {
