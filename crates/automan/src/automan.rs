@@ -3,14 +3,11 @@ use crate::AutoError;
 use crate::asset::Templates;
 use auto_lang::config::AutoConfig;
 use crate::Pac;
-use crate::builder::Builder;
-use crate::builder::BuilderKind;
-use crate::builder::new_builder;
 use auto_val::Obj;
 use log::*;
+use crate::builder::Builder;
 pub struct Automan {
     pac: Pac,
-    builder: Box<dyn Builder>,
 }
 
 // Static API
@@ -66,7 +63,7 @@ impl Automan {
 
     pub fn new(path: &str) -> Result<Self, AutoError> {
         // Currently, only CMake builder is supported
-        Ok(Self { pac: Self::parse_pac(path)?, builder: new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())) })
+        Ok(Self { pac: Self::parse_pac(path)?})
     }
 
     pub fn pull(&self) -> Result<(), AutoError> {
@@ -80,7 +77,7 @@ impl Automan {
         // 3.3. Scan targets for its local source files
         self.pac.resolve()?;
         self.pac.print_targets();
-        self.pac.print_ason();
+        self.pac.print_atom();
         Ok(())
     }
 
@@ -88,8 +85,7 @@ impl Automan {
         // 1. Transpile auto code to c code
         self.transpile_auto()?;
         // 2. Build the project with a specific builder
-        self.builder.build(&self.pac)?;
-        Ok(())
+        self.pac.build()
     }
 
     pub fn transpile_auto(&mut self) -> Result<(), AutoError> {
@@ -98,12 +94,10 @@ impl Automan {
     }
 
     pub fn run(&mut self) -> Result<(), AutoError> {
-        self.builder.run(&self.pac)?;
-        Ok(())
+        self.pac.run()
     }
 
     pub fn clean(&mut self) -> Result<(), AutoError> {
-        self.builder.clean()?;
-        Ok(())
+        self.pac.clean()
     }
 }

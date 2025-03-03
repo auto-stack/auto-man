@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::AutoError;
 use auto_lang::scope::Universe;
 use auto_val::Value;
-
+use auto_val::AutoStr;
 #[derive(Embed)]
 #[folder = "assets/templates"]
 pub struct Templates;
@@ -44,6 +44,38 @@ impl Templates {
         Ok(())
     }
 }
+
+#[derive(Embed)]
+#[folder = "assets/builders/iar"]
+pub struct IARTemplate;
+
+impl IARTemplate {
+
+    pub fn eww() -> Result<AutoStr, AutoError> {
+        let file = IARTemplate::get("iar.eww").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(AutoStr::from(str))
+    }
+
+    pub fn ewp() -> Result<AutoStr, AutoError> {
+        let file = IARTemplate::get("iar.ewp").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(AutoStr::from(str))
+    }
+
+    pub fn ewt() -> Result<AutoStr, AutoError> {
+        let file = IARTemplate::get("iar.ewt").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(AutoStr::from(str))
+    }
+
+    pub fn ewd() -> Result<AutoStr, AutoError> {
+        let file = IARTemplate::get("iar.ewd").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(AutoStr::from(str))
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

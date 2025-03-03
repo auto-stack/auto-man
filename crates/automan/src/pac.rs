@@ -1,11 +1,14 @@
 use auto_lang::config::AutoConfig;
-use auto_val::{AutoStr, Obj, Node};
 use std::path::Path;
+use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath};
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus};
 use log::*;
 use std::fmt;
 use std::collections::HashMap;
+use crate::builder::Builder;
+use crate::builder::BuilderKind;
+use crate::builder::new_builder;
 use tabled::{
     Table,
     settings::{
@@ -55,6 +58,7 @@ impl Index {
 pub struct Pac {
     pub name: AutoStr,
     pub version: AutoStr,
+    pub builders: Vec<Box<dyn Builder>>,
     pub targets: Vec<Target>,
     pub index: Index,
 }
@@ -71,9 +75,14 @@ impl Pac {
             let target = Target::from(n, pac_name.clone());
             targets.push(target);
         }
+        let builders = vec![
+            // new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
+            new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
+        ];
         Self {
             name: pac_name,
             version,
+            builders,
             targets,
             index: Index::load(INDEX_PATH.into()).unwrap(),
         }
@@ -101,6 +110,15 @@ impl Pac {
             .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
 
         println!("{}", table);
+    }
+
+    pub fn print_atom(&self) {
+        let atom = self.to_atom();
+        // info!("ATOM packed for pac: <{}>", self.name);
+        // println!("{}", atom);
+        let atom_p = pretty(atom.to_string().as_str(), 3);
+        info!("ATOM for pac: <{}>", self.name);
+        println!("{}", atom_p);
     }
 
     pub fn get_target(&self, name: impl Into<AutoStr>) -> Option<&Target> {
@@ -212,12 +230,40 @@ impl Pac {
         }
         format!("build/{}/{}", mode, self.name)
     }
-}
 
+    pub fn build(&mut self) -> AutoResult<()> {
+        let mut builders = std::mem::take(&mut self.builders);
+        for builder in builders.iter_mut() {
+            builder.build(self)?;
+        }
+        self.builders = builders;
+        Ok(())
+    }
+
+    pub fn run(&mut self) -> AutoResult<()> {
+        let mut builders = std::mem::take(&mut self.builders);
+        for builder in builders.iter_mut() {
+            builder.run(self)?;
+        }
+        self.builders = builders;
+        Ok(())
+    }
+
+    pub fn clean(&mut self) -> AutoResult<()> {
+        let mut builders = std::mem::take(&mut self.builders);
+        for builder in builders.iter_mut() {
+            builder.clean()?;
+        }
+        self.builders = builders;
+        Ok(())
+    }
+
+}
 impl Pac {
     pub fn to_node(&self) -> Node {
         let mut root = Node::new("root");
-        root.set_prop("name", self.name.clone());
+        // name prop is the first positional arg
+        root.add_arg(Arg::Pos(Value::Str(self.name.clone())));
         root.set_prop("version", self.version.clone());
         for target in &self.targets {
             root.add_kid(target.to_node());

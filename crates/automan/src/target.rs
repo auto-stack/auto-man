@@ -52,7 +52,7 @@ pub struct Dir {
 
 fn scan_dir_flat(path: &Path, skips: &HashSet<AutoStr>) -> AutoResult<(HashSet<AutoStr>, bool)> {
     if !path.is_dir() {
-        return Err(format!("scanning flat dir:{} is not a directory", path.display()).into());
+        return Ok((HashSet::new(), false));
     }
 
     let mut files_found = HashSet::new();
@@ -164,7 +164,7 @@ impl Dir {
         info!("making Dir {}::{}", parent, name);
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
         // TODO read srcs, incs, skips from node
-        let dirs = Vec::new();
+        let dirs = node.props.get_array_of_str("dirs").into_iter().map(|s| Dir::from_str(s, root.clone())).collect::<Vec<Dir>>();
         let srcs = node.props.get_array_of_str("srcs");
         let incs = node.props.get_array_of_str("incs");
         let skips = node.props.get_array_of_str("skips").into_iter().map(|s| AutoStr::from(s)).collect::<HashSet<AutoStr>>();
@@ -188,28 +188,49 @@ impl Dir {
 
     pub fn scan(&mut self) -> AutoResult<()> {
         let root_path = Path::new(self.root.as_str());
+        let mut all_incs = HashSet::new();
         let (files, has_headers) = scan_dir_flat(root_path, &self.skips)?;
         let mut all_srcs = HashSet::new();
         all_srcs.extend(files);
+        if has_headers {
+            all_incs.insert(self.root.clone());
+        }
 
-        // TODO: recursively scan sub dirs
+        // check `src` folder in current dir
+        let src_path = root_path.join("src");
+        let (files, has_headers) = scan_dir_flat(&src_path, &self.skips)?;
+        all_srcs.extend(files);
+        if has_headers {
+            all_incs.insert(src_path.unified());
+        }
+
+        // check `include` folder in current dir
+        let inc_path = root_path.join("include");
+        let (files, has_headers) = scan_dir_flat(&inc_path, &self.skips)?;
+        all_incs.extend(files);
+        if has_headers {
+            all_incs.insert(inc_path.unified());
+        }
 
         // scan for additional srcs
         let succ_srcs = scan_specific_srcs(&self.srcs, &self.root)?;
         all_srcs.extend(succ_srcs);
 
-        self.srcs = all_srcs.into_iter().collect();
 
 
         // scan for additional incs
         let succ_incs = check_incs(&self.incs, &self.root)?;
-        self.incs = succ_incs.into_iter().collect();
+        all_incs.extend(succ_incs);
 
-        // if current dir has header files, add current dir to incs
-        if has_headers {
-            self.incs.push(self.root.clone());
+        // TODO: recursively scan sub dirs
+        for dir in self.dirs.iter_mut() {
+            dir.scan()?;
+            all_incs.extend(dir.incs.clone());
+            all_srcs.extend(dir.srcs.clone());
         }
 
+        self.srcs = all_srcs.into_iter().collect();
+        self.incs = all_incs.into_iter().collect();
         Ok(())
     }
 
@@ -341,8 +362,10 @@ pub struct Target {
     pub props: Obj,
 }
 
-pub fn set_to_vec<T>(set: HashSet<T>) -> Vec<T> {
-    set.into_iter().collect()
+pub fn set_to_vec<T: Ord>(set: HashSet<T>) -> Vec<T> {
+    let mut vec: Vec<T> = set.into_iter().collect();
+    vec.sort();
+    vec
 }
 
 trait VecExt<T> {
@@ -382,7 +405,11 @@ impl Target {
         let kind = TargetKind::from_str(&node.name);
 
         // root
-        let root = get_root_dir(&name, &kind, &pac);
+        let root = if node.has_prop("root") {
+            node.props.get_str_of("root")
+        } else {
+            get_root_dir(&name, &kind, &pac)
+        };
         info!("target config: {} root: {}", name, root);
 
         // dirs
@@ -427,12 +454,23 @@ impl Target {
     }
     
     pub fn to_node(&self) -> Node {
-        let mut node = Node::new("target");
+        let node_type = match self.kind {
+            TargetKind::App => "app",
+            TargetKind::Lib => "lib",
+            TargetKind::Dep => "dep",
+        };
+        let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
         node.props.set("root", self.root.clone());
-        node.props.set("srcs", set_to_vec(self.srcs.clone()));
-        node.props.set("incs", set_to_vec(self.incs.clone()));
-        node.props.set("skips", set_to_vec(self.skips.clone()));
+        if !self.srcs.is_empty() {
+            node.props.set("srcs", set_to_vec(self.srcs.clone()));
+        }
+        if !self.incs.is_empty() {
+            node.props.set("incs", set_to_vec(self.incs.clone()));
+        }
+        if !self.skips.is_empty() {
+            node.props.set("skips", set_to_vec(self.skips.clone()));
+        }
         for dir in self.dirs.values() {
             node.add_kid(dir.to_node());
         }
@@ -547,14 +585,18 @@ impl Target {
         self.incs = succ_incs.into_iter().collect();
 
         // 3. for each dir, scan for source files, include dirs
-        for dir in self.dirs.values_mut() {
+        let mut dirs = std::mem::take(&mut self.dirs);
+        for dir in dirs.values_mut() {
             info!("scanning dir: {}", dir.to_string());
             dir.scan()?;
             self.srcs.extend(dir.srcs.clone());
-            info!("extended srcs: {:?}", self.srcs);
+            // info!("extended srcs: {:?}", self.srcs);
             self.incs.extend(dir.incs.clone());
-            info!("extended incs: {:?}", self.incs);
+            // info!("extended incs: {:?}", self.incs);
         }
+        // dirs are moved out and scanned, with all infomation merged into the target
+        // so we don't need to store dirs anymore
+        // self.dirs is empty now
 
         Ok(())
     }
