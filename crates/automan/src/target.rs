@@ -38,18 +38,6 @@ impl fmt::Display for TargetKind {
     }
 }
 
-
-#[derive(Clone)]
-pub struct Dir {
-    pub name: AutoStr,
-    pub root: AutoStr,
-    // TODO: add sub dirs
-    pub dirs: Vec<Dir>,
-    pub srcs: Vec<AutoStr>,
-    pub incs: Vec<AutoStr>,
-    pub skips: HashSet<AutoStr>,
-}
-
 fn scan_dir_flat(path: &Path, skips: &HashSet<AutoStr>) -> AutoResult<(HashSet<AutoStr>, bool)> {
     if !path.is_dir() {
         return Ok((HashSet::new(), false));
@@ -152,17 +140,39 @@ fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr
     Ok(succ_incs)
 }
 
+#[derive(Clone)]
+pub struct Dir {
+    pub name: AutoStr,
+    pub root: AutoStr,
+    pub scan: bool,
+    // TODO: add sub dirs
+    pub dirs: Vec<Dir>,
+    pub srcs: Vec<AutoStr>,
+    pub incs: Vec<AutoStr>,
+    pub skips: HashSet<AutoStr>,
+}
+
 impl Dir {
     pub fn from_str(name: AutoStr, parent: AutoStr) -> Self {
         let name = name;
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
-        Self { name, root, dirs: Vec::new(), srcs: Vec::new(), incs: Vec::new(), skips: HashSet::new() }
+        Self { name, root, scan: true, dirs: Vec::new(), srcs: Vec::new(), incs: Vec::new(), skips: HashSet::new() }
     }
 
     pub fn from_node(node: &Node, parent: AutoStr) -> Self {
         let name = AutoStr::from(node.args.args[0].to_astr());
         info!("making Dir {}::{}", parent, name);
-        let root = Path::new(parent.as_str()).join(name.as_str()).unified();
+        let parent_path = Path::new(parent.as_str());
+        let root = if node.has_prop("root") {
+            parent_path.join(node.props.get_str_of("root").as_str()).unified()
+        } else {
+            parent_path.join(name.as_str()).unified()
+        };
+        let scan = if node.has_prop("scan") {
+            node.props.get_bool_of("scan")
+        } else {
+            true
+        };
         // TODO read srcs, incs, skips from node
         let dirs = node.props.get_array_of_str("dirs").into_iter().map(|s| Dir::from_str(s, root.clone())).collect::<Vec<Dir>>();
         let srcs = node.props.get_array_of_str("srcs");
@@ -173,7 +183,7 @@ impl Dir {
         info!("srcs: {:?}", srcs);
         info!("incs: {:?}", incs);
         info!("skips: {:?}", skips);
-        Self { name, root, dirs, srcs, incs, skips }
+        Self { name, root, scan, dirs, srcs, incs, skips }
     }
 
     pub fn to_node(&self) -> Node {
@@ -189,36 +199,45 @@ impl Dir {
     pub fn scan(&mut self) -> AutoResult<()> {
         let root_path = Path::new(self.root.as_str());
         let mut all_incs = HashSet::new();
-        let (files, has_headers) = scan_dir_flat(root_path, &self.skips)?;
         let mut all_srcs = HashSet::new();
-        all_srcs.extend(files);
-        if has_headers {
-            all_incs.insert(self.root.clone());
+
+        if self.scan {
+            let (files, has_headers) = scan_dir_flat(root_path, &self.skips)?;
+            all_srcs.extend(files);
+            if has_headers {
+                all_incs.insert(self.root.clone());
+            }
+
+            // check `src` folder in current dir
+            let src_path = root_path.join("src");
+            let (files, has_headers) = scan_dir_flat(&src_path, &self.skips)?;
+            all_srcs.extend(files);
+            if has_headers {
+                all_incs.insert(src_path.unified());
+            }
+
+            // check `include` folder in current dir
+            let inc_path = root_path.join("include");
+            let (files, has_headers) = scan_dir_flat(&inc_path, &self.skips)?;
+            all_incs.extend(files);
+            if has_headers {
+                all_incs.insert(inc_path.unified());
+            }
+
+            // check `inc` folder in current dir
+            let inc_path = root_path.join("inc");
+            let (files, has_headers) = scan_dir_flat(&inc_path, &self.skips)?;
+            all_incs.extend(files);
+            if has_headers {
+                all_incs.insert(inc_path.unified());
+            }
         }
 
-        // check `src` folder in current dir
-        let src_path = root_path.join("src");
-        let (files, has_headers) = scan_dir_flat(&src_path, &self.skips)?;
-        all_srcs.extend(files);
-        if has_headers {
-            all_incs.insert(src_path.unified());
-        }
-
-        // check `include` folder in current dir
-        let inc_path = root_path.join("include");
-        let (files, has_headers) = scan_dir_flat(&inc_path, &self.skips)?;
-        all_incs.extend(files);
-        if has_headers {
-            all_incs.insert(inc_path.unified());
-        }
-
-        // scan for additional srcs
+        // check specified srcs
         let succ_srcs = scan_specific_srcs(&self.srcs, &self.root)?;
         all_srcs.extend(succ_srcs);
 
-
-
-        // scan for additional incs
+        // check specified incs
         let succ_incs = check_incs(&self.incs, &self.root)?;
         all_incs.extend(succ_incs);
 
@@ -233,7 +252,6 @@ impl Dir {
         self.incs = all_incs.into_iter().collect();
         Ok(())
     }
-
 }
 
 impl PartialEq for Dir {
@@ -268,6 +286,7 @@ pub struct TargetConfig {
     pub name: AutoStr,
     pub kind: TargetKind,
     pub root: AutoStr,
+    pub scan: bool,
     pub dirs: Vec<Dir>,
     pub srcs: Vec<AutoStr>,
     pub incs: Vec<AutoStr>,
@@ -302,6 +321,13 @@ impl TargetConfig {
 
         let kind = TargetKind::from_str(&node.name);
 
+        // scan
+        let scan = if node.has_prop("scan") {
+            node.props.get_bool_of("scan")
+        } else {
+            true
+        };
+
         // root dir
         let root = Self::get_root_dir(&name, &kind, &pac);
         info!("target config: {} root: {}", name, root);
@@ -334,6 +360,7 @@ impl TargetConfig {
             pac,
             name,
             root,
+            scan,
             dirs,
             srcs,
             incs,
@@ -348,6 +375,7 @@ pub struct Target {
     pub name: AutoStr,
     pub kind: TargetKind,
     pub root: AutoStr,
+    pub is_scan: bool,
     pub dirs: HashMap<AutoStr, Dir>,
     // Auto Source files
     pub autos: Vec<AutoStr>,
@@ -404,6 +432,13 @@ impl Target {
         // kind
         let kind = TargetKind::from_str(&node.name);
 
+        // is_scan
+        let is_scan = if node.has_prop("scan") {
+            node.props.get_bool_of("scan")
+        } else {
+            true
+        };
+
         // root
         let root = if node.has_prop("root") {
             node.props.get_str_of("root")
@@ -413,9 +448,10 @@ impl Target {
         info!("target config: {} root: {}", name, root);
 
         // dirs
-        let mut dirs = node.props.get_array_of_str("dirs");
-        dirs.push(".".into());
+        let dirs = node.props.get_array_of_str("dirs");
+        // dirs.push(".".into());
         let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
+        println!("target dirs: {:?}", dirs);
         // check for dir nodes
         let dir_nodes = node.nodes(&"dir");
         let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
@@ -441,6 +477,7 @@ impl Target {
             name,
             kind,
             root,
+            is_scan,
             dirs,
             autos: Vec::new(),
             srcs,
@@ -462,15 +499,9 @@ impl Target {
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
         node.props.set("root", self.root.clone());
-        if !self.srcs.is_empty() {
-            node.props.set("srcs", set_to_vec(self.srcs.clone()));
-        }
-        if !self.incs.is_empty() {
-            node.props.set("incs", set_to_vec(self.incs.clone()));
-        }
-        if !self.skips.is_empty() {
-            node.props.set("skips", set_to_vec(self.skips.clone()));
-        }
+        node.props.set("srcs", set_to_vec(self.srcs.clone()));
+        node.props.set("incs", set_to_vec(self.incs.clone()));
+        node.props.set("skips", set_to_vec(self.skips.clone()));
         for dir in self.dirs.values() {
             node.add_kid(dir.to_node());
         }
@@ -575,25 +606,36 @@ impl Target {
         // 1. check dirs for existence
         self.check_dirs()?;
 
-        // 2. check for target level additional srcs/incs
+        let mut succ_srcs = HashSet::new();
+        let mut succ_incs = HashSet::new();
+
+        if self.is_scan {
+            let mut target_dir = Dir::from_str(".".into(), self.root.clone());
+            target_dir.scan()?;
+            succ_srcs.extend(target_dir.srcs.clone());
+            succ_incs.extend(target_dir.incs.clone());
+        }
+
+        // 2. check for target level specified srcs/incs
         let srcs = self.srcs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
-        let succ_srcs = scan_specific_srcs(&srcs, &self.root)?;
-        self.srcs = succ_srcs.into_iter().collect();
+        let scanned_srcs = scan_specific_srcs(&srcs, &self.root)?;
+        succ_srcs.extend(scanned_srcs);
 
         let incs = self.incs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
-        let succ_incs = check_incs(&incs, &self.root)?;
-        self.incs = succ_incs.into_iter().collect();
+        let scanned_incs = check_incs(&incs, &self.root)?;
+        succ_incs.extend(scanned_incs);
 
         // 3. for each dir, scan for source files, include dirs
         let mut dirs = std::mem::take(&mut self.dirs);
         for dir in dirs.values_mut() {
             info!("scanning dir: {}", dir.to_string());
             dir.scan()?;
-            self.srcs.extend(dir.srcs.clone());
-            // info!("extended srcs: {:?}", self.srcs);
-            self.incs.extend(dir.incs.clone());
-            // info!("extended incs: {:?}", self.incs);
+            succ_srcs.extend(dir.srcs.clone());
+            succ_incs.extend(dir.incs.clone());
         }
+
+        self.srcs = succ_srcs.into_iter().collect();
+        self.incs = succ_incs.into_iter().collect();
         // dirs are moved out and scanned, with all infomation merged into the target
         // so we don't need to store dirs anymore
         // self.dirs is empty now

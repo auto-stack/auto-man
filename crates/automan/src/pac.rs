@@ -1,6 +1,6 @@
 use auto_lang::config::AutoConfig;
 use std::path::Path;
-use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath};
+use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath, Array};
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus};
 use log::*;
@@ -47,6 +47,7 @@ impl Index {
             let repo = n.get_prop("repo").to_astr();
             map.insert(name.clone(), PacInfo { name, repo, version });
         });
+
         Ok(Index { map })
     }
 
@@ -61,6 +62,7 @@ pub struct Pac {
     pub builders: Vec<Box<dyn Builder>>,
     pub targets: Vec<Target>,
     pub index: Index,
+    pub props: Obj,
 }
 
 // TODO: read from default locations by OS and Env
@@ -71,6 +73,7 @@ impl Pac {
         let mut targets = vec![];
         let pac_name = config.name();
         let version = config.version();
+        let props = config.root.props.clone();
         for n in config.root.nodes.into_iter() {
             let target = Target::from(n, pac_name.clone());
             targets.push(target);
@@ -84,6 +87,7 @@ impl Pac {
             version,
             builders,
             targets,
+            props,
             index: Index::load(INDEX_PATH.into()).unwrap(),
         }
     }
@@ -265,8 +269,19 @@ impl Pac {
         // name prop is the first positional arg
         root.add_arg(Arg::Pos(Value::Str(self.name.clone())));
         root.set_prop("version", self.version.clone());
+        let mut all_incs = vec![];
         for target in &self.targets {
             root.add_kid(target.to_node());
+
+            // incs
+            all_incs.extend(target.incs.clone());
+        }
+        all_incs.sort();
+        root.set_prop("all_incs", Value::Array(Array::from_vec(all_incs)));
+
+        let props = self.props.clone();
+        for (k, v) in props.iter() {
+            root.set_prop(k.to_string().as_str(), v.clone());
         }
         root
     }

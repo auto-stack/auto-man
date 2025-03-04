@@ -352,38 +352,9 @@
                 </option>
                 <option>
                     <name>CCIncludePath2</name>
-                    <state>$PROJ_DIR$\..\Device\Sdk\device\inc</state>
-                    <state>$PROJ_DIR$\..\Device\Sdk\device\inc\cmsis</state>
-                    <state>$PROJ_DIR$\..\Device\Sdk\device\inc\lse14xx</state>
-                    <state>$PROJ_DIR$\..\Mcal\EbPrj\output\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Adc_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Can_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\CanTrcv_110_Tja1042_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\CanTrcv_110_Tja1043_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\CanTrcv_110_Tja1044_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Crc_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Crypto_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Det_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Dio_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Dma_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Fee_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Flexio_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Fls_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Gpt_LS_LSE14M01I0R0</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\I2c_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\I2s_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Icu_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Lin_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Mcu_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Mpu_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Port_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Pwm_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Spi_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Trgmux_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Uart_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\Wdg_LS_LSE14M01I0R0\include</state>
-                    <state>$PROJ_DIR$\..\Mcal\ReleasePkg\LS_E14XX_Sdk\device\rte\inc</state>
-                    <state>$PROJ_DIR$\..\Device\Sdk\drivers\inc</state>
+                @ for inc in all_incs {
+                    <state>$PROJ_DIR$\..\@{inc}</state>
+                @ }
                 </option>
                 <option>
                     <name>CCStdIncCheck</name>
@@ -796,7 +767,7 @@
                 </option>
                 <option>
                     <name>IlinkIcfFile</name>
-                    <state>$PROJ_DIR$\..\Device\Sdk\device\linker\iar_lse148x_flash.icf</state>
+                    <state>$PROJ_DIR$\..\@{icf}</state>
                 </option>
                 <option>
                     <name>IlinkIcfFileSlave</name>
@@ -2205,27 +2176,6 @@
     </group>
     <group>
         <name>Bsw</name>
-    </group>
-    <group>
-        <name>Device</name>
-        <group>
-            <name>Linker</name>
-            <excluded>
-                <configuration>Debug</configuration>
-            </excluded>
-            <file>
-                <name>$PROJ_DIR$\..\Device\Sdk\device\linker\keil_lse148x_flash.sct</name>
-            </file>
-        </group>
-        <group>
-            <name>Startup</name>
-            <file>
-                <name>$PROJ_DIR$\..\Device\Sdk\device\startup\iar_lse14xx_startup.S</name>
-            </file>
-            <file>
-                <name>$PROJ_DIR$\..\Device\Sdk\device\startup\lse14xx_system_init.c</name>
-            </file>
-        </group>
     </group>
 @ for lib in libs {
     <group>
