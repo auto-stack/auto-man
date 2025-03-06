@@ -282,94 +282,94 @@ impl fmt::Display for Dir {
     }
 }
 
-pub struct TargetConfig {
-    pub name: AutoStr,
-    pub kind: TargetKind,
-    pub root: AutoStr,
-    pub scan: bool,
-    pub dirs: Vec<Dir>,
-    pub srcs: Vec<AutoStr>,
-    pub incs: Vec<AutoStr>,
-    pub skips: Vec<AutoStr>,
-    pub links: Vec<AutoStr>,
-    pub pac: AutoStr,
-    pub props: Obj,
-}
+// pub struct TargetConfig {
+//     pub name: AutoStr,
+//     pub kind: TargetKind,
+//     pub root: AutoStr,
+//     pub scan: bool,
+//     pub dirs: Vec<Dir>,
+//     pub srcs: Vec<AutoStr>,
+//     pub incs: Vec<AutoStr>,
+//     pub skips: Vec<AutoStr>,
+//     pub links: Vec<AutoStr>,
+//     pub pac: AutoStr,
+//     pub props: Obj,
+// }
 
-impl TargetConfig {
+// impl TargetConfig {
 
-    pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
-        // 现在只支持最简单的当前目录
-        // 如果target的名称和pac名称相同，说明是主target，使用当前目录
-        if name == pac {
-            AutoStr::from(".")
-        } else { // 否则，使用libs/apps/deps中的目录
-            let target_dir = match kind {
-                TargetKind::App => "apps",
-                TargetKind::Lib => "libs",
-                TargetKind::Dep => "deps",
-            };
-            AutoStr::from(format!("{}/{}", target_dir, name))
-        }
-    }
+//     pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
+//         // 现在只支持最简单的当前目录
+//         // 如果target的名称和pac名称相同，说明是主target，使用当前目录
+//         if name == pac {
+//             AutoStr::from(".")
+//         } else { // 否则，使用libs/apps/deps中的目录
+//             let target_dir = match kind {
+//                 TargetKind::App => "apps",
+//                 TargetKind::Lib => "libs",
+//                 TargetKind::Dep => "deps",
+//             };
+//             AutoStr::from(format!("{}/{}", target_dir, name))
+//         }
+//     }
 
-    pub fn from_node(node: Node, pac: AutoStr) -> Self {
-        let mut name = AutoStr::new();
-        if !node.args.is_empty() {
-            name = node.args.args[0].to_astr()
-        }
+//     pub fn from_node(node: Node, pac: AutoStr) -> Self {
+//         let mut name = AutoStr::new();
+//         if !node.args.is_empty() {
+//             name = node.args.args[0].to_astr()
+//         }
 
-        let kind = TargetKind::from_str(&node.name);
+//         let kind = TargetKind::from_str(&node.name);
 
-        // scan
-        let scan = if node.has_prop("scan") {
-            node.props.get_bool_of("scan")
-        } else {
-            true
-        };
+//         // scan
+//         let scan = if node.has_prop("scan") {
+//             node.props.get_bool_of("scan")
+//         } else {
+//             true
+//         };
 
-        // root dir
-        let root = Self::get_root_dir(&name, &kind, &pac);
-        info!("target config: {} root: {}", name, root);
-        // check for dirs
-        let mut dirs = node.props.get_array_of_str("dirs");
-        dirs.push(".".into());
-        let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
-        // check for dir nodes
-        let dir_nodes = node.nodes(&"dir");
-        let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
-        dirs.extend(dirs_from_nodes);
+//         // root dir
+//         let root = Self::get_root_dir(&name, &kind, &pac);
+//         info!("target config: {} root: {}", name, root);
+//         // check for dirs
+//         let mut dirs = node.props.get_array_of_str("dirs");
+//         dirs.push(".".into());
+//         let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
+//         // check for dir nodes
+//         let dir_nodes = node.nodes(&"dir");
+//         let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
+//         dirs.extend(dirs_from_nodes);
 
-        // check for srcs
-        let srcs = node.props.get_array_of_str("srcs");
+//         // check for srcs
+//         let srcs = node.props.get_array_of_str("srcs");
 
-        // check for incs
-        let incs = node.props.get_array_of_str("incs");
+//         // check for incs
+//         let incs = node.props.get_array_of_str("incs");
 
-        // check for links
-        let links = node.props.get_array_of_str("links");
+//         // check for links
+//         let links = node.props.get_array_of_str("links");
 
-        // check for skips
-        let skips = node.props.get_array_of_str("skips");
+//         // check for skips
+//         let skips = node.props.get_array_of_str("skips");
 
-        // check for props (dep target only)
-        let props = node.props.clone();
+//         // check for props (dep target only)
+//         let props = node.props.clone();
 
-        Self {
-            kind,
-            pac,
-            name,
-            root,
-            scan,
-            dirs,
-            srcs,
-            incs,
-            links,
-            skips,
-            props,
-        }
-    }
-}
+//         Self {
+//             kind,
+//             pac,
+//             name,
+//             root,
+//             scan,
+//             dirs,
+//             srcs,
+//             incs,
+//             links,
+//             skips,
+//             props,
+//         }
+//     }
+// }
 
 pub struct Target {
     pub name: AutoStr,

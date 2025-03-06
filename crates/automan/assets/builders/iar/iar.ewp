@@ -2187,7 +2187,22 @@
         @ }
     </group>
 @ }
-    <file>
-        <name>$PROJ_DIR$\..\main.c</name>
-    </file>
+@ for app in apps {
+    @ if app.name == "amdemo" {
+        @ for src in app.srcs {
+        <file>
+            <name>$PROJ_DIR$\..\@{src}</name>
+        </file>
+        @ }
+    @ } else {
+    <group>
+        <name>@{ app.name }</name>
+        @ for src in app.srcs {
+        <file>
+            <name>$PROJ_DIR$\..\@{src}</name>
+        </file>
+        @ }
+    </group>
+    @ }
+@ }
 </project>

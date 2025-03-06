@@ -78,9 +78,10 @@ impl Pac {
             let target = Target::from(n, pac_name.clone());
             targets.push(target);
         }
+        // TODO: detect builder type from config
         let builders = vec![
-            // new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
-            new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
+            new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
+            // new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
         ];
         Self {
             name: pac_name,
