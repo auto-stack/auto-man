@@ -19,6 +19,8 @@ pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
 
 use clap::{Parser, Subcommand, CommandFactory};
+use dialoguer::Select;
+
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
@@ -38,10 +40,13 @@ enum Commands {
     #[command(about = "New C Library Package")]
     Clib { name: String },
     #[command(about = "Scan Dependencies")]
-    Scan,
+    Scan {
+        port: Option<String>,
+    },
     #[command(about = "Build Project", alias = "b")]
     Build {
         dir: Option<String>,
+        port: Option<String>,
     },
     #[command(about = "Run Executable", alias = "r")]
     Run,
@@ -81,14 +86,43 @@ fn main() -> Result<(), AutoError> {
             info!("Creating new C library package {}", name);
             Automan::create_clib(&name)?;
         }
-        Some(Commands::Scan) => {
+        Some(Commands::Scan { port }) => {
             info!("Scanning dependencies");
             let mut am = Automan::new(".")?;
+            let port = if let Some(port) = port {
+                port.into()
+            } else {
+                let ports = am.list_port_names();
+                let selection = Select::new()
+                    .with_prompt("Which port do you want to build?")
+                    .default(0)
+                    .items(&ports)
+                    .interact()?;
+
+                ports[selection].clone()
+            };
+
+            am.set_port(port)?;
             am.scan()?;
         }
-        Some(Commands::Build { dir }) => {
+        Some(Commands::Build { dir, port }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
+            // prompt to user to select a port:
             let mut am = Automan::new(&dir)?;
+            let port = if let Some(port) = port {
+                port.into()
+            } else {
+                let ports = am.list_port_names();
+                let selection = Select::new()
+                    .with_prompt("Which port do you want to build?")
+                    .default(0)
+                    .items(&ports)
+                    .interact()?;
+
+                ports[selection].clone()
+            };
+
+            am.set_port(port)?;
             am.scan()?;
             am.build()?;
         }

@@ -1,11 +1,10 @@
 use std::path::Path;
-use crate::AutoError;
+use crate::{AutoError, AutoResult};
 use crate::asset::Templates;
 use auto_lang::config::AutoConfig;
 use crate::Pac;
-use auto_val::Obj;
+use auto_val::{AutoStr, Obj};
 use log::*;
-use crate::builder::Builder;
 pub struct Automan {
     pac: Pac,
 }
@@ -70,6 +69,10 @@ impl Automan {
         Ok(())
     }
 
+    pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
+        self.pac.set_port(port)
+    }
+
     pub fn scan(&mut self) -> Result<(), AutoError> {
         // 3. Resolve targets in the pac, including:
         // 3.1. Resolve dependencies
@@ -99,5 +102,9 @@ impl Automan {
 
     pub fn clean(&mut self) -> Result<(), AutoError> {
         self.pac.clean()
+    }
+
+    pub fn list_port_names(&self) -> Vec<AutoStr> {
+        self.pac.list_port_names()
     }
 }

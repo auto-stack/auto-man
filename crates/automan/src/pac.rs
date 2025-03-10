@@ -58,8 +58,10 @@ impl Index {
 
 pub struct Pac {
     pub name: AutoStr,
+    pub port: AutoStr,
     pub version: AutoStr,
-    pub builders: Vec<Box<dyn Builder>>,
+    pub ports: Vec<Node>,
+    pub builder: Option<Box<dyn Builder>>,
     pub targets: Vec<Target>,
     pub index: Index,
     pub device_index: Index,
@@ -76,19 +78,24 @@ impl Pac {
         let pac_name = config.name();
         let version = config.version();
         let props = config.root.props.clone();
+
+        // ports
+        let ports = config.root.get_nodes("port");
+        let mut builder = None;
+        // targets, NOTE: ports are not targets
         for n in config.root.nodes.into_iter() {
-            let target = Target::from(n, pac_name.clone());
-            targets.push(target);
+            if n.name != "port" {
+                let target = Target::from(n, pac_name.clone());
+                targets.push(target);
+            }
         }
-        // TODO: detect builder type from config
-        let builders = vec![
-            // new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
-            new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
-        ];
+
         Self {
             name: pac_name,
             version,
-            builders,
+            port: "cmake".into(),
+            ports,
+            builder,
             targets,
             props,
             index: Index::load(INDEX_PATH.into()).unwrap(),
@@ -149,6 +156,32 @@ impl Pac {
         self.targets.iter().find(|t| t.name == name)
     }
 
+    pub fn list_port_names(&self) -> Vec<AutoStr> {
+        self.ports.iter().map(|p| p.main_arg().to_astr()).collect()
+    }
+
+    pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
+        // 0. check port
+        if self.ports.iter().find(|p| p.main_arg().to_astr() == port).is_none() {
+            return Err(format!("Port {} not found", port).into());
+        }
+        // merge configs within the port into the pac
+        self.merge_port(port.clone())?;
+        // set builder
+        match port.as_str() {
+            "cmake" => {
+                self.builder = Some(new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())));
+            }
+            "iar" => {
+                self.builder = Some(new_builder(BuilderKind::IAR(AutoPath::new("iar"))));
+            }
+            _ => {
+                panic!("Invalid port name: {}", port);
+            }
+        }
+        Ok(())
+    }
+
     pub fn resolve(&mut self) -> AutoResult<()> {
         // 0. check basic props
         if !self.props.has("defines") {
@@ -171,6 +204,20 @@ impl Pac {
         info!("scanning targets for local source files");
         for target in &mut self.targets {
             target.scan()?;
+        }
+        Ok(())
+    }
+
+    fn merge_port(&mut self, port: AutoStr) -> AutoResult<()> {
+        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port).unwrap();
+        // props
+        let props = port_node.props.clone();
+        self.props.merge(&props);
+
+        // targets
+        for n in port_node.nodes.clone() {
+            let target = Target::from(n, self.name.clone());
+            self.targets.push(target);
         }
         Ok(())
     }
@@ -327,29 +374,29 @@ impl Pac {
     }
 
     pub fn build(&mut self) -> AutoResult<()> {
-        let mut builders = std::mem::take(&mut self.builders);
-        for builder in builders.iter_mut() {
+        let builder = std::mem::take(&mut self.builder);
+        if let Some(mut builder) = builder {
             builder.build(self)?;
+            self.builder = Some(builder);
         }
-        self.builders = builders;
         Ok(())
     }
 
     pub fn run(&mut self) -> AutoResult<()> {
-        let mut builders = std::mem::take(&mut self.builders);
-        for builder in builders.iter_mut() {
+        let builder = std::mem::take(&mut self.builder);
+        if let Some(mut builder) = builder {
             builder.run(self)?;
+            self.builder = Some(builder);
         }
-        self.builders = builders;
         Ok(())
     }
 
     pub fn clean(&mut self) -> AutoResult<()> {
-        let mut builders = std::mem::take(&mut self.builders);
-        for builder in builders.iter_mut() {
+        let builder = std::mem::take(&mut self.builder);
+        if let Some(mut builder) = builder {
             builder.clean()?;
+            self.builder = Some(builder);
         }
-        self.builders = builders;
         Ok(())
     }
 
