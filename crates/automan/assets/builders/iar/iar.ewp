@@ -231,7 +231,9 @@
                 </option>
                 <option>
                     <name>CCDefines</name>
-                    <state></state>
+                    @ for define in defines {
+                        <state>@{define}</state>
+                    @ }
                 </option>
                 <option>
                     <name>CCPreprocFile</name>
@@ -622,7 +624,9 @@
                 </option>
                 <option>
                     <name>AUserIncludes</name>
-                    <state></state>
+                    @ for inc in all_incs {
+                        <state>$PROJ_DIR$\..\@{inc}</state>
+                    @ }
                 </option>
                 <option>
                     <name>AExtraOptionsCheckV2</name>
@@ -767,7 +771,11 @@
                 </option>
                 <option>
                     <name>IlinkIcfFile</name>
-                    <state>$PROJ_DIR$\..\@{icf}</state>
+                    @ for dev in devices {
+                        @ if dev.icf {
+                            <state>$PROJ_DIR$\..\@{dev.icf}</state>
+                        @ }
+                    @ }
                 </option>
                 <option>
                     <name>IlinkIcfFileSlave</name>
@@ -2176,6 +2184,29 @@
     </group>
     <group>
         <name>Bsw</name>
+        @ for dep in deps {
+            <group>
+                <name>@{dep.name}</name>
+                @ for src in dep.srcs {
+                    <file>
+                        <name>$PROJ_DIR$\..\@{src}</name>
+                    </file>
+                @ }
+            </group>
+        @ }
+    </group>
+    <group>
+        <name>Device</name>
+        @ for dev in devices {
+            <group>
+                <name>@{dev.name}</name>
+                @ for src in dev.srcs {
+                    <file>
+                        <name>$PROJ_DIR$\..\@{src}</name>
+                    </file>
+                @ }
+            </group>
+        @ }
     </group>
 @ for lib in libs {
     <group>

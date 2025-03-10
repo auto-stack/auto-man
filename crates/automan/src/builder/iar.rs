@@ -26,6 +26,19 @@ impl Builder for IARBuilder {
     }
 
     fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+        // check necessary configs
+        if !pac.has_device_prop("icf") {
+            error!("icf file location is not set");
+            return Err("Please set the icf file location in the device file".into());
+        }
+        if !pac.has_device_prop("ddf") {
+            error!("ddf file location is not set");
+            return Err("Please set the ddf file location in the device file".into());
+        }
+        if !pac.has_device_prop("board") {
+            error!("board file is not set");
+            return Err("Please set the board file in the device file".into());
+        }
         // create iar project directory
         let project_dir = self.gen.out.path();
         println!("project_dir: {}", project_dir.display());

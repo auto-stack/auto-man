@@ -44,7 +44,11 @@
                 </option>
                 <option>
                     <name>MemFile</name>
-                    <state>$PROJ_DIR$\..\@{ddf}</state>
+                    @ for dev in devices {
+                        @ if dev.ddf {
+                            <state>$PROJ_DIR$\..\@{dev.ddf}</state>
+                        @ }
+                    @ }
                 </option>
                 <option>
                     <name>RunToEnable</name>
@@ -112,7 +116,11 @@
                 </option>
                 <option>
                     <name>FlashLoadersV3</name>
-                    <state>$PROJ_DIR$\..\@{board}</state>
+                    @ for dev in devices {
+                        @ if dev.board {
+                            <state>$PROJ_DIR$\..\@{dev.board}</state>
+                        @ }
+                    @ }
                 </option>
                 <option>
                     <name>OCImagesSuppressCheck1</name>

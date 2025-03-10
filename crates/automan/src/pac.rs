@@ -1,6 +1,6 @@
 use auto_lang::config::AutoConfig;
 use std::path::Path;
-use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath, Array};
+use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath, Array, ValueKey};
 use crate::AutoResult;
 use crate::{Target, TargetKind, TargetStatus};
 use log::*;
@@ -41,7 +41,7 @@ impl Index {
         let config = AutoConfig::from_code(&code, &Obj::new())?;
         // config is a bunch of index nodes
         let root = config.root;
-        root.nodes.iter().filter(|n| n.name == "pac").for_each(|n| {
+        root.nodes.iter().filter(|n| n.name == "pac" || n.name == "device").for_each(|n| {
             let name = n.id();
             let version = n.get_prop("version").to_astr();
             let repo = n.get_prop("repo").to_astr();
@@ -62,11 +62,13 @@ pub struct Pac {
     pub builders: Vec<Box<dyn Builder>>,
     pub targets: Vec<Target>,
     pub index: Index,
+    pub device_index: Index,
     pub props: Obj,
 }
 
 // TODO: read from default locations by OS and Env
 const INDEX_PATH: &str = "D:/am/index.at";
+const DEVICE_INDEX_PATH: &str = "D:/am/devices.at";
 
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
@@ -80,8 +82,8 @@ impl Pac {
         }
         // TODO: detect builder type from config
         let builders = vec![
-            new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
-            // new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
+            // new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())),
+            new_builder(BuilderKind::IAR(AutoPath::new("iar"))),
         ];
         Self {
             name: pac_name,
@@ -90,6 +92,7 @@ impl Pac {
             targets,
             props,
             index: Index::load(INDEX_PATH.into()).unwrap(),
+            device_index: Index::load(DEVICE_INDEX_PATH.into()).unwrap(),
         }
     }
 
@@ -117,6 +120,21 @@ impl Pac {
         println!("{}", table);
     }
 
+    pub fn has_device_prop(&self, prop: impl Into<AutoStr>) -> bool {
+        let mut has_prop = false;
+        // TODO: too much clone for key
+        let key = ValueKey::Str(prop.into());
+        for target in &self.targets {
+            if target.kind == TargetKind::Device {
+                if target.props.has(key.clone()) {
+                    has_prop = true;
+                    break;
+                }
+            }
+        }
+        has_prop
+    }
+
     pub fn print_atom(&self) {
         let atom = self.to_atom();
         // info!("ATOM packed for pac: <{}>", self.name);
@@ -132,6 +150,13 @@ impl Pac {
     }
 
     pub fn resolve(&mut self) -> AutoResult<()> {
+        // 0. check basic props
+        if !self.props.has("defines") {
+            let defines = Vec::<AutoStr>::new();
+            // defines.push("DEBUG".into());
+            // defines.push("USE_KERNEL".into());
+            self.props.set("defines", defines);
+        }
         // 1. resolve dependencies: download dep targets recursively if needed
         info!("downloading dependencies");
         self.download_deps()?;
@@ -150,36 +175,97 @@ impl Pac {
         Ok(())
     }
 
+    fn update_repo(&self, path: &str) -> AutoResult<()> {
+        let output = std::process::Command::new("git")
+            .arg("pull")
+            .arg(path)
+            .output()?;
+        if output.status.success() {
+            info!("updated dependency {}", path);
+        }
+        Ok(())
+    }
+
     pub fn download_deps(&mut self) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
         for target in targets.iter_mut() {
-            if matches!(target.kind, TargetKind::Dep) {
-                if target.exists() {
-                    continue;
+            match target.kind {
+                TargetKind::Dep => {
+                    if target.exists() {
+                        // git update
+                        let path = format!("deps/{}", target.name);
+                        self.update_repo(&path)?;
+                        
+                        continue;
+                    }
+                    self.download_dep(&target)?;
+                    // get args from dep node props
+                    // read pac.at from dep and parse the lib target
+                    info!("reading pac with override props: {:?}", target.props);
+                    let dep_config = AutoConfig::from_file(
+                        Path::new(format!("deps/{}/pac.at", target.name).as_str()),
+                        // override dep props
+                        &target.props)?;
+                    let pac = Pac::new(dep_config);
+                    // TODO: recursively download dep targets from the dep
+                    // get the lib target
+                    let dep_name = target.name.clone();
+                    let lib_target = pac.get_target(dep_name);
+                    if let Some(lib_target) = lib_target {
+                        // merge the lib target into current dep target
+                        info!("depending lib root: {}", lib_target.root);
+                        target.merge(lib_target);
+                        info!("target root updated: {}", target.root);
+                    }
                 }
-                self.download_dep(&target)?;
-                // get args from dep node props
-                // read pac.at from dep and parse the lib target
-                info!("reading pac with override props: {:?}", target.props);
-                let dep_config = AutoConfig::from_file(
-                    Path::new(format!("deps/{}/pac.at", target.name).as_str()),
-                    // override dep props
-                    &target.props)?;
-                let pac = Pac::new(dep_config);
-                // TODO: recursively download dep targets from the dep
-                // get the lib target
-                let dep_name = target.name.clone();
-                let lib_target = pac.get_target(dep_name);
-                if let Some(lib_target) = lib_target {
-                    // merge the lib target into current dep target
-                    info!("target root: {}", target.root);
-                    target.merge(lib_target);
-                    info!("target root updated: {}", target.root);
+                TargetKind::Device => {
+                    if target.exists() {
+                        // git update
+                        let path = format!("devices/{}", target.name);
+                        self.update_repo(&path)?;
+                        continue;
+                    }
+                    self.download_device(&target)?;
+                    // get args from dep node props
+                    // read pac.at from dep and parse the lib target
+                    info!("reading device with override props: {:?}", target.props);
+                    let dep_config = AutoConfig::from_file(
+                        Path::new(format!("devices/{}/device.at", target.name).as_str()),
+                        // override dep props
+                        &target.props)?;
+                    let pac = Pac::new(dep_config);
+                    // TODO: recursively download dep targets from the dep
+                    // get the lib target
+                    let dep_name = target.name.clone();
+                    let dev_target = pac.get_target(dep_name);
+                    if let Some(dev_target) = dev_target {
+                        // merge the dev target into current dev target
+                        info!("depending dev root: {}", dev_target.root);
+                        target.merge(dev_target);
+                        info!("device root updated: {}", target.root);
+                    }
                 }
+                _ => {}
             }
         }
         self.targets = targets;
         Ok(())
+    }
+
+    fn download_device(&mut self, device: &Target) -> AutoResult<()> {
+        info!("[download] device: {}", device.name);
+        // 查询索引
+        let name = device.name.clone();
+        let info = self.device_index.lookup(&name);
+        match info {
+            Some(info) => {
+                self.download_repo(&info.name, &info.repo, &device.kind)?;
+                return Ok(());
+            }
+            None => {
+                return Err(format!("Device {} not found", name).into());
+            }
+        }
     }
 
     // 下载dep的源码包
@@ -190,7 +276,7 @@ impl Pac {
         let info = self.index.lookup(&name);
         match info {
             Some(info) => {
-                self.download_repo(&info.name, &info.repo)?;
+                self.download_repo(&info.name, &info.repo, &dep.kind)?;
                 return Ok(());
             }
             None => {
@@ -199,10 +285,14 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr) -> AutoResult<()> {
+    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr, kind: &TargetKind) -> AutoResult<()> {
         println!("Downloading dependency from {}", repo);
         // 1. make deps folder if not exists
-        let deps_dir = "deps";
+        let deps_dir = match kind {
+            TargetKind::Dep => "deps",
+            TargetKind::Device => "devices",
+            _ => return Err(format!("Invalid target kind: {}", kind).into()),
+        };
         if !std::path::Path::new(deps_dir).exists() {
             std::fs::create_dir_all(deps_dir)?;
         }

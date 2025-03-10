@@ -100,6 +100,7 @@ impl Builder for CMakeBuilder {
             TargetKind::App => "add_executable",
             TargetKind::Lib => "add_library",
             TargetKind::Dep => "add_library",
+            TargetKind::Device => "add_library",
         };
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
