@@ -14,12 +14,15 @@ pub use builder::*;
 
 use log::*;
 use simplelog::*;
+use auto_val::AutoStr;
+use clap::{Parser, Subcommand, CommandFactory};
+use dialoguer::Select;
+
 // use std::fs::File;
+
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
 
-use clap::{Parser, Subcommand, CommandFactory};
-use dialoguer::Select;
 
 
 #[derive(Parser, Debug)]
@@ -65,9 +68,31 @@ fn init_logger() {
     ).unwrap();
 }
 
+fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
+    let port = if let Some(input) = input {
+        input.into()
+    } else {
+        if ports.len() == 1 {
+            ports[0].clone()
+        } else {
+            let selection = Select::new()
+                .with_prompt("Which port do you want to build?")
+                .default(0)
+                .items(&ports)
+                .interact()?;
+
+            ports[selection].clone()
+        }
+    };
+    Ok(port)
+}
+
 fn main() -> Result<(), AutoError> {
     init_logger();
-    info!("Hello, I'm Automan!");
+    println!("-----------------------------------");
+    println!("Hello, I'm Automan!");
+    println!("-----------------------------------");
+    println!();
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::App { name }) => {
@@ -89,39 +114,14 @@ fn main() -> Result<(), AutoError> {
         Some(Commands::Scan { port }) => {
             info!("Scanning dependencies");
             let mut am = Automan::new(".")?;
-            let port = if let Some(port) = port {
-                port.into()
-            } else {
-                let ports = am.list_port_names();
-                let selection = Select::new()
-                    .with_prompt("Which port do you want to build?")
-                    .default(0)
-                    .items(&ports)
-                    .interact()?;
-
-                ports[selection].clone()
-            };
-
+            let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
             am.scan()?;
         }
         Some(Commands::Build { dir, port }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
-            // prompt to user to select a port:
             let mut am = Automan::new(&dir)?;
-            let port = if let Some(port) = port {
-                port.into()
-            } else {
-                let ports = am.list_port_names();
-                let selection = Select::new()
-                    .with_prompt("Which port do you want to build?")
-                    .default(0)
-                    .items(&ports)
-                    .interact()?;
-
-                ports[selection].clone()
-            };
-
+            let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
             am.scan()?;
             am.build()?;
@@ -129,7 +129,11 @@ fn main() -> Result<(), AutoError> {
         Some(Commands::Run) => {
             let mut am = Automan::new(".")?;
             // TODO: add build process before running when user specified a '-b' flag
+            info!("Running app ...");
+            println!();
+            println!("------------ output ------------");
             am.run()?;
+            println!("------------- end --------------");
         }
         Some(Commands::Clean { dir }) => {
             let dir = if let Some(dir) = dir { dir } else { ".".to_string() };

@@ -53,9 +53,9 @@ impl Automan {
         }
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
-        info!("Config: {}", config.root);
+        // info!("Config: {}", config.root);
         let pac = Pac::new(config);
-        pac.print_targets();
+        // pac.print_targets();
     
         Ok(pac)
     }

@@ -80,8 +80,13 @@ impl Pac {
         let props = config.root.props.clone();
 
         // ports
-        let ports = config.root.get_nodes("port");
-        let mut builder = None;
+        let mut ports = config.root.get_nodes("port");
+        if ports.is_empty() {
+            let mut port = Node::new("port");
+            port.add_arg(Arg::Pos("cmake".into()));
+            ports.push(port);
+        }
+        let builder = None;
         // targets, NOTE: ports are not targets
         for n in config.root.nodes.into_iter() {
             if n.name != "port" {
@@ -387,6 +392,9 @@ impl Pac {
         if let Some(mut builder) = builder {
             builder.run(self)?;
             self.builder = Some(builder);
+        } else {
+            let mut builder = new_builder(BuilderKind::CMake("CMakeLists.txt".to_string()));
+            builder.run(self)?;
         }
         Ok(())
     }

@@ -473,13 +473,11 @@ impl Target {
         } else {
             get_root_dir(&name, &kind, &pac)
         };
-        info!("target config: {} root: {}", name, root);
 
         // dirs
         let dirs = node.props.get_array_of_str("dirs");
         // dirs.push(".".into());
         let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone(), kind.clone()) }).collect();
-        println!("target dirs: {:?}", dirs);
         // check for dir nodes
         let dir_nodes = node.nodes(&"dir");
         let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone(), kind.clone()) }).collect();
