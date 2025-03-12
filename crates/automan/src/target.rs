@@ -398,6 +398,7 @@ impl fmt::Display for Dir {
 //     }
 // }
 
+#[derive(Clone)]
 pub struct Target {
     pub name: AutoStr,
     pub kind: TargetKind,

@@ -161,6 +161,10 @@ impl Pac {
         self.targets.iter().find(|t| t.name == name)
     }
 
+    pub fn deps(&self) -> Vec<&Target> {
+        self.targets.iter().filter(|t| t.kind == TargetKind::Dep).collect()
+    }
+
     pub fn list_port_names(&self) -> Vec<AutoStr> {
         self.ports.iter().map(|p| p.main_arg().to_astr()).collect()
     }
@@ -238,8 +242,13 @@ impl Pac {
         Ok(())
     }
 
+    pub fn contains(&self, name: &AutoStr) -> bool {
+        self.targets.iter().any(|t| t.name == *name)
+    }
+
     pub fn download_deps(&mut self) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
+        let mut new_deps = HashMap::new();
         for target in targets.iter_mut() {
             match target.kind {
                 TargetKind::Dep => {
@@ -258,16 +267,20 @@ impl Pac {
                         Path::new(format!("deps/{}/pac.at", target.name).as_str()),
                         // override dep props
                         &target.props)?;
-                    let pac = Pac::new(dep_config);
-                    // TODO: recursively download dep targets from the dep
+                    let mut pac = Pac::new(dep_config);
                     // get the lib target
                     let dep_name = target.name.clone();
                     let lib_target = pac.get_target(dep_name);
                     if let Some(lib_target) = lib_target {
                         // merge the lib target into current dep target
-                        info!("depending lib root: {}", lib_target.root);
                         target.merge(lib_target);
-                        info!("target root updated: {}", target.root);
+                    }
+                    pac.download_deps()?;
+                    // merge dep's dep into current pac if not exists
+                    for dep in pac.deps() {
+                        if !new_deps.contains_key(&dep.name) {
+                            new_deps.insert(dep.name.clone(), dep.clone());
+                        }
                     }
                 }
                 TargetKind::Device => {
@@ -301,6 +314,9 @@ impl Pac {
             }
         }
         self.targets = targets;
+        for (_, dep) in new_deps {
+            self.targets.push(dep);
+        }
         Ok(())
     }
 
