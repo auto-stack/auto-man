@@ -9,7 +9,7 @@ AutoMan（Auto Manager）是Auto/C语言的混合工程管理工具，功能包�
 - 资源管理：配置并下载工程资源，如芯片相关的库文件、文档等。
 - 测试管理：自动运行测试用例
 
-AutoMan的配置文件是`AutoConfig`格式。
+AutoMan的配置文件是`AutoConfig`/`Atom`格式。
 
 ## 示例：新建工程
 
