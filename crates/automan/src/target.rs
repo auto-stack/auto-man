@@ -401,6 +401,7 @@ impl fmt::Display for Dir {
 #[derive(Clone)]
 pub struct Target {
     pub name: AutoStr,
+    pub version: AutoStr,
     pub kind: TargetKind,
     pub root: AutoStr,
     pub is_scan: bool,
@@ -454,8 +455,12 @@ impl Target {
     pub fn from(node: Node, pac: AutoStr) -> Self {
         // name
         let mut name = AutoStr::new();
+        let mut version = AutoStr::new();
         if !node.args.is_empty() {
-            name = node.args.args[0].to_astr()
+            name = node.args.args[0].to_astr();
+            if node.args.args.len() > 1 {
+                version = node.args.args[1].to_astr();
+            }
         }
 
         // kind
@@ -502,6 +507,7 @@ impl Target {
 
         Self {
             name,
+            version,
             kind,
             root,
             is_scan,

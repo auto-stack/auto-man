@@ -5,6 +5,7 @@ use auto_lang::config::AutoConfig;
 use crate::Pac;
 use auto_val::{AutoStr, Obj};
 use log::*;
+use glob::glob;
 pub struct Automan {
     pac: Pac,
 }
@@ -101,6 +102,55 @@ impl Automan {
     }
 
     pub fn clean(&mut self) -> Result<(), AutoError> {
+        // deps and devices
+        if Path::new("deps").is_dir() {
+            info!("deleting directory deps");
+            std::fs::remove_dir_all("deps")?;
+        }
+        if Path::new("devices").is_dir() {
+            info!("deleting directory devices");
+            std::fs::remove_dir_all("devices")?;
+        }
+
+        // builds
+        if Path::new("build").is_dir() {
+            info!("deleting directory build");
+            std::fs::remove_dir_all("build")?;
+        }
+        if Path::new("Debug").is_dir() {
+            info!("deleting directory Debug");
+            std::fs::remove_dir_all("Debug")?;
+        }
+        if Path::new("Release").is_dir() {
+            info!("deleting directory Release");
+            std::fs::remove_dir_all("Release")?;
+        }
+
+        // CMake
+        let files = glob::glob("CMakeLists*")?;
+        for file in files {
+            if let Ok(file) = file {
+                info!("deleting file {}", file.display());
+                std::fs::remove_file(file)?;
+            }
+        }
+
+        // IAR: TODO: dir maybe configured in pac.at
+        if Path::new("iar").is_dir() {
+            info!("deleting directory iar");
+            std::fs::remove_dir_all("iar")?;
+        }
+
+        // logs
+        let files = glob::glob("*.log")?;
+        for file in files {
+            if let Ok(file) = file {
+                info!("deleting file {}", file.display());
+                std::fs::remove_file(file)?;
+            }
+        }
+
+        // clean pac related files
         self.pac.clean()
     }
 

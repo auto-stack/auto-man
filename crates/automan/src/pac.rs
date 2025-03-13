@@ -20,6 +20,7 @@ use tabled::{
 };
 use auto_atom::Atom;
 
+#[derive(Clone)]
 pub struct PacInfo {
     pub name: AutoStr,
     pub version: AutoStr,
@@ -279,6 +280,7 @@ impl Pac {
                     // merge dep's dep into current pac if not exists
                     for dep in pac.deps() {
                         if !new_deps.contains_key(&dep.name) {
+                            println!("adding dep {} from pac {}", dep.name, pac.name);
                             new_deps.insert(dep.name.clone(), dep.clone());
                         }
                     }
@@ -315,7 +317,9 @@ impl Pac {
         }
         self.targets = targets;
         for (_, dep) in new_deps {
-            self.targets.push(dep);
+            if !self.targets.iter().any(|t| t.name == dep.name) {
+                self.targets.push(dep);
+            }
         }
         Ok(())
     }
@@ -327,7 +331,7 @@ impl Pac {
         let info = self.device_index.lookup(&name);
         match info {
             Some(info) => {
-                self.download_repo(&info.name, &info.repo, &device.kind)?;
+                self.download_repo(&info, &device.kind)?;
                 return Ok(());
             }
             None => {
@@ -344,7 +348,10 @@ impl Pac {
         let info = self.index.lookup(&name);
         match info {
             Some(info) => {
-                self.download_repo(&info.name, &info.repo, &dep.kind)?;
+                let mut info = info.clone();
+                // TODO: check if dep version is in index
+                info.version = dep.version.clone();
+                self.download_repo(&info, &dep.kind)?;
                 return Ok(());
             }
             None => {
@@ -353,8 +360,8 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(&self, name: &AutoStr, repo: &AutoStr, kind: &TargetKind) -> AutoResult<()> {
-        println!("Downloading dependency from {}", repo);
+    pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind) -> AutoResult<()> {
+        println!("Checking dependency from {}", info.repo);
         // 1. make deps folder if not exists
         let deps_dir = match kind {
             TargetKind::Dep => "deps",
@@ -365,17 +372,61 @@ impl Pac {
             std::fs::create_dir_all(deps_dir)?;
         }
         // 2. use git to download the repo
-        let url = format!("{}", repo);
-        let path = format!("{}/{}", deps_dir, name);
-        let output = std::process::Command::new("git")
-            .arg("clone")
-            .arg(url)
-            .arg(path.clone())
-            .output()?;
-        if output.status.success() {
-            println!("Downloaded dependency {} from {}", name, repo);
+        let url = format!("{}", info.repo);
+        let path = format!("{}/{}", deps_dir, info.name);
+        if Path::new(&path).exists() {
+            // TODO: update the repo if necessary
+            // TODO: or provide a command to update dependencies
+            // let output = std::process::Command::new("git")
+            //     .arg("-C")
+            //     .arg(path.clone())
+            //     .arg("pull")
+            //     .arg("origin") // TODO: remote and branch, how to config?
+            //     .arg("master")
+            //     .arg("--tags")
+            //     .output()?;
+            // if output.status.success() {
+            //     println!("Updated dependency {} from {}", info.name, info.repo);
+            // } else {
+            //     println!("Failed to update dependency {} from {}", info.name, info.repo);
+            //     println!("{}", String::from_utf8_lossy(&output.stderr));
+            // }
+        } else {
+            let output = std::process::Command::new("git")
+                .arg("clone")
+                .arg(url)
+                .arg(path.clone())
+                .output()?;
+            if output.status.success() {
+                println!("Downloaded dependency {} from {}", info.name, info.repo);
+            } else {
+                println!("Failed to download dependency {} from {}", info.name, info.repo);
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+            }
         }
-        // 3. TODO: checkout wanted version
+        // 3. checkout wanted version
+        let mut version = info.version.clone();
+        if !version.is_empty() {
+            if !version.starts_with("v") {
+                version = format!("v{}", version.as_str()).into();
+            }
+            info!("checking out {} to version {}", info.name, version);
+            let mut cmd = std::process::Command::new("git");
+            cmd.arg("-C")
+               .arg(path)
+               .arg("checkout")
+               .arg(version.as_str());
+            
+            let cmd_str = format!("{:?}", cmd);
+            println!("cmd: {}", cmd_str);
+            let output = cmd.output()?;
+            if output.status.success() {
+                println!("Checked out dependency {} to version {}", info.name, info.version);
+            } else {
+                println!("Failed to checkout {} to version {}", info.name, version);
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
         Ok(())
     }
 
@@ -499,5 +550,18 @@ mod tests {
         pac.print_targets();
         let atom = pac.to_atom();
         println!("{}", atom);
+    }
+
+    #[test]
+    fn test_autostr_key() {
+        use std::collections::HashMap;
+        use auto_val::AutoStr;
+        let mut map = HashMap::new();
+        let key = AutoStr::from("a");
+        map.insert(key, "A");
+
+        let key2: AutoStr = "a".into();
+        assert!(map.contains_key(&key2));
+
     }
 }
