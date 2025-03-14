@@ -1,11 +1,11 @@
-use std::path::Path;
-use crate::{AutoError, AutoResult};
 use crate::asset::Templates;
-use auto_lang::config::AutoConfig;
 use crate::Pac;
+use crate::{AutoError, AutoResult};
+use auto_lang::config::AutoConfig;
 use auto_val::{AutoStr, Obj};
-use log::*;
 use glob::glob;
+use log::*;
+use std::path::Path;
 pub struct Automan {
     pac: Pac,
 }
@@ -42,6 +42,10 @@ impl Automan {
         Templates::copy(template, name)?;
         Ok(())
     }
+
+    pub(crate) fn update_deps(&mut self) -> AutoResult<()> {
+        self.pac.update_deps()
+    }
 }
 
 // API
@@ -57,13 +61,15 @@ impl Automan {
         // info!("Config: {}", config.root);
         let pac = Pac::new(config);
         // pac.print_targets();
-    
+
         Ok(pac)
     }
 
     pub fn new(path: &str) -> Result<Self, AutoError> {
         // Currently, only CMake builder is supported
-        Ok(Self { pac: Self::parse_pac(path)?})
+        Ok(Self {
+            pac: Self::parse_pac(path)?,
+        })
     }
 
     pub fn pull(&self) -> Result<(), AutoError> {

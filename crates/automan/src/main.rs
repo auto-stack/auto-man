@@ -1,29 +1,27 @@
-pub mod fs;
 pub mod asset;
-pub mod util;
-pub mod pull;
-mod builder;
-mod pac;
 mod automan;
+mod builder;
+pub mod fs;
+mod pac;
+pub mod pull;
 mod target;
+pub mod util;
 
 pub use automan::*;
+pub use builder::*;
 pub use pac::*;
 pub use target::*;
-pub use builder::*;
 
+use auto_val::AutoStr;
+use clap::{CommandFactory, Parser, Subcommand};
+use dialoguer::Select;
 use log::*;
 use simplelog::*;
-use auto_val::AutoStr;
-use clap::{Parser, Subcommand, CommandFactory};
-use dialoguer::Select;
 
 // use std::fs::File;
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
-
-
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
@@ -43,9 +41,7 @@ enum Commands {
     #[command(about = "New C Library Package")]
     Clib { name: String },
     #[command(about = "Scan Dependencies")]
-    Scan {
-        port: Option<String>,
-    },
+    Scan { port: Option<String> },
     #[command(about = "Build Project", alias = "b")]
     Build {
         dir: Option<String>,
@@ -54,18 +50,22 @@ enum Commands {
     #[command(about = "Run Executable", alias = "r")]
     Run,
     #[command(about = "Clean Project")]
-    Clean {
-        dir: Option<String>,
-    },
+    Clean { dir: Option<String> },
+    #[command(about = "Update Dependencies")]
+    Update,
 }
 
 fn init_logger() {
-    CombinedLogger::init(
-        vec![
-            TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            // WriteLogger::new(LevelFilter::Info, Config::default(), File::create("automan.log").unwrap()),
-        ]
-    ).unwrap();
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            LevelFilter::Info,
+            Config::default(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ),
+        // WriteLogger::new(LevelFilter::Info, Config::default(), File::create("automan.log").unwrap()),
+    ])
+    .unwrap();
 }
 
 fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
@@ -119,7 +119,11 @@ fn main() -> Result<(), AutoError> {
             am.scan()?;
         }
         Some(Commands::Build { dir, port }) => {
-            let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
+            let dir = if let Some(dir) = dir {
+                dir
+            } else {
+                ".".to_string()
+            };
             let mut am = Automan::new(&dir)?;
             let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
@@ -136,14 +140,21 @@ fn main() -> Result<(), AutoError> {
             println!("------------- end --------------");
         }
         Some(Commands::Clean { dir }) => {
-            let dir = if let Some(dir) = dir { dir } else { ".".to_string() };
+            let dir = if let Some(dir) = dir {
+                dir
+            } else {
+                ".".to_string()
+            };
             let mut am = Automan::new(&dir)?;
-            am.clean()?;    
+            am.clean()?;
+        }
+        Some(Commands::Update) => {
+            let mut am = Automan::new(".")?;
+            am.update_deps()?;
         }
         None => {
             Cli::command().print_help()?;
         }
-     }
+    }
     Ok(())
-
 }

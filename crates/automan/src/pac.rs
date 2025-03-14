@@ -1,24 +1,19 @@
-use auto_lang::config::AutoConfig;
-use std::path::Path;
-use auto_val::{AutoStr, Obj, Node, pretty, Arg, Value, AutoPath, Array, ValueKey};
-use crate::AutoResult;
-use crate::{Target, TargetKind, TargetStatus};
-use log::*;
-use std::fmt;
-use std::collections::HashMap;
+use crate::builder::new_builder;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
-use crate::builder::new_builder;
-use tabled::{
-    Table,
-    settings::{
-        style::Style,
-        object::Rows,
-        themes::Colorization,
-        Color,
-    },
-};
+use crate::AutoResult;
+use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
+use auto_lang::config::AutoConfig;
+use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey};
+use log::*;
+use std::collections::HashMap;
+use std::fmt;
+use std::path::Path;
+use tabled::{
+    settings::{object::Rows, style::Style, themes::Colorization, Color},
+    Table,
+};
 
 #[derive(Clone)]
 pub struct PacInfo {
@@ -42,12 +37,22 @@ impl Index {
         let config = AutoConfig::from_code(&code, &Obj::new())?;
         // config is a bunch of index nodes
         let root = config.root;
-        root.nodes.iter().filter(|n| n.name == "pac" || n.name == "device").for_each(|n| {
-            let name = n.id();
-            let version = n.get_prop("version").to_astr();
-            let repo = n.get_prop("repo").to_astr();
-            map.insert(name.clone(), PacInfo { name, repo, version });
-        });
+        root.nodes
+            .iter()
+            .filter(|n| n.name == "pac" || n.name == "device")
+            .for_each(|n| {
+                let name = n.id();
+                let version = n.get_prop("version").to_astr();
+                let repo = n.get_prop("repo").to_astr();
+                map.insert(
+                    name.clone(),
+                    PacInfo {
+                        name,
+                        repo,
+                        version,
+                    },
+                );
+            });
 
         Ok(Index { map })
     }
@@ -127,7 +132,8 @@ impl Pac {
         }
 
         let mut table = Table::new(&statuses);
-        table.with(Style::modern_rounded())
+        table
+            .with(Style::modern_rounded())
             .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
 
         println!("{}", table);
@@ -163,7 +169,10 @@ impl Pac {
     }
 
     pub fn deps(&self) -> Vec<&Target> {
-        self.targets.iter().filter(|t| t.kind == TargetKind::Dep).collect()
+        self.targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::Dep)
+            .collect()
     }
 
     pub fn list_port_names(&self) -> Vec<AutoStr> {
@@ -172,7 +181,12 @@ impl Pac {
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
         // 0. check port
-        if self.ports.iter().find(|p| p.main_arg().to_astr() == port).is_none() {
+        if self
+            .ports
+            .iter()
+            .find(|p| p.main_arg().to_astr() == port)
+            .is_none()
+        {
             return Err(format!("Port {} not found", port).into());
         }
         // merge configs within the port into the pac
@@ -180,7 +194,9 @@ impl Pac {
         // set builder
         match port.as_str() {
             "cmake" => {
-                self.builder = Some(new_builder(BuilderKind::CMake("CMakeLists.txt".to_string())));
+                self.builder = Some(new_builder(BuilderKind::CMake(
+                    "CMakeLists.txt".to_string(),
+                )));
             }
             "iar" => {
                 self.builder = Some(new_builder(BuilderKind::IAR(AutoPath::new("iar"))));
@@ -219,7 +235,11 @@ impl Pac {
     }
 
     fn merge_port(&mut self, port: AutoStr) -> AutoResult<()> {
-        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port).unwrap();
+        let port_node = self
+            .ports
+            .iter()
+            .find(|p| p.main_arg().to_astr() == port)
+            .unwrap();
         // props
         let props = port_node.props.clone();
         self.props.merge(&props);
@@ -257,7 +277,7 @@ impl Pac {
                         // git update
                         let path = format!("deps/{}", target.name);
                         self.update_repo(&path)?;
-                        
+
                         continue;
                     }
                     self.download_dep(&target)?;
@@ -267,7 +287,8 @@ impl Pac {
                     let dep_config = AutoConfig::from_file(
                         Path::new(format!("deps/{}/pac.at", target.name).as_str()),
                         // override dep props
-                        &target.props)?;
+                        &target.props,
+                    )?;
                     let mut pac = Pac::new(dep_config);
                     // get the lib target
                     let dep_name = target.name.clone();
@@ -299,7 +320,8 @@ impl Pac {
                     let dep_config = AutoConfig::from_file(
                         Path::new(format!("devices/{}/device.at", target.name).as_str()),
                         // override dep props
-                        &target.props)?;
+                        &target.props,
+                    )?;
                     let pac = Pac::new(dep_config);
                     // TODO: recursively download dep targets from the dep
                     // get the lib target
@@ -400,7 +422,10 @@ impl Pac {
             if output.status.success() {
                 println!("Downloaded dependency {} from {}", info.name, info.repo);
             } else {
-                println!("Failed to download dependency {} from {}", info.name, info.repo);
+                println!(
+                    "Failed to download dependency {} from {}",
+                    info.name, info.repo
+                );
                 println!("{}", String::from_utf8_lossy(&output.stderr));
             }
         }
@@ -413,15 +438,18 @@ impl Pac {
             info!("checking out {} to version {}", info.name, version);
             let mut cmd = std::process::Command::new("git");
             cmd.arg("-C")
-               .arg(path)
-               .arg("checkout")
-               .arg(version.as_str());
-            
+                .arg(path)
+                .arg("checkout")
+                .arg(version.as_str());
+
             let cmd_str = format!("{:?}", cmd);
             println!("cmd: {}", cmd_str);
             let output = cmd.output()?;
             if output.status.success() {
-                println!("Checked out dependency {} to version {}", info.name, info.version);
+                println!(
+                    "Checked out dependency {} to version {}",
+                    info.name, info.version
+                );
             } else {
                 println!("Failed to checkout {} to version {}", info.name, version);
                 println!("{}", String::from_utf8_lossy(&output.stderr));
@@ -475,6 +503,70 @@ impl Pac {
         Ok(())
     }
 
+    pub(crate) fn update_deps(&mut self) -> AutoResult<()> {
+        let mut targets = std::mem::take(&mut self.targets);
+        for target in targets.iter_mut() {
+            match target.kind {
+                TargetKind::Dep => {
+                    if target.exists() {
+                        // git update
+                        let path = format!("deps/{}", target.name);
+                        self.update_repo(&path)?;
+                        continue;
+                    }
+                    self.download_dep(&target)?;
+                    // get args from dep node props
+                    // read pac.at from dep and parse the lib target
+                    info!("reading pac with override props: {:?}", target.props);
+                    let dep_config = AutoConfig::from_file(
+                        Path::new(format!("deps/{}/pac.at", target.name).as_str()),
+                        // override dep props
+                        &target.props,
+                    )?;
+                    let mut pac = Pac::new(dep_config);
+                    // get the lib target
+                    let dep_name = target.name.clone();
+                    let lib_target = pac.get_target(dep_name);
+                    if let Some(lib_target) = lib_target {
+                        // merge the lib target into current dep target
+                        target.merge(lib_target);
+                    }
+                    pac.download_deps()?;
+                }
+                TargetKind::Device => {
+                    if target.exists() {
+                        // git update
+                        let path = format!("devices/{}", target.name);
+                        self.update_repo(&path)?;
+                        continue;
+                    }
+                    self.download_device(&target)?;
+                    // get args from dep node props
+                    // read pac.at from dep and parse the lib target
+                    info!("reading device with override props: {:?}", target.props);
+                    let dep_config = AutoConfig::from_file(
+                        Path::new(format!("devices/{}/device.at", target.name).as_str()),
+                        // override dep props
+                        &target.props,
+                    )?;
+                    let pac = Pac::new(dep_config);
+                    // TODO: recursively download dep targets from the dep
+                    // get the lib target
+                    let dep_name = target.name.clone();
+                    let dev_target = pac.get_target(dep_name);
+                    if let Some(dev_target) = dev_target {
+                        // merge the dev target into current dev target
+                        info!("depending dev root: {}", dev_target.root);
+                        target.merge(dev_target);
+                        info!("device root updated: {}", target.root);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.targets = targets;
+        Ok(())
+    }
 }
 impl Pac {
     pub fn to_node(&self) -> Node {
@@ -554,14 +646,13 @@ mod tests {
 
     #[test]
     fn test_autostr_key() {
-        use std::collections::HashMap;
         use auto_val::AutoStr;
+        use std::collections::HashMap;
         let mut map = HashMap::new();
         let key = AutoStr::from("a");
         map.insert(key, "A");
 
         let key2: AutoStr = "a".into();
         assert!(map.contains_key(&key2));
-
     }
 }
