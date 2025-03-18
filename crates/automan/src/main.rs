@@ -53,6 +53,10 @@ enum Commands {
     Clean { dir: Option<String> },
     #[command(about = "Update Dependencies")]
     Update,
+    #[command(about = "Show Dependencies")]
+    Deps,
+    #[command(about = "Show Devices")]
+    Devices,
 }
 
 fn init_logger() {
@@ -151,6 +155,12 @@ fn main() -> Result<(), AutoError> {
         Some(Commands::Update) => {
             let mut am = Automan::new(".")?;
             am.update_deps()?;
+        }
+        Some(Commands::Deps) => {
+            Automan::list_deps()?;
+        }
+        Some(Commands::Devices) => {
+            Automan::list_devices()?;
         }
         None => {
             Cli::command().print_help()?;

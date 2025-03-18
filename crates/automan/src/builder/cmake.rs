@@ -1,12 +1,12 @@
-use std::io::Write;
-use std::path::Path;
-use std::fs::File;
-use std::collections::HashSet;
 use super::Builder;
 use auto_val::AutoStr;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
-use crate::{Pac, Target, TargetKind};
 use crate::AutoResult;
+use crate::{Pac, Target, TargetKind};
 
 pub struct CMakeBuilder {
     pub cmake_path: String,
@@ -50,7 +50,7 @@ fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
 }
 
 impl Builder for CMakeBuilder {
-    fn build(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
         println!("Building with CMake");
         self.setup(pac)?;
         for t in &pac.targets {
@@ -60,10 +60,11 @@ impl Builder for CMakeBuilder {
         Ok(())
     }
 
-    fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn setup(&mut self, pac: &mut Pac) -> AutoResult<()> {
         self.clear_cmake_file()?;
         self.out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
-        self.out.write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
+        self.out
+            .write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
         self.out.write(b"\n")?;
         Ok(())
     }
@@ -113,9 +114,18 @@ impl Builder for CMakeBuilder {
         }
         out.write(b")\n\n")?;
 
-        let incs = target.incs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+        let incs = target
+            .incs
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         if !incs.is_empty() {
-            let attr = if is_header_only { "INTERFACE" } else { "PUBLIC" };
+            let attr = if is_header_only {
+                "INTERFACE"
+            } else {
+                "PUBLIC"
+            };
             out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
             print_list(&target.incs, out)?;
             out.write(b")\n")?;
@@ -143,11 +153,10 @@ impl Builder for CMakeBuilder {
     fn run(&mut self, pac: &Pac) -> AutoResult<()> {
         // run target
         let target = pac.exe_path();
-        let status = std::process::Command::new(target)
-            .status()?;
+        let status = std::process::Command::new(target).status()?;
         if !status.success() {
             return Err(format!("Failed to run cmake").into());
         }
         Ok(())
     }
-}   
+}

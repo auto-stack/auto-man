@@ -143,6 +143,9 @@ impl Pac {
         let mut has_prop = false;
         // TODO: too much clone for key
         let key = ValueKey::Str(prop.into());
+        if self.props.has(key.clone()) {
+            return true;
+        }
         for target in &self.targets {
             if target.kind == TargetKind::Device {
                 if target.props.has(key.clone()) {
@@ -569,6 +572,15 @@ impl Pac {
     }
 }
 impl Pac {
+    fn has_target(&self, kind: TargetKind) -> bool {
+        for t in &self.targets {
+            if t.kind == kind {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn to_node(&self) -> Node {
         let mut root = Node::new("root");
         // name prop is the first positional arg
@@ -583,6 +595,22 @@ impl Pac {
         }
         all_incs.sort();
         root.set_prop("all_incs", Value::Array(Array::from_vec(all_incs)));
+
+        if !self.has_target(TargetKind::Dep) {
+            root.set_prop("deps", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::Device) {
+            root.set_prop("devices", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::Lib) {
+            root.set_prop("libs", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::App) {
+            root.set_prop("apps", Value::Array(Array::new()));
+        }
 
         let props = self.props.clone();
         for (k, v) in props.iter() {

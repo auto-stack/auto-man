@@ -1,11 +1,11 @@
-use auto_val::{AutoStr, AutoPath};
-use crate::AutoResult;
-use crate::pac::Pac;
-use crate::target::Target;
 use super::Builder;
-use log::*;
 use crate::asset::IARTemplate;
+use crate::pac::Pac;
+use crate::target::{Target, TargetKind};
+use crate::AutoResult;
 use auto_gen::*;
+use auto_val::{AutoPath, AutoStr};
+use log::*;
 
 pub struct IARBuilder {
     pub gen: AutoGen,
@@ -16,16 +16,36 @@ impl IARBuilder {
         let gen = AutoGen::new().out(path).note('@');
         Self { gen }
     }
+
+    fn check_devices(&self, pac: &mut Pac) -> AutoResult<()> {
+        let mut has_device = false;
+        for target in &pac.targets {
+            if target.kind == TargetKind::Device {
+                has_device = true;
+                break;
+            }
+        }
+        if !has_device {
+            // let mut dummy_device = Target::new("dummy", TargetKind::Device);
+            // dummy_device.props.set("icf", "dummy");
+            // dummy_device.props.set("ddf", "dummy");
+            // dummy_device.props.set("board", "dummy");
+            // pac.targets.push(dummy_device);
+        }
+        return Ok(());
+    }
 }
 
 impl Builder for IARBuilder {
-    fn build(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
         println!("Building with IAR");
         self.setup(pac)?;
         self.finish(pac)
     }
 
-    fn setup(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn setup(&mut self, pac: &mut Pac) -> AutoResult<()> {
+        // check devices
+        self.check_devices(pac)?;
         // check necessary configs
         if !pac.has_device_prop("icf") {
             error!("icf file location is not set");
@@ -82,4 +102,3 @@ impl Builder for IARBuilder {
         Ok(())
     }
 }
-

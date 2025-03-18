@@ -2,10 +2,14 @@ use crate::asset::Templates;
 use crate::Pac;
 use crate::{AutoError, AutoResult};
 use auto_lang::config::AutoConfig;
-use auto_val::{AutoStr, Obj};
-use glob::glob;
+use auto_val::{AutoPath, AutoStr, Obj};
 use log::*;
+use tabled::{
+    settings::{object::Rows, style::Style, themes::Colorization, Color},
+    Table, Tabled
+};
 use std::path::Path;
+
 pub struct Automan {
     pac: Pac,
 }
@@ -162,5 +166,186 @@ impl Automan {
 
     pub fn list_port_names(&self) -> Vec<AutoStr> {
         self.pac.list_port_names()
+    }
+
+    pub fn list_deps() -> AutoResult<()> {
+        let store = Self::index_store()?;
+        store.list_deps()
+    }
+
+    pub fn index_store() -> AutoResult<IndexStore> {
+        let dir = search_dirs_or_clone(".am/index", vec![
+            "D://".into(),
+            home_path(),
+            "C://".into(),
+            "E://".into(),
+        ]);
+        if let Some(dir) = dir {
+            Ok(IndexStore::new(dir))
+        } else {
+            Err(format!("No index found").into())
+        }
+    }
+
+    pub fn list_devices() -> AutoResult<()> {
+        let store = Self::index_store()?;
+        store.list_devices()
+    }
+}
+
+fn home_path() -> AutoPath {
+    dirs::home_dir().unwrap().to_str().unwrap().into()
+}
+
+fn search_dirs_or_clone(dir: &str, locations: Vec<AutoPath>) -> Option<AutoPath> {
+    if locations.is_empty() {
+        return None;
+    }
+    let first = locations[0].clone();
+    for location in locations {
+        let dir = location.join(dir);
+        if dir.is_dir() {
+            return Some(dir);
+        }
+    }
+    // try to create the directory in the first location
+    let dir = first.join(dir);
+    // git clone from git@codeup.aliyun.com:soutek/auto-stack/auto-index.git
+    let result = std::process::Command::new("git")
+        .arg("clone")
+        .arg(INDEX_REPO)
+        .arg(dir.path())
+        .output();
+    match result {
+        Ok(_) => Some(dir),
+        Err(e) => {
+            error!("Failed to clone repository {} to {} with error {}", INDEX_REPO, dir, e);
+            None
+        }
+    }
+}
+
+pub struct IndexStore {
+    path: AutoPath,
+}
+
+const INDEX_REPO: &str = "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git";
+
+#[derive(Tabled)]
+pub struct PacIndex {
+    name: AutoStr,
+    url: AutoStr,
+    versions: AutoStr,
+}
+
+impl IndexStore {
+    pub fn new(path: AutoPath) -> Self {
+        Self { path }
+    }
+
+    pub fn list_deps(&self) -> AutoResult<()> {
+        // read index.at within the path's dir
+        let index = self.path.join("index.at");
+        if !index.is_file() {
+            return Err(format!("No index.at file found in {}", self.path).into());
+        }
+        let index = AutoConfig::read(index.path())?;
+        let mut pacs = Vec::new();
+        for pac in index.root.nodes("pac") {
+            pacs.push(PacIndex {
+                name: pac.main_arg().to_astr(),
+                url: pac.get_prop_of("repo").to_astr(),
+                versions: pac.get_prop_of("versions").to_astr(),
+            });
+        }
+        // print as table
+        let mut table = Table::new(pacs);
+        table
+            .with(Style::modern_rounded())
+            .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
+        println!("{}", table);
+        Ok(())
+    }
+
+    pub fn list_devices(&self) -> AutoResult<()> {
+        let index = self.path.join("devices.at");
+        if !index.is_file() {
+            return Err(format!("No device.at file found in {}", self.path).into());
+        }
+        let index = AutoConfig::read(index.path())?;
+        let mut devices = Vec::new();
+        for device in index.root.nodes("device") {
+            devices.push(PacIndex {
+                name: device.main_arg().to_astr(),
+                url: device.get_prop_of("repo").to_astr(),
+                versions: device.get_prop_of("versions").to_astr(),
+            });
+        }
+        // print as table
+        let mut table = Table::new(devices);
+        table
+            .with(Style::modern_rounded())
+            .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
+        println!("{}", table);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_dirs() {
+        let path = search_dirs_or_clone(".am/index", vec![
+            "D://".into(),
+            home_path(),
+            "C://".into(),
+            "E://".into(),
+        ]);
+        assert!(path.is_some());
+        assert!(path.unwrap().is_dir());
+    }
+
+    #[test]
+    fn test_env() {
+        use std::env;
+        println!("home: {}", env::var("HOME").unwrap());
+    }
+
+    #[test]
+    fn test_git() {
+        use git2::RemoteCallbacks;
+        use git2::Cred;
+        // Prepare callbacks.
+        // let rsa_path = dirs::home_dir().unwrap().join(".ssh/id_rsa");
+        let rsa_path = AutoPath::new("D://.am/id_rsa").normalized();
+        // format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
+        println!("rsa_path: {}", rsa_path);
+        // read the rsa file
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            println!("username_from_url: {}", username_from_url.unwrap());
+            Cred::ssh_key(
+                username_from_url.unwrap(),
+                None,
+                rsa_path.path(),
+                None,
+            )
+        });
+
+        // Prepare fetch options.
+        let mut fo = git2::FetchOptions::new();
+        fo.remote_callbacks(callbacks);
+
+        // Prepare builder.
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fo);
+
+        // Clone the project.
+        match builder.clone(INDEX_REPO, Path::new("D://test_git")) {
+            Ok(_) => println!("Repository cloned successfully"),
+            Err(e) => println!("Failed to clone repository: {}", e),
+        }
     }
 }

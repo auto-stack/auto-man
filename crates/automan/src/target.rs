@@ -1,20 +1,20 @@
-use auto_val::{AutoStr, Node, Value};
 use crate::AutoResult;
+use auto_lang::transpiler::transpile_c;
+use auto_lang::util::*;
+use auto_val::Obj;
+use auto_val::{AutoStr, Node, Value};
+use log::*;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
-use std::fmt;
 use tabled::Tabled;
-use auto_lang::transpiler::transpile_c;
-use std::collections::{HashSet, HashMap};
-use auto_val::Obj;
-use auto_lang::util::*;
-use log::*;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TargetKind {
-    App, // 应用程序
-    Lib, // 静态代码库
-    Dep, // 依赖库
+    App,    // 应用程序
+    Lib,    // 静态代码库
+    Dep,    // 依赖库
     Device, // 设备资源
 }
 
@@ -41,7 +41,11 @@ impl fmt::Display for TargetKind {
     }
 }
 
-fn scan_dir_flat(path: &Path, kind: &TargetKind, skips: &HashSet<AutoStr>) -> AutoResult<(HashSet<AutoStr>, bool)> {
+fn scan_dir_flat(
+    path: &Path,
+    kind: &TargetKind,
+    skips: &HashSet<AutoStr>,
+) -> AutoResult<(HashSet<AutoStr>, bool)> {
     if !path.is_dir() {
         return Ok((HashSet::new(), false));
     }
@@ -59,7 +63,7 @@ fn scan_dir_flat(path: &Path, kind: &TargetKind, skips: &HashSet<AutoStr>) -> Au
         info!("..   got {}", path.display());
         let file_name = path.file_name();
         match file_name {
-            Some(file_name) => {    
+            Some(file_name) => {
                 let file_name = AutoStr::from(file_name.to_str().unwrap());
                 if skips.contains(&file_name) {
                     info!("skipping {}", file_name.as_str());
@@ -118,7 +122,8 @@ fn scan_specific_srcs(srcs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet
         // if the path itself is a file, add it to the succ_srcs
         if path.is_file() {
             succ_srcs.insert(path.unified());
-        } else { // try to find the path relative to the root dir
+        } else {
+            // try to find the path relative to the root dir
             let rel_path = Path::new(root.as_str()).join(src.as_str());
             info!("scanning relative path src: {}", rel_path.display());
             if rel_path.is_file() {
@@ -144,7 +149,8 @@ fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr
         if path.is_dir() {
             info!("got inc dir: {}", path.unified());
             succ_incs.insert(path.unified());
-        } else { // try to find the path relative to the root dir
+        } else {
+            // try to find the path relative to the root dir
             let rel_path = Path::new(root.as_str()).join(inc.as_str());
             if rel_path.is_dir() {
                 info!("got inc dir: {}", rel_path.unified());
@@ -172,35 +178,73 @@ impl Dir {
     pub fn from_str(name: AutoStr, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = name;
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
-        info!("making Dir {}::{}::root: {}", parent, name, root);
-        Self { name, root, scan: true, target_kind, dirs: Vec::new(), srcs: Vec::new(), incs: Vec::new(), skips: HashSet::new() }
+        info!("making Dir {}::{} with root: {}", parent, name, root);
+        Self {
+            name,
+            root,
+            scan: true,
+            target_kind,
+            dirs: Vec::new(),
+            srcs: Vec::new(),
+            incs: Vec::new(),
+            skips: HashSet::new(),
+        }
     }
 
     pub fn from_node(node: &Node, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = AutoStr::from(node.args.args[0].to_astr());
-        info!("making Dir {}::{}", parent, name);
         let parent_path = Path::new(parent.as_str());
         let root = if node.has_prop("root") {
-            parent_path.join(node.props.get_str_of("root").as_str()).unified()
+            parent_path
+                .join(node.props.get_str_of("root").as_str())
+                .unified()
         } else {
             parent_path.join(name.as_str()).unified()
         };
+
+        info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
             node.props.get_bool_of("scan")
         } else {
             true
         };
         // TODO read srcs, incs, skips from node
-        let dirs = node.props.get_array_of_str("dirs").into_iter().map(|s| Dir::from_str(s, root.clone(), target_kind.clone())).collect::<Vec<Dir>>();
+        let mut dirs = node
+            .props
+            .get_array_of_str("dirs")
+            .into_iter()
+            .map(|s| Dir::from_str(s, root.clone(), target_kind.clone()))
+            .collect::<Vec<Dir>>();
+        // read sub dirs by dir() node
+        let dir_nodes = node.nodes(&"dir");
+        for dir_node in dir_nodes {
+            let dir = Dir::from_node(dir_node, root.clone(), target_kind.clone());
+            dirs.push(dir);
+        }
+
         let srcs = node.props.get_array_of_str("srcs");
         let incs = node.props.get_array_of_str("incs");
-        let skips = node.props.get_array_of_str("skips").into_iter().map(|s| AutoStr::from(s)).collect::<HashSet<AutoStr>>();
+        let skips = node
+            .props
+            .get_array_of_str("skips")
+            .into_iter()
+            .map(|s| AutoStr::from(s))
+            .collect::<HashSet<AutoStr>>();
         info!("dir contents: {}", name);
         info!("root: {}", root);
         info!("srcs: {:?}", srcs);
         info!("incs: {:?}", incs);
         info!("skips: {:?}", skips);
-        Self { name, root, scan, target_kind, dirs, srcs, incs, skips }
+        Self {
+            name,
+            root,
+            scan,
+            target_kind,
+            dirs,
+            srcs,
+            incs,
+            skips,
+        }
     }
 
     pub fn to_node(&self) -> Node {
@@ -209,7 +253,10 @@ impl Dir {
         node.props.set("root", self.root.clone());
         node.props.set("srcs", self.srcs.clone());
         node.props.set("incs", self.incs.clone());
-        node.props.set("skips", self.skips.clone().into_iter().collect::<Vec<AutoStr>>());
+        node.props.set(
+            "skips",
+            self.skips.clone().into_iter().collect::<Vec<AutoStr>>(),
+        );
 
         node
     }
@@ -440,7 +487,8 @@ pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr
     // 如果target的名称和pac名称相同，说明是主target，使用当前目录
     if name == pac {
         AutoStr::from(".")
-    } else { // 否则，使用libs/apps/deps中的目录
+    } else {
+        // 否则，使用libs/apps/deps中的目录
         let target_dir = match kind {
             TargetKind::App => "apps",
             TargetKind::Lib => "libs",
@@ -452,6 +500,25 @@ pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr
 }
 
 impl Target {
+    pub fn new(name: impl Into<AutoStr>, kind: TargetKind) -> Self {
+        Self {
+            name: name.into(),
+            version: AutoStr::new(),
+            kind,
+            root: AutoStr::new(),
+            is_scan: true,
+            dirs: HashMap::new(),
+            autos: Vec::new(),
+            srcs: HashSet::new(),
+            incs: HashSet::new(),
+            skips: HashSet::new(),
+            links: Vec::new(),
+            is_resolved: false,
+            is_main: false,
+            props: Obj::new(),
+        }
+    }
+
     pub fn from(node: Node, pac: AutoStr) -> Self {
         // name
         let mut name = AutoStr::new();
@@ -483,14 +550,22 @@ impl Target {
         // dirs
         let dirs = node.props.get_array_of_str("dirs");
         // dirs.push(".".into());
-        let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone(), kind.clone()) }).collect();
+        let mut dirs: Vec<Dir> = dirs
+            .into_iter()
+            .map(|d| Dir::from_str(d, root.clone(), kind.clone()))
+            .collect();
         // check for dir nodes
         let dir_nodes = node.nodes(&"dir");
-        let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone(), kind.clone()) }).collect();
+        let dirs_from_nodes: Vec<Dir> = dir_nodes
+            .iter()
+            .map(|n| Dir::from_node(n, root.clone(), kind.clone()))
+            .collect();
         dirs.extend(dirs_from_nodes);
         // convert vec to hashmap
-        let dirs = dirs.into_iter().map(|d| (d.name.clone(), d)).collect::<HashMap<AutoStr, Dir>>();
- 
+        let dirs = dirs
+            .into_iter()
+            .map(|d| (d.name.clone(), d))
+            .collect::<HashMap<AutoStr, Dir>>();
 
         // check for srcs
         let srcs = node.props.get_array_of_str("srcs").to_set();
@@ -522,7 +597,7 @@ impl Target {
             props,
         }
     }
-    
+
     pub fn to_node(&self) -> Node {
         let node_type = match self.kind {
             TargetKind::App => "app",
@@ -547,8 +622,7 @@ impl Target {
                         let path = n.main_arg();
                         let path = Path::new(self.root.as_str()).join(path.as_str());
                         node.props.set(p.clone(), path.unified());
-                    }
-                    else {
+                    } else {
                         node.props.set(p.clone(), n.to_astr());
                     }
                 }
@@ -616,7 +690,10 @@ impl Target {
                 // dir.root = path.unified();
                 dir.append_root(self.root.clone());
                 let new_root = dir.root.clone();
-                info!("..   updating dir {} root {} -> {}", dir.name, cur_root, new_root);
+                info!(
+                    "..   updating dir {} root {} -> {}",
+                    dir.name, cur_root, new_root
+                );
             }
             self.dirs.insert(k.clone(), dir);
         }
@@ -684,11 +761,19 @@ impl Target {
         }
 
         // 2. check for target level specified srcs/incs
-        let srcs = self.srcs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
+        let srcs = self
+            .srcs
+            .iter()
+            .map(|s| s.clone())
+            .collect::<Vec<AutoStr>>();
         let scanned_srcs = scan_specific_srcs(&srcs, &self.root)?;
         succ_srcs.extend(scanned_srcs);
 
-        let incs = self.incs.iter().map(|s| s.clone()).collect::<Vec<AutoStr>>();
+        let incs = self
+            .incs
+            .iter()
+            .map(|s| s.clone())
+            .collect::<Vec<AutoStr>>();
         let scanned_incs = check_incs(&incs, &self.root)?;
         succ_incs.extend(scanned_incs);
 
@@ -709,7 +794,6 @@ impl Target {
 
         Ok(())
     }
-
 }
 
 #[derive(Tabled)]
@@ -726,7 +810,13 @@ impl TargetStatus {
             name: target.name.clone(),
             kind: target.kind.to_string().into(),
             root: target.root.clone(),
-            dirs: target.dirs.values().map(|d| d.to_string()).collect::<Vec<String>>().join(", ").into(),
+            dirs: target
+                .dirs
+                .values()
+                .map(|d| d.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+                .into(),
         }
     }
 }
@@ -734,8 +824,8 @@ impl TargetStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use auto_lang::config::AutoConfig;
     use crate::Pac;
+    use auto_lang::config::AutoConfig;
 
     #[test]
     fn test_dirs() {
@@ -795,8 +885,6 @@ mod tests {
         assert_eq!(root, "apps/demo");
     }
 
-    
-
     #[test]
     fn test_target() {
         let code = r#"
@@ -826,6 +914,4 @@ mod tests {
         println!("{}", path);
         assert_eq!(path, "apps/demo");
     }
-
 }
-
