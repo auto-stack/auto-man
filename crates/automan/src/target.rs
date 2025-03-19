@@ -1,5 +1,5 @@
 use crate::AutoResult;
-use auto_lang::transpiler::transpile_c;
+use auto_lang::trans::transpile_c;
 use auto_lang::util::*;
 use auto_val::Obj;
 use auto_val::{AutoStr, Node, Value};
