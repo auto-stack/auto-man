@@ -4,7 +4,7 @@ use std::fs::{create_dir_all, File};
 use std::path::Path;
 use std::io::Write;
 use crate::AutoError;
-use auto_lang::universe::Universe;
+use auto_lang::Universe;
 use auto_val::Value;
 use auto_val::AutoStr;
 #[derive(Embed)]
