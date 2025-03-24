@@ -14,6 +14,7 @@ use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
     Table,
 };
+use auto_val::{Shared, shared};
 
 #[derive(Clone)]
 pub struct PacInfo {
@@ -24,6 +25,29 @@ pub struct PacInfo {
 
 pub struct Index {
     map: HashMap<AutoStr, PacInfo>,
+}
+
+impl Default for Index {
+    fn default() -> Self {
+        Self {
+            map: HashMap::default(),
+        }
+    }
+}
+
+impl fmt::Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (name, info) in &self.map {
+            writeln!(f, "{}: {}", name, info)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for PacInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.name, self.version)
+    }
 }
 
 impl Index {
@@ -69,14 +93,10 @@ pub struct Pac {
     pub ports: Vec<Node>,
     pub builder: Option<Box<dyn Builder>>,
     pub targets: Vec<Target>,
-    pub index: Index,
-    pub device_index: Index,
+    pub index: Shared<Index>,
+    pub device_index: Shared<Index>,
     pub props: Obj,
 }
-
-// TODO: read from default locations by OS and Env
-const INDEX_PATH: &str = "D:/am/index.at";
-const DEVICE_INDEX_PATH: &str = "D:/am/devices.at";
 
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
@@ -109,8 +129,8 @@ impl Pac {
             builder,
             targets,
             props,
-            index: Index::load(INDEX_PATH.into()).unwrap(),
-            device_index: Index::load(DEVICE_INDEX_PATH.into()).unwrap(),
+            index: shared(Index::default()),
+            device_index: shared(Index::default()),
         }
     }
 
@@ -293,6 +313,8 @@ impl Pac {
                         &target.props,
                     )?;
                     let mut pac = Pac::new(dep_config);
+                    pac.index = self.index.clone();
+                    pac.device_index = self.device_index.clone();
                     // get the lib target
                     let dep_name = target.name.clone();
                     let lib_target = pac.get_target(dep_name);
@@ -325,7 +347,9 @@ impl Pac {
                         // override dep props
                         &target.props,
                     )?;
-                    let pac = Pac::new(dep_config);
+                    let mut pac = Pac::new(dep_config);
+                    pac.index = self.index.clone();
+                    pac.device_index = self.device_index.clone();
                     // TODO: recursively download dep targets from the dep
                     // get the lib target
                     let dep_name = target.name.clone();
@@ -353,7 +377,8 @@ impl Pac {
         info!("[download] device: {}", device.name);
         // 查询索引
         let name = device.name.clone();
-        let info = self.device_index.lookup(&name);
+        let index = self.device_index.borrow();
+        let info = index.lookup(&name);
         match info {
             Some(info) => {
                 self.download_repo(&info, &device.kind)?;
@@ -370,7 +395,9 @@ impl Pac {
         // 查询索引
         let name = dep.name.clone();
         println!("looking up dependency from index: {}", name);
-        let info = self.index.lookup(&name);
+        println!("index: {}", self.index.borrow());
+        let index = self.index.borrow();
+        let info = index.lookup(&name);
         match info {
             Some(info) => {
                 let mut info = info.clone();
@@ -527,6 +554,8 @@ impl Pac {
                         &target.props,
                     )?;
                     let mut pac = Pac::new(dep_config);
+                    pac.index = self.index.clone();
+                    pac.device_index = self.device_index.clone();
                     // get the lib target
                     let dep_name = target.name.clone();
                     let lib_target = pac.get_target(dep_name);
@@ -552,7 +581,9 @@ impl Pac {
                         // override dep props
                         &target.props,
                     )?;
-                    let pac = Pac::new(dep_config);
+                    let mut pac = Pac::new(dep_config);
+                    pac.index = self.index.clone();
+                    pac.device_index = self.device_index.clone();
                     // TODO: recursively download dep targets from the dep
                     // get the lib target
                     let dep_name = target.name.clone();

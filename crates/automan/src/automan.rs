@@ -9,6 +9,8 @@ use tabled::{
     Table, Tabled
 };
 use std::path::Path;
+use crate::pac::Index;
+use auto_val::shared;
 
 pub struct Automan {
     pac: Pac,
@@ -63,7 +65,11 @@ impl Automan {
         // 2. Parse pac.at
         let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
         // info!("Config: {}", config.root);
-        let pac = Pac::new(config);
+        let mut pac = Pac::new(config);
+        let index_store = Self::index_store()?;
+        pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
+        pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
+        println!("index: {}", pac.index.borrow());
         // pac.print_targets();
 
         Ok(pac)
