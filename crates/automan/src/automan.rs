@@ -201,15 +201,25 @@ fn search_dirs_or_clone(dir: &str, locations: Vec<AutoPath>) -> Option<AutoPath>
     if locations.is_empty() {
         return None;
     }
-    let first = locations[0].clone();
-    for location in locations {
+    for location in &locations {
         let dir = location.join(dir);
         if dir.is_dir() {
             return Some(dir);
         }
     }
+    // find first existing location
+    let mut first = None;
+    for loc in &locations {
+        if loc.is_dir() {
+            first = Some(loc.clone());
+        }
+    }
+    if first.is_none() {
+        return None;
+    }
     // try to create the directory in the first location
-    let dir = first.join(dir);
+    let dir = first.unwrap().join(dir);
+    println!("cloning to: {}", dir);
     // git clone from git@codeup.aliyun.com:soutek/auto-stack/auto-index.git
     let result = std::process::Command::new("git")
         .arg("clone")
