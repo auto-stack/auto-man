@@ -1,5 +1,5 @@
 use crate::AutoResult;
-use auto_lang::trans::transpile_c;
+use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
 use auto_val::Obj;
 use auto_val::{AutoStr, Node, Value};
@@ -451,6 +451,7 @@ pub struct Target {
     pub version: AutoStr,
     pub kind: TargetKind,
     pub root: AutoStr,
+    pub at: AutoStr,
     pub is_scan: bool,
     pub dirs: HashMap<AutoStr, Dir>,
     // Auto Source files
@@ -506,6 +507,7 @@ impl Target {
             version: AutoStr::new(),
             kind,
             root: AutoStr::new(),
+            at: AutoStr::default(),
             is_scan: true,
             dirs: HashMap::new(),
             autos: Vec::new(),
@@ -547,6 +549,13 @@ impl Target {
             get_root_dir(&name, &kind, &pac)
         };
 
+        // at
+        let at = if node.has_prop("at") {
+            node.props.get_str_of("at")
+        } else {
+            AutoStr::default()
+        };
+
         // dirs
         let dirs = node.props.get_array_of_str("dirs");
         // dirs.push(".".into());
@@ -585,6 +594,7 @@ impl Target {
             version,
             kind,
             root,
+            at,
             is_scan,
             dirs,
             autos: Vec::new(),

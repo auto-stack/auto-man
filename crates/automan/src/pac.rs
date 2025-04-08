@@ -6,6 +6,7 @@ use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
 use auto_lang::config::AutoConfig;
 use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey};
+use auto_val::{shared, Shared};
 use log::*;
 use std::collections::HashMap;
 use std::fmt;
@@ -14,7 +15,6 @@ use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
     Table,
 };
-use auto_val::{Shared, shared};
 
 #[derive(Clone)]
 pub struct PacInfo {
@@ -241,7 +241,7 @@ impl Pac {
         }
         // 1. resolve dependencies: download dep targets recursively if needed
         info!("downloading dependencies");
-        self.download_deps()?;
+        self.download_deps(&AutoStr::new())?;
 
         // 2. link targets with dependencies
         info!("linking targets with dependencies");
@@ -290,25 +290,47 @@ impl Pac {
         self.targets.iter().any(|t| t.name == *name)
     }
 
-    pub fn download_deps(&mut self) -> AutoResult<()> {
+    pub fn download_deps(&mut self, at: &AutoStr) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
         let mut new_deps = HashMap::new();
+
+        println!("Downloading deps with at {}", at);
+
         for target in targets.iter_mut() {
+            // override target's at location
+            if !at.is_empty() {
+                target.at = at.clone();
+            }
+
+            // if `at` is specified, root will be overridden
+            if !target.at.is_empty() {
+                let root = AutoPath::new(target.at.clone())
+                    .join(&target.name)
+                    .to_astr();
+                println!("dependency root: {}", root);
+                target.root = root.clone();
+            }
+
+            let loc = if target.at.is_empty() {
+                format!("deps/{}", target.name)
+            } else {
+                format!("{}/{}", target.at, target.name)
+            };
             match target.kind {
                 TargetKind::Dep => {
                     if target.exists() {
                         // git update
-                        let path = format!("deps/{}", target.name);
-                        self.update_repo(&path)?;
+                        self.update_repo(&loc)?;
 
                         continue;
                     }
+
                     self.download_dep(&target)?;
                     // get args from dep node props
                     // read pac.at from dep and parse the lib target
                     info!("reading pac with override props: {:?}", target.props);
                     let dep_config = AutoConfig::from_file(
-                        Path::new(format!("deps/{}/pac.at", target.name).as_str()),
+                        Path::new(&loc).join("pac.at").as_path(),
                         // override dep props
                         &target.props,
                     )?;
@@ -322,7 +344,7 @@ impl Pac {
                         // merge the lib target into current dep target
                         target.merge(lib_target);
                     }
-                    pac.download_deps()?;
+                    pac.download_deps(&target.at)?;
                     // merge dep's dep into current pac if not exists
                     for dep in pac.deps() {
                         if !new_deps.contains_key(&dep.name) {
@@ -377,11 +399,12 @@ impl Pac {
         info!("[download] device: {}", device.name);
         // 查询索引
         let name = device.name.clone();
+        let at = device.at.clone();
         let index = self.device_index.borrow();
         let info = index.lookup(&name);
         match info {
             Some(info) => {
-                self.download_repo(&info, &device.kind)?;
+                self.download_repo(&info, &device.kind, &at)?;
                 return Ok(());
             }
             None => {
@@ -394,6 +417,8 @@ impl Pac {
     pub fn download_dep(&mut self, dep: &Target) -> AutoResult<()> {
         // 查询索引
         let name = dep.name.clone();
+        let at = dep.at.clone();
+
         println!("looking up dependency from index: {}", name);
         println!("index: {}", self.index.borrow());
         let index = self.index.borrow();
@@ -403,7 +428,7 @@ impl Pac {
                 let mut info = info.clone();
                 // TODO: check if dep version is in index
                 info.version = dep.version.clone();
-                self.download_repo(&info, &dep.kind)?;
+                self.download_repo(&info, &dep.kind, &at)?;
                 return Ok(());
             }
             None => {
@@ -412,20 +437,24 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind) -> AutoResult<()> {
+    pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind, at: &AutoStr) -> AutoResult<()> {
         println!("Checking dependency from {}", info.repo);
         // 1. make deps folder if not exists
-        let deps_dir = match kind {
+        let mut deps_dir = match kind {
             TargetKind::Dep => "deps",
             TargetKind::Device => "devices",
             _ => return Err(format!("Invalid target kind: {}", kind).into()),
         };
+        if !at.is_empty() {
+            deps_dir = at.as_str();
+        }
         if !std::path::Path::new(deps_dir).exists() {
             std::fs::create_dir_all(deps_dir)?;
         }
         // 2. use git to download the repo
         let url = format!("{}", info.repo);
         let path = format!("{}/{}", deps_dir, info.name);
+        println!("Downloading dep rep {} at {}", info.name, path);
         if Path::new(&path).exists() {
             // TODO: update the repo if necessary
             // TODO: or provide a command to update dependencies
@@ -563,7 +592,7 @@ impl Pac {
                         // merge the lib target into current dep target
                         target.merge(lib_target);
                     }
-                    pac.download_deps()?;
+                    pac.download_deps(&AutoStr::new())?;
                 }
                 TargetKind::Device => {
                     if target.exists() {

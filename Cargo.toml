@@ -11,7 +11,7 @@ rust-embed = { version = "8.5.0", features = ["compression"] }
 auto-lang = { path = "../auto-lang/crates/auto-lang" }
 auto-val = { path = "../auto-lang/crates/auto-val" }
 auto-atom = { path = "../auto-lang/crates/auto-atom" }
-auto-gen = { path = "../auto-gen/crates/auto-gen" }
+auto-gen = { path = "../auto-lang/crates/auto-gen" }
 # switch to this dynamic lib for debug mode
 # gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", package = "gpui-dynamic" }
 # switch to this static lib for release mode
