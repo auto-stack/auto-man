@@ -2,7 +2,7 @@ use crate::AutoResult;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
 use auto_val::Obj;
-use auto_val::{AutoStr, Node, Value};
+use auto_val::{AutoPath, AutoStr, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -247,6 +247,18 @@ impl Dir {
         }
     }
 
+    pub fn update_root(&mut self, root: AutoStr) {
+        println!("Updating root to {}", root);
+        // set dir's root
+        let old_root = self.root.clone();
+        self.root = AutoPath::new(root).join(old_root).to_astr();
+        println!("Self.root: {}", self.root);
+        // recursively set root of subdirs
+        for dir in self.dirs.iter_mut() {
+            dir.update_root(self.root.clone());
+        }
+    }
+
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("dir");
         node.args.add_pos(self.name.clone());
@@ -450,7 +462,7 @@ pub struct Target {
     pub name: AutoStr,
     pub version: AutoStr,
     pub kind: TargetKind,
-    pub root: AutoStr,
+    pub root: AutoStr, // root dir of the target, including its name
     pub at: AutoStr,
     pub is_scan: bool,
     pub dirs: HashMap<AutoStr, Dir>,
@@ -543,7 +555,7 @@ impl Target {
         };
 
         // root
-        let root = if node.has_prop("root") {
+        let mut root = if node.has_prop("root") {
             node.props.get_str_of("root")
         } else {
             get_root_dir(&name, &kind, &pac)
@@ -555,6 +567,10 @@ impl Target {
         } else {
             AutoStr::default()
         };
+
+        if !at.is_empty() {
+            root = AutoPath::new(at.clone()).join(name.clone()).to_astr();
+        }
 
         // dirs
         let dirs = node.props.get_array_of_str("dirs");
@@ -608,6 +624,45 @@ impl Target {
         }
     }
 
+    fn default_location(&self) -> AutoPath {
+        let default_dir = match self.kind {
+            TargetKind::App => "apps",
+            TargetKind::Lib => "libs",
+            TargetKind::Dep => "deps",
+            TargetKind::Device => "devices",
+        };
+        AutoPath::new(default_dir).join(self.name.clone())
+    }
+
+    pub fn location(&self) -> AutoPath {
+        // if `at` is specified, root will be overridden
+        if self.at.is_empty() {
+            self.default_location()
+        } else {
+            AutoPath::new(self.at.clone()).join(&self.name)
+        }
+    }
+
+    pub fn config_name(&self) -> AutoStr {
+        match self.kind {
+            TargetKind::Device => "device.at".into(),
+            _ => "pac.at".into(),
+        }
+    }
+
+    pub fn set_at(&mut self, at: impl Into<AutoStr>) {
+        let at = at.into();
+        self.at = at.clone();
+        if !self.at.is_empty() {
+            self.root = self.location().to_astr();
+            println!("set root due to at: {}", self.root);
+            // update root of each sub dirs
+            for dir in self.dirs.iter_mut() {
+                dir.1.update_root(self.root.clone());
+            }
+        }
+    }
+
     pub fn to_node(&self) -> Node {
         let node_type = match self.kind {
             TargetKind::App => "app",
@@ -617,6 +672,7 @@ impl Target {
         };
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
+        node.props.set("name", self.name.clone());
         node.props.set("root", self.root.clone());
         node.props.set("srcs", set_to_vec(self.srcs.clone()));
         node.props.set("incs", set_to_vec(self.incs.clone()));
@@ -735,9 +791,12 @@ impl Target {
     // }
 
     fn check_dirs(&mut self) -> AutoResult<()> {
+        println!("checkdirs: path of target root: {}", self.root);
+        println!("checkdirs: path of target at: {}", self.at);
         // 1. check prop `dirs` for existing dirs
         for dir in self.dirs.values() {
             let path = dir.to_string();
+            println!("checkdirs: path of dir: {}", path);
             let path = Path::new(path.as_str());
             if !path.is_dir() {
                 return Err(format!("checking dir: {} is not a directory", path.display()).into());
