@@ -2,6 +2,7 @@ use crate::builder::new_builder;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
 use crate::AutoResult;
+use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
 use auto_lang::config::AutoConfig;
@@ -15,76 +16,6 @@ use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
     Table,
 };
-
-#[derive(Clone)]
-pub struct PacInfo {
-    pub name: AutoStr,
-    pub version: AutoStr,
-    pub repo: AutoStr,
-}
-
-pub struct Index {
-    map: HashMap<AutoStr, PacInfo>,
-}
-
-impl Default for Index {
-    fn default() -> Self {
-        Self {
-            map: HashMap::default(),
-        }
-    }
-}
-
-impl fmt::Display for Index {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (name, info) in &self.map {
-            writeln!(f, "{}: {}", name, info)?;
-        }
-        Ok(())
-    }
-}
-
-impl fmt::Display for PacInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.name, self.version)
-    }
-}
-
-impl Index {
-    pub fn load(path: AutoStr) -> AutoResult<Self> {
-        let path = Path::new(path.as_str());
-        let mut map = HashMap::new();
-        if !path.exists() {
-            return Err(format!("index file {} not found", path.display()).into());
-        }
-        let code = std::fs::read_to_string(path)?;
-        let config = AutoConfig::from_code(&code, &Obj::new())?;
-        // config is a bunch of index nodes
-        let root = config.root;
-        root.nodes
-            .iter()
-            .filter(|n| n.name == "pac" || n.name == "device")
-            .for_each(|n| {
-                let name = n.id();
-                let version = n.get_prop("version").to_astr();
-                let repo = n.get_prop("repo").to_astr();
-                map.insert(
-                    name.clone(),
-                    PacInfo {
-                        name,
-                        repo,
-                        version,
-                    },
-                );
-            });
-
-        Ok(Index { map })
-    }
-
-    pub fn lookup(&self, name: &AutoStr) -> Option<&PacInfo> {
-        self.map.get(name)
-    }
-}
 
 pub struct Pac {
     pub name: AutoStr,
@@ -589,11 +520,61 @@ impl Pac {
             root.set_prop("apps", Value::Array(Array::new()));
         }
 
+        root.set_prop("files", self.files_list());
+
         let props = self.props.clone();
         for (k, v) in props.iter() {
             root.set_prop(k.to_string().as_str(), v.clone());
         }
         root
+    }
+
+    fn files_list(&self) -> Array {
+        let mut total_list: HashMap<AutoStr, Vec<Obj>> = HashMap::new();
+
+        for t in &self.targets {
+            let loc = t.location();
+            // get the first two parts of loc
+            let mut head = loc.head().to_astr();
+            if head == t.name {
+                head = ".".into();
+            }
+            let mut target_dirs = Array::new();
+            for (_, d) in t.dirs.iter() {
+                let mut target_srcs = Obj::new();
+                let array: Vec<Value> = d.srcs.iter().map(|x| Value::Str(x.clone())).collect();
+                let array = Value::array(array);
+                target_srcs.set("name", d.name.clone());
+                target_srcs.set("srcs", array);
+                target_dirs.push(target_srcs);
+            }
+            let mut target_obj = Obj::new();
+            let array: Vec<Value> = t.srcs.iter().map(|x| Value::Str(x.clone())).collect();
+            let array = Value::array(array);
+            target_obj.set("srcs", array);
+            target_obj.set("name", t.name.clone());
+            target_obj.set("dirs", target_dirs);
+            if total_list.contains_key(&head) {
+                let array = total_list.get_mut(&head);
+                if let Some(array) = array {
+                    array.push(target_obj);
+                }
+            } else {
+                let mut array = vec![];
+                array.push(target_obj);
+                total_list.insert(head.clone(), array);
+            }
+        }
+
+        // convert hashmap to Array
+        let mut array = Array::new();
+        for (k, v) in total_list {
+            let mut obj = Obj::new();
+            obj.set("name", k);
+            obj.set("targets", v);
+            array.push(obj);
+        }
+        array
     }
 
     pub fn to_atom(&self) -> Atom {

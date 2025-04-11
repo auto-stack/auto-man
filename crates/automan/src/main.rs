@@ -2,6 +2,7 @@ pub mod asset;
 mod automan;
 mod builder;
 pub mod fs;
+mod index;
 mod pac;
 pub mod pull;
 mod target;
@@ -9,6 +10,7 @@ pub mod util;
 
 pub use automan::*;
 pub use builder::*;
+pub use index::*;
 pub use pac::*;
 pub use target::*;
 
@@ -98,6 +100,9 @@ fn main() -> Result<(), AutoError> {
     println!("-----------------------------------");
     println!();
     let cli = Cli::parse();
+
+    let config = load_config();
+    // try to load base config
     match cli.command {
         Some(Commands::App { name }) => {
             info!("Creating new app package {}", name);
@@ -117,7 +122,7 @@ fn main() -> Result<(), AutoError> {
         }
         Some(Commands::Scan { port }) => {
             info!("Scanning dependencies");
-            let mut am = Automan::new(".")?;
+            let mut am = Automan::new(".", config)?;
             let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
             am.scan()?;
@@ -128,14 +133,14 @@ fn main() -> Result<(), AutoError> {
             } else {
                 ".".to_string()
             };
-            let mut am = Automan::new(&dir)?;
+            let mut am = Automan::new(&dir, config)?;
             let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
             am.scan()?;
             am.build()?;
         }
         Some(Commands::Run) => {
-            let mut am = Automan::new(".")?;
+            let mut am = Automan::new(".", config)?;
             // TODO: add build process before running when user specified a '-b' flag
             info!("Running app ...");
             println!();
@@ -149,18 +154,18 @@ fn main() -> Result<(), AutoError> {
             } else {
                 ".".to_string()
             };
-            let mut am = Automan::new(&dir)?;
+            let mut am = Automan::new(&dir, config)?;
             am.clean()?;
         }
         Some(Commands::Update) => {
-            let mut am = Automan::new(".")?;
+            let mut am = Automan::new(".", config)?;
             am.update_deps()?;
         }
         Some(Commands::Deps) => {
-            Automan::list_deps()?;
+            Automan::list_deps(&config)?;
         }
         Some(Commands::Devices) => {
-            Automan::list_devices()?;
+            Automan::list_devices(&config)?;
         }
         None => {
             Cli::command().print_help()?;

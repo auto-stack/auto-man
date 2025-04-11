@@ -1,8 +1,8 @@
 use crate::AutoResult;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
-use auto_val::Obj;
-use auto_val::{AutoPath, AutoStr, Node, Value};
+use auto_val::{Array, Obj};
+use auto_val::{AutoPath, AutoStr, Node, Pair, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -60,7 +60,7 @@ fn scan_dir_flat(
         if !path.is_file() {
             continue;
         }
-        info!("..   got {}", path.display());
+        // info!("..   got {}", path.display());
         let file_name = path.file_name();
         match file_name {
             Some(file_name) => {
@@ -153,7 +153,7 @@ fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr
             // try to find the path relative to the root dir
             let rel_path = Path::new(root.as_str()).join(inc.as_str());
             if rel_path.is_dir() {
-                info!("got inc dir: {}", rel_path.unified());
+                // info!("got inc dir: {}", rel_path.unified());
                 succ_incs.insert(rel_path.unified());
             }
         }
@@ -248,11 +248,9 @@ impl Dir {
     }
 
     pub fn update_root(&mut self, root: AutoStr) {
-        println!("Updating root to {}", root);
         // set dir's root
         let old_root = self.root.clone();
         self.root = AutoPath::new(root).join(old_root).to_astr();
-        println!("Self.root: {}", self.root);
         // recursively set root of subdirs
         for dir in self.dirs.iter_mut() {
             dir.update_root(self.root.clone());
@@ -472,6 +470,7 @@ pub struct Target {
     pub srcs: HashSet<AutoStr>,
     // C header files/folders
     pub incs: HashSet<AutoStr>,
+    pub selects: HashSet<AutoStr>,
     pub skips: HashSet<AutoStr>,
     pub links: Vec<AutoStr>,
     pub is_resolved: bool,
@@ -512,6 +511,16 @@ pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr
     }
 }
 
+fn dir_filter(name: &AutoStr, selects: &HashSet<AutoStr>, skips: &HashSet<AutoStr>) -> bool {
+    if !selects.is_empty() && !selects.contains(name) {
+        return false;
+    }
+    if !skips.is_empty() && skips.contains(name) {
+        return false;
+    }
+    return true;
+}
+
 impl Target {
     pub fn new(name: impl Into<AutoStr>, kind: TargetKind) -> Self {
         Self {
@@ -525,6 +534,7 @@ impl Target {
             autos: Vec::new(),
             srcs: HashSet::new(),
             incs: HashSet::new(),
+            selects: HashSet::new(),
             skips: HashSet::new(),
             links: Vec::new(),
             is_resolved: false,
@@ -572,17 +582,25 @@ impl Target {
             root = AutoPath::new(at.clone()).join(name.clone()).to_astr();
         }
 
+        // selects
+        let selects = node.props.get_array_of_str("selects").to_set();
+        // check for skips
+        let skips = node.props.get_array_of_str("skips").to_set();
+
         // dirs
         let dirs = node.props.get_array_of_str("dirs");
         // dirs.push(".".into());
         let mut dirs: Vec<Dir> = dirs
             .into_iter()
+            .filter(|d| dir_filter(d, &selects, &skips))
             .map(|d| Dir::from_str(d, root.clone(), kind.clone()))
             .collect();
+
         // check for dir nodes
         let dir_nodes = node.nodes(&"dir");
         let dirs_from_nodes: Vec<Dir> = dir_nodes
-            .iter()
+            .into_iter()
+            .filter(|d| dir_filter(&d.main_arg().to_astr(), &selects, &skips))
             .map(|n| Dir::from_node(n, root.clone(), kind.clone()))
             .collect();
         dirs.extend(dirs_from_nodes);
@@ -598,8 +616,6 @@ impl Target {
         let incs = node.props.get_array_of_str("incs").to_set();
         // check for links
         let links = node.props.get_array_of_str("links");
-        // check for skips
-        let skips = node.props.get_array_of_str("skips").to_set();
         // check for props (dep target only)
         let props = node.props.clone();
 
@@ -616,6 +632,7 @@ impl Target {
             autos: Vec::new(),
             srcs,
             incs,
+            selects,
             skips,
             links,
             is_resolved: false,
@@ -655,7 +672,6 @@ impl Target {
         self.at = at.clone();
         if !self.at.is_empty() {
             self.root = self.location().to_astr();
-            println!("set root due to at: {}", self.root);
             // update root of each sub dirs
             for dir in self.dirs.iter_mut() {
                 dir.1.update_root(self.root.clone());
@@ -697,9 +713,17 @@ impl Target {
                 }
             }
         }
+        let mut dirs = Array::new();
         for dir in self.dirs.values() {
-            node.add_kid(dir.to_node());
+            // node.add_kid(dir.to_node());
+            let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
+            let mut obj = Obj::new();
+            obj.set("name", Value::Str(dir.name.clone()));
+            obj.set("srcs", array_val);
+            dirs.push(obj);
         }
+        // array of objects
+        node.set_prop("dirs", dirs);
         node
     }
 
@@ -791,12 +815,9 @@ impl Target {
     // }
 
     fn check_dirs(&mut self) -> AutoResult<()> {
-        println!("checkdirs: path of target root: {}", self.root);
-        println!("checkdirs: path of target at: {}", self.at);
         // 1. check prop `dirs` for existing dirs
         for dir in self.dirs.values() {
             let path = dir.to_string();
-            println!("checkdirs: path of dir: {}", path);
             let path = Path::new(path.as_str());
             if !path.is_dir() {
                 return Err(format!("checking dir: {} is not a directory", path.display()).into());
@@ -854,6 +875,7 @@ impl Target {
             succ_srcs.extend(dir.srcs.clone());
             succ_incs.extend(dir.incs.clone());
         }
+        self.dirs = dirs;
 
         self.srcs = succ_srcs.into_iter().collect();
         self.incs = succ_incs.into_iter().collect();
@@ -980,7 +1002,18 @@ mod tests {
         let cur = ".";
         let path = Path::new(root).join(cur);
         let path = path.unified();
-        println!("{}", path);
         assert_eq!(path, "apps/demo");
+    }
+
+    #[test]
+    fn test_filter_dirs() {
+        let selects: HashSet<AutoStr> = vec!["a".into(), "c".into()].to_set();
+        let skips: HashSet<AutoStr> = vec![].to_set();
+        let name = "a".into();
+        let succ = dir_filter(&name, &selects, &skips);
+        assert_eq!(succ, true);
+
+        let name = "b".into();
+        assert_eq!(dir_filter(&name, &selects, &skips), false);
     }
 }

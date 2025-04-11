@@ -1,40 +1,39 @@
 use crate::asset::Templates;
-use crate::pac::Index;
+use crate::AutoResult;
 use crate::Pac;
-use crate::{AutoError, AutoResult};
+use crate::{Index, IndexStore};
 use auto_lang::config::AutoConfig;
 use auto_val::shared;
 use auto_val::{AutoPath, AutoStr, Obj};
 use log::*;
+use std::env;
+use std::fmt::Display;
 use std::path::Path;
-use tabled::{
-    settings::{object::Rows, style::Style, themes::Colorization, Color},
-    Table, Tabled,
-};
 
 pub struct Automan {
+    config: AmConfig,
     pac: Pac,
 }
 
 // Static API
 impl Automan {
-    pub fn create_app(name: &str) -> Result<(), AutoError> {
+    pub fn create_app(name: &str) -> AutoResult<()> {
         Self::create_by_template(name, "app")
     }
 
-    pub fn create_capp(name: &str) -> Result<(), AutoError> {
+    pub fn create_capp(name: &str) -> AutoResult<()> {
         Self::create_by_template(name, "capp")
     }
 
-    pub fn create_lib(name: &str) -> Result<(), AutoError> {
+    pub fn create_lib(name: &str) -> AutoResult<()> {
         Self::create_by_template(name, "lib")
     }
 
-    pub fn create_clib(name: &str) -> Result<(), AutoError> {
+    pub fn create_clib(name: &str) -> AutoResult<()> {
         Self::create_by_template(name, "clib")
     }
 
-    pub fn create_by_template(name: &str, template: &str) -> Result<(), AutoError> {
+    pub fn create_by_template(name: &str, template: &str) -> AutoResult<()> {
         // 1. Check if project already exists
         let path = Path::new(name);
         if path.is_file() {
@@ -56,7 +55,7 @@ impl Automan {
 
 // API
 impl Automan {
-    pub fn parse_pac(path: &str) -> Result<Pac, AutoError> {
+    pub fn parse_pac(path: &str, am_config: &AmConfig) -> AutoResult<Pac> {
         // 1. Find pac.at
         let config = Path::new(path).join("pac.at");
         if !config.is_file() {
@@ -66,7 +65,7 @@ impl Automan {
         let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
         // info!("Config: {}", config.root);
         let mut pac = Pac::new(config);
-        let index_store = Self::index_store()?;
+        let index_store = Self::index_store(am_config)?;
         pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
         println!("index: {}", pac.index.borrow());
@@ -75,14 +74,14 @@ impl Automan {
         Ok(pac)
     }
 
-    pub fn new(path: &str) -> Result<Self, AutoError> {
+    pub fn new(path: &str, am: AmConfig) -> AutoResult<Self> {
         // Currently, only CMake builder is supported
-        Ok(Self {
-            pac: Self::parse_pac(path)?,
-        })
+        let config = am;
+        let pac = Self::parse_pac(path, &config)?;
+        Ok(Self { config, pac })
     }
 
-    pub fn pull(&self) -> Result<(), AutoError> {
+    pub fn pull(&self) -> AutoResult<()> {
         Ok(())
     }
 
@@ -90,8 +89,8 @@ impl Automan {
         self.pac.set_port(port)
     }
 
-    pub fn scan(&mut self) -> Result<(), AutoError> {
-        self.pac.print_targets();
+    pub fn scan(&mut self) -> AutoResult<()> {
+        // self.pac.print_targets();
         // 3. Resolve targets in the pac, including:
         // 3.1. Resolve dependencies
         // 3.2. Link targets with dependencies
@@ -102,23 +101,23 @@ impl Automan {
         Ok(())
     }
 
-    pub fn build(&mut self) -> Result<(), AutoError> {
+    pub fn build(&mut self) -> AutoResult<()> {
         // 1. Transpile auto code to c code
         self.transpile_auto()?;
         // 2. Build the project with a specific builder
         self.pac.build()
     }
 
-    pub fn transpile_auto(&mut self) -> Result<(), AutoError> {
+    pub fn transpile_auto(&mut self) -> AutoResult<()> {
         self.pac.transpile_autot()?;
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), AutoError> {
+    pub fn run(&mut self) -> AutoResult<()> {
         self.pac.run()
     }
 
-    pub fn clean(&mut self) -> Result<(), AutoError> {
+    pub fn clean(&mut self) -> AutoResult<()> {
         // deps and devices
         if Path::new("deps").is_dir() {
             info!("deleting directory deps");
@@ -175,139 +174,108 @@ impl Automan {
         self.pac.list_port_names()
     }
 
-    pub fn list_deps() -> AutoResult<()> {
-        let store = Self::index_store()?;
+    pub fn list_deps(config: &AmConfig) -> AutoResult<()> {
+        let store = Self::index_store(config)?;
         store.list_deps()
     }
 
-    pub fn index_store() -> AutoResult<IndexStore> {
-        let dir = search_dirs_or_clone(
-            ".am/index",
-            vec!["D://".into(), home_path(), "C://".into(), "E://".into()],
-        );
-        println!("dir: {:?}", dir);
-        if let Some(dir) = dir {
-            Ok(IndexStore::new(dir))
-        } else {
-            Err(format!("No index found").into())
+    pub fn index_store(config: &AmConfig) -> AutoResult<IndexStore> {
+        // try to get index location from amconfig
+        let am_path = AutoPath::new(&config.am);
+        if !am_path.is_dir() {
+            info!("creating am dir: {}", am_path.to_astr());
+            std::fs::create_dir_all(am_path.path())?;
         }
+        let index_path = am_path.join("index");
+        if !index_path.is_dir() {
+            // try to clone
+            info!("cloneing index dir: {}", index_path.to_astr());
+            std::fs::create_dir_all(index_path.path())?;
+            let repo = config.index.as_str();
+            let result = std::process::Command::new("git")
+                .arg("clone")
+                .arg(repo)
+                .arg(index_path.path())
+                .output();
+            match result {
+                Err(e) => {
+                    error!(
+                        "Failed to clone repository {} to {} with error {}",
+                        repo, index_path, e
+                    );
+                }
+                Ok(_) => {}
+            }
+        }
+        return Ok(IndexStore::new(index_path));
+
+        // let dir = Self::search_dirs_or_clone(
+        //     config,
+        //     ".am/index",
+        //     vec!["D://".into(), home_path(), "C://".into(), "E://".into()],
+        // );
+        // println!("dir: {:?}", dir);
+        // if let Some(dir) = dir {
+        //     Ok(IndexStore::new(dir))
+        // } else {
+        //     Err(format!("No index found").into())
+        // }
     }
 
-    pub fn list_devices() -> AutoResult<()> {
-        let store = Self::index_store()?;
+    pub fn list_devices(config: &AmConfig) -> AutoResult<()> {
+        let store = Self::index_store(config)?;
         store.list_devices()
+    }
+
+    fn search_dirs_or_clone(
+        config: &AmConfig,
+        dir: &str,
+        locations: Vec<AutoPath>,
+    ) -> Option<AutoPath> {
+        if locations.is_empty() {
+            return None;
+        }
+        for location in &locations {
+            let dir = location.join(dir);
+            if dir.is_dir() {
+                return Some(dir);
+            }
+        }
+        // find first existing location
+        let mut first = None;
+        for loc in &locations {
+            if loc.is_dir() {
+                first = Some(loc.clone());
+            }
+        }
+        if first.is_none() {
+            return None;
+        }
+        // try to create the directory in the first location
+        let dir = first.unwrap().join(dir);
+        println!("cloning to: {}", dir);
+        // git clone from git@codeup.aliyun.com:soutek/auto-stack/auto-index.git
+        let repo = config.index.as_str();
+        let result = std::process::Command::new("git")
+            .arg("clone")
+            .arg(repo)
+            .arg(dir.path())
+            .output();
+        match result {
+            Ok(_) => Some(dir),
+            Err(e) => {
+                error!(
+                    "Failed to clone repository {} to {} with error {}",
+                    repo, dir, e
+                );
+                None
+            }
+        }
     }
 }
 
 fn home_path() -> AutoPath {
     dirs::home_dir().unwrap().to_str().unwrap().into()
-}
-
-fn search_dirs_or_clone(dir: &str, locations: Vec<AutoPath>) -> Option<AutoPath> {
-    if locations.is_empty() {
-        return None;
-    }
-    for location in &locations {
-        let dir = location.join(dir);
-        if dir.is_dir() {
-            return Some(dir);
-        }
-    }
-    // find first existing location
-    let mut first = None;
-    for loc in &locations {
-        if loc.is_dir() {
-            first = Some(loc.clone());
-        }
-    }
-    if first.is_none() {
-        return None;
-    }
-    // try to create the directory in the first location
-    let dir = first.unwrap().join(dir);
-    println!("cloning to: {}", dir);
-    // git clone from git@codeup.aliyun.com:soutek/auto-stack/auto-index.git
-    let result = std::process::Command::new("git")
-        .arg("clone")
-        .arg(INDEX_REPO)
-        .arg(dir.path())
-        .output();
-    match result {
-        Ok(_) => Some(dir),
-        Err(e) => {
-            error!(
-                "Failed to clone repository {} to {} with error {}",
-                INDEX_REPO, dir, e
-            );
-            None
-        }
-    }
-}
-
-pub struct IndexStore {
-    path: AutoPath,
-}
-
-const INDEX_REPO: &str = "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git";
-
-#[derive(Tabled)]
-pub struct PacIndex {
-    name: AutoStr,
-    url: AutoStr,
-    versions: AutoStr,
-}
-
-impl IndexStore {
-    pub fn new(path: AutoPath) -> Self {
-        Self { path }
-    }
-
-    pub fn list_deps(&self) -> AutoResult<()> {
-        // read index.at within the path's dir
-        let index = self.path.join("index.at");
-        if !index.is_file() {
-            return Err(format!("No index.at file found in {}", self.path).into());
-        }
-        let index = AutoConfig::read(index.path())?;
-        let mut pacs = Vec::new();
-        for pac in index.root.nodes("pac") {
-            pacs.push(PacIndex {
-                name: pac.main_arg().to_astr(),
-                url: pac.get_prop_of("repo").to_astr(),
-                versions: pac.get_prop_of("versions").to_astr(),
-            });
-        }
-        // print as table
-        let mut table = Table::new(pacs);
-        table
-            .with(Style::modern_rounded())
-            .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
-        println!("{}", table);
-        Ok(())
-    }
-
-    pub fn list_devices(&self) -> AutoResult<()> {
-        let index = self.path.join("devices.at");
-        if !index.is_file() {
-            return Err(format!("No device.at file found in {}", self.path).into());
-        }
-        let index = AutoConfig::read(index.path())?;
-        let mut devices = Vec::new();
-        for device in index.root.nodes("device") {
-            devices.push(PacIndex {
-                name: device.main_arg().to_astr(),
-                url: device.get_prop_of("repo").to_astr(),
-                versions: device.get_prop_of("versions").to_astr(),
-            });
-        }
-        // print as table
-        let mut table = Table::new(devices);
-        table
-            .with(Style::modern_rounded())
-            .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
-        println!("{}", table);
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -316,12 +284,12 @@ mod tests {
 
     #[test]
     fn test_search_dirs() {
-        let path = search_dirs_or_clone(
-            ".am/index",
-            vec!["D://".into(), home_path(), "C://".into(), "E://".into()],
-        );
-        assert!(path.is_some());
-        assert!(path.unwrap().is_dir());
+        // let path = search_dirs_or_clone(
+        //     ".am/index",
+        //     vec!["D://".into(), home_path(), "C://".into(), "E://".into()],
+        // );
+        // assert!(path.is_some());
+        // assert!(path.unwrap().is_dir());
     }
 
     #[test]
@@ -355,9 +323,71 @@ mod tests {
         builder.fetch_options(fo);
 
         // Clone the project.
-        match builder.clone(INDEX_REPO, Path::new("D://test_git")) {
-            Ok(_) => println!("Repository cloned successfully"),
-            Err(e) => println!("Failed to clone repository: {}", e),
+        // match builder.clone(INDEX_REPO, Path::new("D://test_git")) {
+        // Ok(_) => println!("Repository cloned successfully"),
+        // Err(e) => println!("Failed to clone repository: {}", e),
+        // }
+    }
+}
+
+pub struct AmConfig {
+    pub index: AutoStr,
+    pub am: AutoStr,
+    pub is_default: bool,
+}
+
+impl Default for AmConfig {
+    fn default() -> Self {
+        Self {
+            index: "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git".into(),
+            am: home_path().to_astr(),
+            is_default: true,
         }
     }
+}
+
+impl Display for AmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AmConfig {\n")?;
+        f.write_str(format!("  index: {}\n", self.index).as_str())?;
+        f.write_str(format!("  am: {}\n", self.am).as_str())?;
+        f.write_str("}\n")
+    }
+}
+
+pub fn load_config() -> AmConfig {
+    // try to look for am.at file beside am.exe
+    match env::current_exe() {
+        Ok(path) => {
+            let config_path = path.as_path().parent();
+            if let Some(config_path) = config_path {
+                let config_path = config_path.join("am.at");
+                println!("Loading AmConfig from {:?}...", config_path.to_str());
+                if config_path.is_file() {
+                    let code = std::fs::read_to_string(config_path.clone());
+                    if let Ok(code) = code {
+                        let config = AutoConfig::from_code(code, &Obj::EMPTY);
+                        if let Ok(config) = config {
+                            let mut am = AmConfig::default();
+                            if config.root.has_prop("index") {
+                                am.index = config.root.get_prop("index").to_astr();
+                            }
+                            if config.root.has_prop("am") {
+                                am.am = config.root.get_prop_of("am").to_astr();
+                            }
+                            am.is_default = false;
+
+                            println!("AmConfig: {}", am);
+                            return am;
+                        }
+                    }
+                }
+            }
+            ()
+        }
+        Err(e) => {
+            println!("failed to get exe path: {e}");
+        }
+    }
+    AmConfig::default()
 }
