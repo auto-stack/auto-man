@@ -535,9 +535,12 @@ impl Pac {
         for t in &self.targets {
             let loc = t.location();
             // get the first two parts of loc
-            let mut head = loc.head().to_astr();
+            let mut head = loc.parent().filename();
             if head == t.name {
                 head = ".".into();
+            }
+            if head.is_empty() {
+                head = "main".into();
             }
             let mut target_dirs = Array::new();
             for (_, d) in t.dirs.iter() {

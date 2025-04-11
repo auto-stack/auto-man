@@ -654,7 +654,11 @@ impl Target {
     pub fn location(&self) -> AutoPath {
         // if `at` is specified, root will be overridden
         if self.at.is_empty() {
-            self.default_location()
+            if self.root.is_empty() {
+                self.default_location()
+            } else {
+                AutoPath::new(self.root.clone()).join(&self.name)
+            }
         } else {
             AutoPath::new(self.at.clone()).join(&self.name)
         }
