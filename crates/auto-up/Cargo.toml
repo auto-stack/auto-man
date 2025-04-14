@@ -7,3 +7,7 @@ edition = "2024"
 dialoguer = { workspace = true }
 auto-lang = { workspace = true }
 auto-val = { workspace = true }
+reqwest = { workspace = true }
+version-compare = { workspace = true }
+colored = { workspace = true }
+dirs = { workspace = true }
