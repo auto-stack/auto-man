@@ -1,0 +1,5 @@
+release {
+    name: "auto-man"
+    version: "0.0.2"
+    url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.2/auto-man_windows_x64.zip"
+}

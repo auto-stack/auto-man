@@ -1,15 +1,15 @@
 ## AutoMan
 
-AutoMan（Auto Manager）是Auto/C语言的混合工程管理工具，功能包括：
+AutoMan（Auto Manager）是Auto/C语言的工程管理工具，功能包括：
 
-- Auto语言工程管理：Auto语言的代码编译成C语言
-- C语言工程管理：可以生成CMake、Ninja、IAR、GHS和CCS等工程。
-- 包管理：以`pac`为单位，组织工程的结构
+- 编译管理：将Auto编译为C；将C编译为二进制程序
+- C语言工程管理：可以生成CMake、IAR、GHS和CCS等编译工程
+- 包管理：以`pac`为单位组织代码库
 - 依赖管理：自动下载依赖库
-- 资源管理：配置并下载工程资源，如芯片相关的库文件、文档等。
+- 资源管理：配置并下载相关资源，如芯片的库文件和配置等。
 - 测试管理：自动运行测试用例
 
-AutoMan的配置文件是`AutoConfig`/`Atom`格式。
+AutoMan的配置语言是`Auto`语言的`Config`格式。
 
 ## 示例：新建工程
 
@@ -504,5 +504,3 @@ use myio;
 #include "mystr.h"
 #include "myio.h"
 ```
-
-

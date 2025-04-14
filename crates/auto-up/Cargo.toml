@@ -1,0 +1,9 @@
+[package]
+name = "auto-up"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dialoguer = { workspace = true }
+auto-lang = { workspace = true }
+auto-val = { workspace = true }
