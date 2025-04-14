@@ -27,6 +27,7 @@ pub struct Pac {
     pub index: Shared<Index>,
     pub device_index: Shared<Index>,
     pub props: Obj,
+    pub build_at: AutoStr,
 }
 
 impl Pac {
@@ -62,6 +63,7 @@ impl Pac {
             props,
             index: shared(Index::default()),
             device_index: shared(Index::default()),
+            build_at: ".".into(),
         }
     }
 
@@ -139,11 +141,15 @@ impl Pac {
         let Some(port_node) = port_node else {
             return Err(format!("Port {} not found", port).into());
         };
-        let at = if port_node.has_prop("at") {
+        let mut at = if port_node.has_prop("at") {
             port_node.get_prop_of("at").to_astr()
         } else {
             ".".into()
         };
+        if at.ends_with("/") {
+            at = at[0..at.len() - 1].into()
+        }
+        self.build_at = at.clone();
         // merge configs within the port into the pac
         self.merge_port(port.clone())?;
         // set builder
@@ -476,6 +482,14 @@ impl Pac {
         Ok(())
     }
 }
+
+fn path_depth(path: &AutoStr) -> u32 {
+    if path.is_empty() || path == "." {
+        return 0;
+    }
+    path.split("/").count() as u32
+}
+
 impl Pac {
     fn has_target(&self, kind: TargetKind) -> bool {
         for t in &self.targets {
@@ -534,6 +548,11 @@ impl Pac {
         for (k, v) in props.iter() {
             root.set_prop(k.to_string().as_str(), v.clone());
         }
+
+        // set builder folder
+        let depth = path_depth(&self.build_at) as usize;
+        let source_dir = "/..".repeat(depth + 1);
+        root.set_prop("relative_path", source_dir);
         root
     }
 
@@ -651,5 +670,18 @@ mod tests {
 
         let key2: AutoStr = "a".into();
         assert!(map.contains_key(&key2));
+    }
+
+    #[test]
+    fn test_path_depth() {
+        use super::*;
+        let path = "project/lse1480".into();
+        assert_eq!(path_depth(&path), 2);
+
+        let path = "project".into();
+        assert_eq!(path_depth(&path), 1);
+
+        let path = ".".into();
+        assert_eq!(path_depth(&path), 0);
     }
 }

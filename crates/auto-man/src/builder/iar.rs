@@ -4,17 +4,18 @@ use crate::pac::Pac;
 use crate::target::{Target, TargetKind};
 use crate::AutoResult;
 use auto_gen::*;
-use auto_val::{AutoPath, AutoStr};
+use auto_val::AutoPath;
 use log::*;
 
 pub struct IARBuilder {
     pub gen: AutoGen,
+    pub path: AutoPath,
 }
 
 impl IARBuilder {
     pub fn new(path: AutoPath) -> Self {
-        let gen = AutoGen::new().out(path).note('@');
-        Self { gen }
+        let gen = AutoGen::new().out(path.clone()).note('@');
+        Self { gen, path }
     }
 
     fn check_devices(&self, pac: &mut Pac) -> AutoResult<()> {

@@ -2928,7 +2928,7 @@
         <name>@{lib.name}</name>
         @ for src in lib.srcs {
             <file>
-                <name>$PROJ_DIR$\..\@{src}</name>
+                <name>$PROJ_DIR$@{relative_path}\@{src}</name>
             </file>
         @ }
     </group>
@@ -2937,7 +2937,7 @@
     @ if app.name == "amdemo" {
         @ for src in app.srcs {
         <file>
-            <name>$PROJ_DIR$\..\@{src}</name>
+            <name>$PROJ_DIR$@{relative_path}\@{src}</name>
         </file>
         @ }
     @ } else {
@@ -2945,7 +2945,7 @@
         <name>@{ app.name }</name>
         @ for src in app.srcs {
         <file>
-            <name>$PROJ_DIR$\..\@{src}</name>
+            <name>$PROJ_DIR$@{relative_path}\@{src}</name>
         </file>
         @ }
     </group>

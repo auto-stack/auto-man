@@ -46,7 +46,7 @@
                     <name>MemFile</name>
                     @ for dev in devices {
                         @ if dev.ddf {
-                            <state>$PROJ_DIR$\..\@{dev.ddf}</state>
+                            <state>$PROJ_DIR$@{relative_path}\@{dev.ddf}</state>
                         @ }
                     @ }
                 </option>
@@ -118,7 +118,7 @@
                     <name>FlashLoadersV3</name>
                     @ for dev in devices {
                         @ if dev.board {
-                            <state>$PROJ_DIR$\..\@{dev.board}</state>
+                            <state>$PROJ_DIR$@{relative_path}\@{dev.board}</state>
                         @ }
                     @ }
                 </option>
@@ -310,7 +310,7 @@
                 </option>
                 <option>
                     <name>CCADILogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -352,7 +352,7 @@
                 </option>
                 <option>
                     <name>CMSISDAPLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CMSISDAPInterfaceRadio</name>
@@ -522,7 +522,7 @@
                 </option>
                 <option>
                     <name>CE2LogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -551,7 +551,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCJTagBreakpointRadio</name>
@@ -584,7 +584,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -630,7 +630,7 @@
                 </option>
                 <option>
                     <name>IjetLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>IjetInterfaceRadio</name>
@@ -887,7 +887,7 @@
                 </option>
                 <option>
                     <name>CCJLinkLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCJLinkHWResetDelay</name>
@@ -1091,7 +1091,7 @@
                 </option>
                 <option>
                     <name>CCLmiftdiLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCLmiFtdiInterfaceRadio</name>
@@ -1133,7 +1133,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -1158,7 +1158,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -1204,7 +1204,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCSTLinkDoUpdateBreakpoints</name>
@@ -1311,7 +1311,7 @@
                 </option>
                 <option>
                     <name>CThirdPartyLogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -1382,7 +1382,7 @@
                 </option>
                 <option>
                     <name>CCMSPFetLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCMSPFetRadioEraseFlash</name>
@@ -1419,7 +1419,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCXds100BreakpointRadio</name>
@@ -1946,7 +1946,7 @@
                 </option>
                 <option>
                     <name>CCADILogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -1988,7 +1988,7 @@
                 </option>
                 <option>
                     <name>CMSISDAPLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CMSISDAPInterfaceRadio</name>
@@ -2158,7 +2158,7 @@
                 </option>
                 <option>
                     <name>CE2LogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -2187,7 +2187,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCJTagBreakpointRadio</name>
@@ -2220,7 +2220,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -2266,7 +2266,7 @@
                 </option>
                 <option>
                     <name>IjetLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>IjetInterfaceRadio</name>
@@ -2523,7 +2523,7 @@
                 </option>
                 <option>
                     <name>CCJLinkLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCJLinkHWResetDelay</name>
@@ -2727,7 +2727,7 @@
                 </option>
                 <option>
                     <name>CCLmiftdiLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCLmiFtdiInterfaceRadio</name>
@@ -2769,7 +2769,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -2794,7 +2794,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
             </data>
         </settings>
@@ -2840,7 +2840,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCSTLinkDoUpdateBreakpoints</name>
@@ -2947,7 +2947,7 @@
                 </option>
                 <option>
                     <name>CThirdPartyLogFileEditB</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>OCDriverInfo</name>
@@ -3018,7 +3018,7 @@
                 </option>
                 <option>
                     <name>CCMSPFetLogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCMSPFetRadioEraseFlash</name>
@@ -3055,7 +3055,7 @@
                 </option>
                 <option>
                     <name>LogFile</name>
-                    <state>$PROJ_DIR$\..\cspycomm.log</state>
+                    <state>$PROJ_DIR$@{relative_path}\cspycomm.log</state>
                 </option>
                 <option>
                     <name>CCXds100BreakpointRadio</name>

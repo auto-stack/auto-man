@@ -355,7 +355,7 @@
                 <option>
                     <name>CCIncludePath2</name>
                 @ for inc in all_incs {
-                    <state>$PROJ_DIR$\..\@{inc}</state>
+                    <state>$PROJ_DIR$@{relative_path}\@{inc}</state>
                 @ }
                 </option>
                 <option>
@@ -625,7 +625,7 @@
                 <option>
                     <name>AUserIncludes</name>
                     @ for inc in all_incs {
-                        <state>$PROJ_DIR$\..\@{inc}</state>
+                        <state>$PROJ_DIR$@{relative_path}\@{inc}</state>
                     @ }
                 </option>
                 <option>
@@ -773,7 +773,7 @@
                     <name>IlinkIcfFile</name>
                     @ for dev in devices {
                         @ if dev.icf {
-                            <state>$PROJ_DIR$\..\@{dev.icf}</state>
+                            <state>$PROJ_DIR$@{relative_path}\@{dev.icf}</state>
                         @ }
                     @ }
                 </option>
@@ -2190,14 +2190,14 @@
                 <name>@{dir.name}</name>
                 @ for src in dir.srcs {
                     <file>
-                        <name>$PROJ_DIR$\..\@{src}</name>
+                        <name>$PROJ_DIR$@{relative_path}\@{src}</name>
                     </file>
                 @ }
             </group>
             @ }
             @ for src in target.srcs {
             <file>
-                <name>$PROJ_DIR$\..\@{src}</name>
+                <name>$PROJ_DIR$@{relative_path}\@{src}</name>
             </file>
             @ }
         </group>
