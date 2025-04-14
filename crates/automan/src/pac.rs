@@ -135,25 +135,26 @@ impl Pac {
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
         // 0. check port
-        if self
-            .ports
-            .iter()
-            .find(|p| p.main_arg().to_astr() == port)
-            .is_none()
-        {
+        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
+        let Some(port_node) = port_node else {
             return Err(format!("Port {} not found", port).into());
-        }
+        };
+        let at = if port_node.has_prop("at") {
+            port_node.get_prop_of("at").to_astr()
+        } else {
+            ".".into()
+        };
         // merge configs within the port into the pac
         self.merge_port(port.clone())?;
         // set builder
         match port.as_str() {
             "cmake" => {
-                self.builder = Some(new_builder(BuilderKind::CMake(
-                    "CMakeLists.txt".to_string(),
-                )));
+                let path = AutoPath::new(at).join("CMakeLists.txt");
+                self.builder = Some(new_builder(BuilderKind::CMake(path.to_string())));
             }
             "iar" => {
-                self.builder = Some(new_builder(BuilderKind::IAR(AutoPath::new("iar"))));
+                let path = AutoPath::new(at).join("iar");
+                self.builder = Some(new_builder(BuilderKind::IAR(path)));
             }
             _ => {
                 panic!("Invalid port name: {}", port);
@@ -300,6 +301,7 @@ impl Pac {
         // 查询索引
         let name = dep.name.clone();
         let at = dep.at.clone();
+        let rename = dep.props.get_str_or("rename", name.clone());
 
         println!("looking up dependency from index: {}", name);
         let index = match dep.kind {
@@ -313,7 +315,7 @@ impl Pac {
                 let mut info = info.clone();
                 // TODO: check if dep version is in index
                 info.version = dep.version.clone();
-                self.download_repo(&info, &dep.kind, &at)?;
+                self.download_repo(&info, &dep.kind, &at, &rename)?;
                 return Ok(());
             }
             None => {
@@ -322,7 +324,13 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind, at: &AutoStr) -> AutoResult<()> {
+    pub fn download_repo(
+        &self,
+        info: &PacInfo,
+        kind: &TargetKind,
+        at: &AutoStr,
+        rename: &AutoStr,
+    ) -> AutoResult<()> {
         println!("Checking dependency from {}", info.repo);
         // 1. make deps folder if not exists
         let mut deps_dir = match kind {
@@ -338,8 +346,8 @@ impl Pac {
         }
         // 2. use git to download the repo
         let url = format!("{}", info.repo);
-        let path = format!("{}/{}", deps_dir, info.name);
-        println!("Downloading dep rep {} at {}", info.name, path);
+        let path = format!("{}/{}", deps_dir, rename);
+        println!("Downloading dep rep {} to {}", info.name, path);
         if Path::new(&path).exists() {
             // TODO: update the repo if necessary
             // TODO: or provide a command to update dependencies
