@@ -90,6 +90,28 @@ impl Automan {
         self.pac.set_port(port)
     }
 
+    pub fn open_ide(&mut self) -> AutoResult<()> {
+        println!("builder: {}", self.pac.build_location);
+        println!("port: {}", self.pac.port);
+        match self.pac.port.as_str() {
+            "iar" => {
+                // open iar ide in the build_location
+                let eww_path = AutoPath::new(self.pac.build_location.as_str())
+                    .join(self.pac.name.to_string() + ".eww")
+                    .to_astr()
+                    .replace("/", "\\");
+                println!("eww: {}", eww_path.clone());
+                std::process::Command::new("explorer.exe")
+                    .arg(eww_path.as_str())
+                    .output()?;
+            }
+            _ => {
+                todo!()
+            }
+        }
+        Ok(())
+    }
+
     pub fn scan(&mut self) -> AutoResult<()> {
         // self.pac.print_targets();
         // 3. Resolve targets in the pac, including:
@@ -341,7 +363,7 @@ impl Default for AmConfig {
     fn default() -> Self {
         Self {
             index: "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git".into(),
-            am: home_path().to_astr(),
+            am: home_path().join(".auto/auto-man").to_astr(),
             is_default: true,
         }
     }
@@ -356,8 +378,9 @@ impl Display for AmConfig {
     }
 }
 
-pub fn load_config() -> AmConfig {
-    // try to look for am.at file beside am.exe
+pub fn load_am_config() -> Option<AmConfig> {
+    // try to look for am.at file beside am.exe or in the current directory
+    let mut am_path = None;
     match env::current_exe() {
         Ok(path) => {
             let config_path = path.as_path().parent();
@@ -365,30 +388,36 @@ pub fn load_config() -> AmConfig {
                 let config_path = config_path.join("am.at");
                 println!("Loading AmConfig from {:?}...", config_path.to_str());
                 if config_path.is_file() {
-                    let code = std::fs::read_to_string(config_path.clone());
-                    if let Ok(code) = code {
-                        let config = AutoConfig::from_code(code, &Obj::EMPTY);
-                        if let Ok(config) = config {
-                            let mut am = AmConfig::default();
-                            if config.root.has_prop("index") {
-                                am.index = config.root.get_prop("index").to_astr();
-                            }
-                            if config.root.has_prop("am") {
-                                am.am = config.root.get_prop_of("am").to_astr();
-                            }
-                            am.is_default = false;
-
-                            println!("AmConfig: {}", am);
-                            return am;
-                        }
-                    }
+                    am_path = Some(config_path);
                 }
             }
-            ()
         }
-        Err(e) => {
-            println!("failed to get exe path: {e}");
+        _ => {}
+    }
+    // check local directory
+    if am_path.is_none() {
+        let local_config_path = env::current_dir().unwrap().join("am.at");
+        if local_config_path.is_file() {
+            am_path = Some(local_config_path);
         }
     }
-    AmConfig::default()
+    if let Some(am_path) = am_path {
+        let code = std::fs::read_to_string(am_path.clone());
+        if let Ok(code) = code {
+            let config = AutoConfig::from_code(code, &Obj::EMPTY);
+            if let Ok(config) = config {
+                let mut am = AmConfig::default();
+                if config.root.has_prop("index") {
+                    am.index = config.root.get_prop("index").to_astr();
+                }
+                if config.root.has_prop("am") {
+                    am.am = config.root.get_prop_of("am").to_astr();
+                }
+                am.is_default = false;
+                println!("AmConfig: {}", am);
+                return Some(am);
+            }
+        }
+    }
+    None
 }

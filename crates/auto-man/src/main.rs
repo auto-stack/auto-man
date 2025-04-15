@@ -22,6 +22,8 @@ use simplelog::*;
 
 // use std::fs::File;
 
+const AUTOMAN_VERSION: &str = "v0.0.4";
+
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
 
@@ -59,6 +61,8 @@ enum Commands {
     Deps,
     #[command(about = "Show Devices")]
     Devices,
+    #[command(about = "Open Related IDE", alias = "o")]
+    Open { port: Option<String> },
 }
 
 fn init_logger() {
@@ -96,12 +100,15 @@ fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoSt
 fn main() -> Result<(), AutoError> {
     init_logger();
     println!("-----------------------------------");
-    println!("Hello, I'm Automan!");
+    println!("Hello, I'm Automan {}!", AUTOMAN_VERSION);
     println!("-----------------------------------");
     println!();
     let cli = Cli::parse();
 
-    let config = load_config();
+    let config = match load_am_config() {
+        Some(config) => config,
+        None => AmConfig::default(),
+    };
     // try to load base config
     match cli.command {
         Some(Commands::App { name }) => {
@@ -166,6 +173,15 @@ fn main() -> Result<(), AutoError> {
         }
         Some(Commands::Devices) => {
             Automan::list_devices(&config)?;
+        }
+        Some(Commands::Open { port }) => {
+            // std::process::Command::new("explorer.exe")
+            // .arg("iar\\hello.eww")
+            // .spawn()?;
+            let mut am = Automan::new(".", config)?;
+            let port = select_port(port, &am.list_port_names())?;
+            am.set_port(port)?;
+            am.open_ide()?;
         }
         None => {
             Cli::command().print_help()?;

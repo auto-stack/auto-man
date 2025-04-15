@@ -564,11 +564,18 @@ impl Target {
             true
         };
 
+        // rename
+        let rename = if node.has_prop("rename") {
+            node.props.get_str_of("rename")
+        } else {
+            name.clone()
+        };
+
         // root
         let mut root = if node.has_prop("root") {
             node.props.get_str_of("root")
         } else {
-            get_root_dir(&name, &kind, &pac)
+            get_root_dir(&rename, &kind, &pac)
         };
 
         // at
@@ -579,7 +586,7 @@ impl Target {
         };
 
         if !at.is_empty() {
-            root = AutoPath::new(at.clone()).join(name.clone()).to_astr();
+            root = AutoPath::new(at.clone()).join(rename.clone()).to_astr();
         }
 
         // selects
@@ -657,11 +664,16 @@ impl Target {
             if self.root.is_empty() {
                 self.default_location()
             } else {
-                AutoPath::new(self.root.clone()).join(&self.name)
+                AutoPath::new(self.root.clone()).join(&self.local_name())
             }
         } else {
-            AutoPath::new(self.at.clone()).join(&self.name)
+            AutoPath::new(self.at.clone()).join(&self.local_name())
         }
+    }
+
+    pub fn local_name(&self) -> AutoStr {
+        let rename = self.props.get_str_or("rename", self.name.clone());
+        rename
     }
 
     pub fn config_name(&self) -> AutoStr {

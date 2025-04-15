@@ -28,6 +28,7 @@ pub struct Pac {
     pub device_index: Shared<Index>,
     pub props: Obj,
     pub build_at: AutoStr,
+    pub build_location: AutoStr,
 }
 
 impl Pac {
@@ -64,6 +65,7 @@ impl Pac {
             index: shared(Index::default()),
             device_index: shared(Index::default()),
             build_at: ".".into(),
+            build_location: "cmake".into(),
         }
     }
 
@@ -136,6 +138,7 @@ impl Pac {
     }
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
+        println!("Setting port: {}", port);
         // 0. check port
         let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
         let Some(port_node) = port_node else {
@@ -150,6 +153,7 @@ impl Pac {
             at = at[0..at.len() - 1].into()
         }
         self.build_at = at.clone();
+        self.build_location = AutoPath::new(at.clone()).join(port.clone()).to_astr();
         // merge configs within the port into the pac
         self.merge_port(port.clone())?;
         // set builder
@@ -166,6 +170,7 @@ impl Pac {
                 panic!("Invalid port name: {}", port);
             }
         }
+        self.port = port.clone();
         Ok(())
     }
 

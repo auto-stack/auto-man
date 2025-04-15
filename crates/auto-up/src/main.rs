@@ -4,12 +4,14 @@ use colored::Colorize;
 use dialoguer::{Input, Select, console::Style, theme::ColorfulTheme};
 use reqwest::blocking::get;
 use std::fs::{self, File};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::OnceLock;
 use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
+const AUTOUP_VERSION: &str = "v0.0.4";
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
 fn select_tool() -> AutoResult<AutoStr> {
     // Implement logic to select a tool
@@ -50,8 +52,8 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
     }
     versions.sort_by(|a, b| match VersionCompare::compare(a, b) {
         Ok(CompOp::Eq) => Ordering::Equal,
-        Ok(CompOp::Lt) => Ordering::Less,
-        Ok(CompOp::Gt) => Ordering::Greater,
+        Ok(CompOp::Lt) => Ordering::Greater,
+        Ok(CompOp::Gt) => Ordering::Less,
         Err(_) => Ordering::Equal,
         _ => Ordering::Equal,
     });
@@ -74,8 +76,6 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
         println!("No URL found for the selected version: {}", version);
     }
 
-    println!("downloading {}", url);
-
     Ok(ReleaseInfo {
         name: name.clone(),
         version,
@@ -84,6 +84,7 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
 }
 
 fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
+    println!("Getting last installation directory for {}", tool);
     let home = dirs::home_dir().ok_or("Can't open home dir")?;
     let auto_dir = home.join(".auto");
     // if au.at not in dir, this is the first time to install
@@ -92,8 +93,10 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
         // look for installation dir
         let conf = AutoConfig::from_file(&au_conf, &Obj::EMPTY)?;
         let install_dir = conf.root.props.get_str_of("auto-man");
+        println!("Last installation directory for {}: {}", tool, install_dir);
         return Ok(install_dir);
     } else {
+        println!("Not found.");
         // first time
         // let user input one dir
         let default_am_location = auto_dir.join(tool);
@@ -105,7 +108,7 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
 
         // store this dir to auto-up.at
         fs::create_dir_all(default_am_location)?;
-        let code = format!(r#""auto-man": "{}"\n"#, input);
+        let code = format!("\"auto-man\": \"{}\"\n", input);
         fs::write(au_conf, code)?;
         return Ok(input.into());
     }
@@ -114,9 +117,12 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
 fn auto_up() -> AutoResult<()> {
     println!(
         "{}",
-        "Welcome to auto-up, a tool to upgrade auto-lang related tools"
-            .bright_yellow()
-            .bold()
+        format!(
+            "Welcome to auto-up {}, a tool to upgrade auto-lang related tools",
+            AUTOUP_VERSION
+        )
+        .bright_yellow()
+        .bold()
     );
     println!();
     let tool = select_tool()?;
@@ -151,11 +157,56 @@ fn auto_up() -> AutoResult<()> {
     // unzip
     extract_zip(&zip_path, &info, &install_path)?;
 
-    //
     println!("Installation directory: {}", install_dir);
+
+    // write am.at
+    write_am_at(&install_path, &info.name)?;
 
     // 2. download selected release
     // 3. install selected release
+    Ok(())
+}
+
+fn write_am_at(install_path: &Path, name: &AutoStr) -> AutoResult<()> {
+    // let user select which index base to use:
+    let index_bases = vec!["CodeUp-Soutek", "CodeUp-Boe", "UserInput"];
+    let selection = Select::with_theme(MY_THEME.get().unwrap())
+        .with_prompt("Which index base do you want to use?")
+        .default(0)
+        .items(&index_bases)
+        .interact()?;
+
+    let index_urls = vec![
+        "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git",
+        "git@codeup.aliyun.com:soutek/boe/index.git",
+    ];
+
+    let url = if selection == 2 {
+        let input = Input::<String>::with_theme(MY_THEME.get().unwrap())
+            .with_prompt("Enter the index base URL:")
+            .interact_text()?;
+        input
+    } else if selection <= 1 {
+        index_urls[selection].to_string()
+    } else {
+        panic!("Invalid selection");
+    };
+
+    // write to am.at
+    let am_at_file = File::create(install_path.join("am.at"))?;
+    let mut am_at_writer = BufWriter::new(am_at_file);
+    writeln!(am_at_writer, "// repo of index base")?;
+    writeln!(am_at_writer, "index: \"{}\"", url)?;
+    writeln!(
+        am_at_writer,
+        "// location to store automan related configurations"
+    )?;
+
+    let install_dir = install_path.to_str().unwrap();
+    writeln!(am_at_writer, "am: \"{}\"", install_dir)?;
+
+    println!("am.at written to {}", install_dir);
+
     Ok(())
 }
 
