@@ -70,9 +70,14 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
     let version = versions[selection].clone();
     println!("Selected version: {}", version);
 
-    let url = &releases[selection].props.get_str_or("url", "unknown");
-
-    if url == "unknown" {
+    let mut url = AutoStr::new();
+    for r in &releases {
+        let v = r.props.get_str_or("version", "unknown");
+        if v == version {
+            url = r.props.get_str_or("url", "unknown").clone();
+        }
+    }
+    if url == "unknown" || url.is_empty() {
         println!("No URL found for the selected version: {}", version);
     }
 
@@ -145,7 +150,7 @@ fn auto_up() -> AutoResult<()> {
     let zip_name = info.url.split('/').last().unwrap();
     let zip_path = temp_dir.join(zip_name);
     if zip_path.is_file() {
-        println!("zip file already exists");
+        println!("zip file {} already exists", zip_path.to_str().unwrap());
     } else {
         let resp = reqwest::blocking::get(info.url.as_str()).expect("request failed");
         let body = resp.bytes().expect("body invalid");
