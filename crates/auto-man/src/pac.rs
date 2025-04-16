@@ -267,9 +267,13 @@ impl Pac {
                     // 3. read pac.at from dep
                     // get args from dep node props
                     // read pac.at from dep and parse the lib target
-                    info!("reading pac with override props: {:?}", target.props);
+                    let target_path = loc.join(target.config_name());
+                    info!(
+                        "reading pac {} with override props: {:?}",
+                        target_path, target.props
+                    );
                     let dep_config = AutoConfig::from_file(
-                        loc.join(target.config_name()).path(),
+                        target_path.path(),
                         // override dep props
                         &target.props,
                     )?;

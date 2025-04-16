@@ -386,7 +386,6 @@ pub fn load_am_config() -> Option<AmConfig> {
             let config_path = path.as_path().parent();
             if let Some(config_path) = config_path {
                 let config_path = config_path.join("am.at");
-                println!("Loading AmConfig from {:?}...", config_path.to_str());
                 if config_path.is_file() {
                     am_path = Some(config_path);
                 }
@@ -414,6 +413,7 @@ pub fn load_am_config() -> Option<AmConfig> {
                     am.am = config.root.get_prop_of("am").to_astr();
                 }
                 am.is_default = false;
+                println!("Loading AmConfig from {:?}...", am_path.to_str());
                 println!("AmConfig: {}", am);
                 return Some(am);
             }

@@ -2,7 +2,7 @@ use crate::AutoResult;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
 use auto_val::{Array, Obj};
-use auto_val::{AutoPath, AutoStr, Node, Pair, Value};
+use auto_val::{AutoPath, AutoStr, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -590,7 +590,12 @@ impl Target {
         }
 
         // selects
-        let selects = node.props.get_array_of_str("selects").to_set();
+        let mut selects = node.props.get_array_of_str("selects").to_set();
+        // defaults
+        let defaults = node.props.get_array_of_str("defaults").to_set();
+        if !defaults.is_empty() {
+            selects.extend(defaults);
+        }
         // check for skips
         let skips = node.props.get_array_of_str("skips").to_set();
 
@@ -660,11 +665,14 @@ impl Target {
 
     pub fn location(&self) -> AutoPath {
         // if `at` is specified, root will be overridden
+        println!("root: {}", self.root);
+        println!("at: {}", self.at);
+        println!("default_loc: {}", self.default_location());
         if self.at.is_empty() {
             if self.root.is_empty() {
                 self.default_location()
             } else {
-                AutoPath::new(self.root.clone()).join(&self.local_name())
+                AutoPath::new(self.root.clone())
             }
         } else {
             AutoPath::new(self.at.clone()).join(&self.local_name())
