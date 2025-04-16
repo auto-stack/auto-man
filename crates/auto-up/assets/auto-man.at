@@ -15,3 +15,9 @@ release {
     version: "0.0.4"
     url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.4.fix/auto-man_windows_x64_v0.0.4.zip"
 }
+
+release {
+    name: "auto-man"
+    version: "0.0.5"
+    url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.5/auto-man_windows_x64_v0.0.5.zip"
+}
