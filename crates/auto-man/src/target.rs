@@ -712,7 +712,7 @@ impl Target {
         };
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
-        node.props.set("name", self.name.clone());
+        node.props.set("name", self.local_name().clone());
         node.props.set("root", self.root.clone());
         node.props.set("srcs", set_to_vec(self.srcs.clone()));
         node.props.set("incs", set_to_vec(self.incs.clone()));

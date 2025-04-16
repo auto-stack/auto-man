@@ -591,7 +591,7 @@ impl Pac {
             let array: Vec<Value> = t.srcs.iter().map(|x| Value::Str(x.clone())).collect();
             let array = Value::array(array);
             target_obj.set("srcs", array);
-            target_obj.set("name", t.name.clone());
+            target_obj.set("name", t.local_name());
             target_obj.set("dirs", target_dirs);
             if total_list.contains_key(&head) {
                 let array = total_list.get_mut(&head);
