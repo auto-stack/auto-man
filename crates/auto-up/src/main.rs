@@ -11,7 +11,7 @@ use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
-const AUTOUP_VERSION: &str = "v0.0.4";
+const AUTOUP_VERSION: &str = "v0.0.5";
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
 fn select_tool() -> AutoResult<AutoStr> {
     // Implement logic to select a tool
@@ -244,19 +244,18 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
             let mut out = File::create(&path)?;
             std::io::copy(&mut file, &mut out)?;
             println!("{}", format!("installed {}", path.display()).bright_blue());
-            use std::os::windows;
-            if link_path.is_symlink() {
+            if link_path.is_file() {
                 std::fs::remove_file(&link_path)?;
             }
-            windows::fs::symlink_file(&path, &link_path)?;
+            std::fs::hard_link(&path, &link_path)?;
             println!(
                 "{}",
                 format!("symlinked {}", link_path.display()).bright_blue()
             );
-            if simple_link_path.is_symlink() {
+            if simple_link_path.is_file() {
                 std::fs::remove_file(&simple_link_path)?;
             }
-            windows::fs::symlink_file(&path, &simple_link_path)?;
+            std::fs::hard_link(&path, &simple_link_path)?;
             println!(
                 "{}",
                 format!("symlinked {}", simple_link_path.display()).bright_blue()
