@@ -552,6 +552,7 @@ impl Pac {
         }
 
         root.set_prop("files", self.files_list());
+        root.set_prop("groups", self.group_list());
 
         let props = self.props.clone();
         for (k, v) in props.iter() {
@@ -562,6 +563,16 @@ impl Pac {
         let depth = path_depth(&self.build_at) as usize;
         let source_dir = "/..".repeat(depth + 1);
         root.set_prop("relative_path", source_dir);
+        root
+    }
+
+    fn group_list(&self) -> Node {
+        let mut root = Node::new("groups");
+        // get base dirs for each target
+        for t in &self.targets {
+            let base_dir = t.location();
+        }
+
         root
     }
 
@@ -625,6 +636,12 @@ impl fmt::Display for Pac {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.name, self.version)
     }
+}
+
+fn dir_nodes(paths: Vec<AutoPath>) -> Node {
+    let mut node = Node::new("dirs");
+
+    node
 }
 
 #[cfg(test)]
@@ -692,5 +709,17 @@ mod tests {
 
         let path = ".".into();
         assert_eq!(path_depth(&path), 0);
+    }
+
+    #[test]
+    fn test_dir_nodes() {
+        let paths = vec![
+            AutoPath::new("App/motor"),
+            AutoPath::new("App/com"),
+            AutoPath::new("project/lse1480/src"),
+            AutoPath::new("project/lse1480/src/main.rs"),
+        ];
+        let node = dir_nodes(paths);
+        assert_eq!(node.name, "dirs");
     }
 }

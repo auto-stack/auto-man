@@ -22,7 +22,7 @@ use simplelog::*;
 
 // use std::fs::File;
 
-const AUTOMAN_VERSION: &str = "v0.0.6";
+const AUTOMAN_VERSION: &str = "v0.0.7";
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
@@ -107,7 +107,7 @@ fn main() -> Result<(), AutoError> {
 
     let config = match load_am_config() {
         Some(config) => config,
-        None => AmConfig::default(),
+        _ => AmConfig::default(),
     };
     // try to load base config
     match cli.command {
