@@ -510,17 +510,6 @@ impl Pac {
         false
     }
 
-    fn has_target_with_name(&self, name: &AutoStr) -> bool {
-        let mut hit = false;
-        for t in self.targets.iter() {
-            if t.name == *name {
-                hit = true;
-                break;
-            }
-        }
-        return hit;
-    }
-
     pub fn to_node(&self) -> Node {
         let mut root = Node::new("root");
         // name prop is the first positional arg
@@ -563,10 +552,13 @@ impl Pac {
         }
 
         // set builder folder
-        let depth = path_depth(&self.build_at) as usize;
-        let source_dir = "/..".repeat(depth + 1);
-        root.set_prop("relative_path", source_dir);
+        root.set_prop("relative_path", self.relative_path());
         root
+    }
+
+    fn relative_path(&self) -> AutoStr {
+        let depth = path_depth(&self.build_at) as usize;
+        "/..".repeat(depth + 1).into()
     }
 
     fn groups(&self) -> Group {
@@ -576,19 +568,22 @@ impl Pac {
             let g = group.mut_kid_path(&loc);
             // set files
             for src in &t.srcs {
-                g.files.push(crate::group::File { name: src.clone() })
+                let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), src);
+                g.files.push(crate::group::File { name: fpath.into() })
             }
             // set dirs
-            for (n, d) in &t.dirs {
+            for (_n, d) in &t.dirs {
                 let dg = g.mut_kid(&d.name);
                 for s in &d.srcs {
-                    dg.files.push(crate::group::File { name: s.clone() })
+                    let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), s);
+                    dg.files.push(crate::group::File { name: fpath.into() })
                 }
             }
         }
         group
     }
 
+    #[allow(dead_code)]
     fn files_list(&self) -> Array {
         let mut total_list: HashMap<AutoStr, Vec<Obj>> = HashMap::new();
 

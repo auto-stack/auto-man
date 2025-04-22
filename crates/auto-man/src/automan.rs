@@ -11,7 +11,6 @@ use std::fmt::Display;
 use std::path::Path;
 
 pub struct Automan {
-    config: AmConfig,
     pac: Pac,
 }
 
@@ -77,9 +76,8 @@ impl Automan {
 
     pub fn new(path: &str, am: AmConfig) -> AutoResult<Self> {
         // Currently, only CMake builder is supported
-        let config = am;
-        let pac = Self::parse_pac(path, &config)?;
-        Ok(Self { config, pac })
+        let pac = Self::parse_pac(path, &am)?;
+        Ok(Self { pac })
     }
 
     pub fn pull(&self) -> AutoResult<()> {
@@ -119,6 +117,12 @@ impl Automan {
         // 3.2. Link targets with dependencies
         // 3.3. Scan targets for its local source files
         self.pac.resolve()?;
+        self.pac.print_targets();
+        self.pac.print_atom();
+        Ok(())
+    }
+
+    pub fn info(&self) -> AutoResult<()> {
         self.pac.print_targets();
         self.pac.print_atom();
         Ok(())
@@ -248,52 +252,6 @@ impl Automan {
     pub fn list_devices(config: &AmConfig) -> AutoResult<()> {
         let store = Self::index_store(config)?;
         store.list_devices()
-    }
-
-    fn search_dirs_or_clone(
-        config: &AmConfig,
-        dir: &str,
-        locations: Vec<AutoPath>,
-    ) -> Option<AutoPath> {
-        if locations.is_empty() {
-            return None;
-        }
-        for location in &locations {
-            let dir = location.join(dir);
-            if dir.is_dir() {
-                return Some(dir);
-            }
-        }
-        // find first existing location
-        let mut first = None;
-        for loc in &locations {
-            if loc.is_dir() {
-                first = Some(loc.clone());
-            }
-        }
-        if first.is_none() {
-            return None;
-        }
-        // try to create the directory in the first location
-        let dir = first.unwrap().join(dir);
-        println!("cloning to: {}", dir);
-        // git clone from git@codeup.aliyun.com:soutek/auto-stack/auto-index.git
-        let repo = config.index.as_str();
-        let result = std::process::Command::new("git")
-            .arg("clone")
-            .arg(repo)
-            .arg(dir.path())
-            .output();
-        match result {
-            Ok(_) => Some(dir),
-            Err(e) => {
-                error!(
-                    "Failed to clone repository {} to {} with error {}",
-                    repo, dir, e
-                );
-                None
-            }
-        }
     }
 }
 

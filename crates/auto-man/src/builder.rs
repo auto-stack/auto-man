@@ -5,12 +5,8 @@ pub use cmake::*;
 pub use iar::*;
 
 use crate::AutoResult;
-use crate::{Pac, Target, TargetKind};
-use auto_val::{AutoPath, AutoStr};
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+use crate::{Pac, Target};
+use auto_val::AutoPath;
 
 pub trait Builder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()>;

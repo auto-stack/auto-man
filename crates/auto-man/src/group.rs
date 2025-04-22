@@ -1,4 +1,3 @@
-use auto_lang::ast::Name;
 use auto_val::{AutoPath, AutoStr};
 use std::collections::HashMap;
 use std::fmt;
@@ -27,16 +26,15 @@ impl Group {
             let kid = self.kids.get_mut(name).unwrap();
             kid
         } else {
-            let mut kid = Group::new(name);
+            let kid = Group::new(name);
             self.kids.insert(name.into(), kid);
             self.kids.get_mut(name).unwrap()
         }
     }
 
     pub fn mut_kid_path(&mut self, path: &AutoPath) -> &mut Group {
-        let mut path = path.path();
         let mut g = self;
-        for c in path.components() {
+        for c in path.path().components() {
             let name = c.as_os_str().to_str().unwrap();
             let kid = g.mut_kid(name);
             g = kid;
@@ -45,14 +43,14 @@ impl Group {
     }
 
     pub fn print_kids(&self) {
-        for (name, kid) in &self.kids {
+        for (_n, kid) in &self.kids {
             println!("{}", kid);
         }
     }
 
     pub fn to_xml(&self) -> AutoStr {
         let mut xml = String::new();
-        for (name, kid) in &self.kids {
+        for (_n, kid) in &self.kids {
             xml.push_str(kid.to_string().as_str());
             xml.push_str("\n");
         }
@@ -64,7 +62,7 @@ impl fmt::Display for Group {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<group><name>{}</name>", self.name)?;
         // write kids
-        for (name, kid) in &self.kids {
+        for (_n, kid) in &self.kids {
             write!(f, "{}\n", kid)?;
         }
         // write files

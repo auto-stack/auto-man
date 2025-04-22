@@ -1,6 +1,7 @@
 pub mod asset;
 mod automan;
 mod builder;
+mod dir;
 pub mod fs;
 pub mod group;
 mod index;
@@ -11,6 +12,7 @@ pub mod util;
 
 pub use automan::*;
 pub use builder::*;
+pub use dir::*;
 pub use index::*;
 pub use pac::*;
 pub use target::*;
@@ -23,7 +25,7 @@ use simplelog::*;
 
 // use std::fs::File;
 
-const AUTOMAN_VERSION: &str = "v0.0.7";
+const AUTOMAN_VERSION: &str = "v0.0.8";
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
@@ -64,6 +66,8 @@ enum Commands {
     Devices,
     #[command(about = "Open Related IDE", alias = "o")]
     Open { port: Option<String> },
+    #[command(about = "Show Package Info")]
+    Info,
 }
 
 fn init_logger() {
@@ -183,6 +187,10 @@ fn main() -> Result<(), AutoError> {
             let port = select_port(port, &am.list_port_names())?;
             am.set_port(port)?;
             am.open_ide()?;
+        }
+        Some(Commands::Info) => {
+            let am = Automan::new(".", config)?;
+            am.info()?;
         }
         None => {
             Cli::command().print_help()?;

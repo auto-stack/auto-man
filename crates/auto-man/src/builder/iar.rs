@@ -86,12 +86,12 @@ impl Builder for IARBuilder {
         Ok(())
     }
 
-    fn finish(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
         self.gen.gen();
         Ok(())
     }
 
-    fn target(&mut self, target: &Target) -> AutoResult<()> {
+    fn target(&mut self, _t: &Target) -> AutoResult<()> {
         Ok(())
     }
 
@@ -99,7 +99,7 @@ impl Builder for IARBuilder {
         Ok(())
     }
 
-    fn run(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn run(&mut self, _pac: &Pac) -> AutoResult<()> {
         Ok(())
     }
 }
