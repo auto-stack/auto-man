@@ -1,6 +1,7 @@
 use crate::builder::new_builder;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
+use crate::group::Group;
 use crate::AutoResult;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
@@ -551,8 +552,10 @@ impl Pac {
             root.set_prop("apps", Value::Array(Array::new()));
         }
 
-        root.set_prop("files", self.files_list());
-        root.set_prop("groups", self.group_list());
+        // root.set_prop("files", self.files_list());
+        // root.set_prop("groups", self.group_list());
+        root.set_prop("files", Array::new());
+        root.set_prop("groups", self.groups().to_xml());
 
         let props = self.props.clone();
         for (k, v) in props.iter() {
@@ -566,14 +569,24 @@ impl Pac {
         root
     }
 
-    fn group_list(&self) -> Node {
-        let mut root = Node::new("groups");
-        // get base dirs for each target
+    fn groups(&self) -> Group {
+        let mut group = Group::new("root");
         for t in &self.targets {
-            let base_dir = t.location();
+            let loc = t.location();
+            let g = group.mut_kid_path(&loc);
+            // set files
+            for src in &t.srcs {
+                g.files.push(crate::group::File { name: src.clone() })
+            }
+            // set dirs
+            for (n, d) in &t.dirs {
+                let dg = g.mut_kid(&d.name);
+                for s in &d.srcs {
+                    dg.files.push(crate::group::File { name: s.clone() })
+                }
+            }
         }
-
-        root
+        group
     }
 
     fn files_list(&self) -> Array {
@@ -636,12 +649,6 @@ impl fmt::Display for Pac {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.name, self.version)
     }
-}
-
-fn dir_nodes(paths: Vec<AutoPath>) -> Node {
-    let mut node = Node::new("dirs");
-
-    node
 }
 
 #[cfg(test)]
@@ -712,14 +719,18 @@ mod tests {
     }
 
     #[test]
-    fn test_dir_nodes() {
+    fn test_dir_groups() {
+        use crate::group::*;
         let paths = vec![
+            AutoPath::new("App"),
             AutoPath::new("App/motor"),
             AutoPath::new("App/com"),
-            AutoPath::new("project/lse1480/src"),
-            AutoPath::new("project/lse1480/src/main.rs"),
+            AutoPath::new("Bsp/mcal"),
+            AutoPath::new("Bsw/xmen/can"),
+            AutoPath::new("Bsw/xmen/config"),
         ];
-        let node = dir_nodes(paths);
-        assert_eq!(node.name, "dirs");
+        let group = dir_groups(paths);
+        group.print_kids();
+        assert_eq!(group.name, "root");
     }
 }

@@ -2,6 +2,7 @@ pub mod asset;
 mod automan;
 mod builder;
 pub mod fs;
+pub mod group;
 mod index;
 mod pac;
 pub mod pull;
