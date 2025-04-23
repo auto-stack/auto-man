@@ -118,14 +118,12 @@ impl Automan {
         // 3.3. Scan targets for its local source files
         self.pac.resolve()?;
         self.pac.print_targets();
-        self.pac.print_atom();
-        Ok(())
+        self.pac.print_atom()
     }
 
     pub fn info(&self) -> AutoResult<()> {
         self.pac.print_targets();
-        self.pac.print_atom();
-        Ok(())
+        self.pac.print_atom()
     }
 
     pub fn build(&mut self) -> AutoResult<()> {

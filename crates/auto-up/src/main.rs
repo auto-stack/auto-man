@@ -172,7 +172,7 @@ fn auto_up() -> AutoResult<()> {
     Ok(())
 }
 
-fn write_am_at(install_path: &Path, name: &AutoStr) -> AutoResult<()> {
+fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     // let user select which index base to use:
     let index_bases = vec!["CodeUp-Soutek", "CodeUp-Boe", "UserInput"];
     let selection = Select::with_theme(MY_THEME.get().unwrap())

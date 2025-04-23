@@ -699,7 +699,7 @@
                 <debug>1</debug>
                 <option>
                     <name>IlinkOutputFile</name>
-                    <state>$PROJ_FNAME$.out</state>
+                    <state>$PROJ_FNAME$.elf</state>
                 </option>
                 <option>
                     <name>IlinkLibIOConfig</name>
@@ -1787,7 +1787,7 @@
                 <debug>0</debug>
                 <option>
                     <name>IlinkOutputFile</name>
-                    <state>$PROJ_FNAME$.out</state>
+                    <state>$PROJ_FNAME$.elf</state>
                 </option>
                 <option>
                     <name>IlinkLibIOConfig</name>

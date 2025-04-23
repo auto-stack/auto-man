@@ -113,13 +113,15 @@ impl Pac {
         has_prop
     }
 
-    pub fn print_atom(&self) {
+    pub fn print_atom(&self) -> AutoResult<()> {
         let atom = self.to_atom();
         // info!("ATOM packed for pac: <{}>", self.name);
         // println!("{}", atom);
-        let atom_p = pretty(atom.to_string().as_str(), 3);
-        info!("ATOM for pac: <{}>", self.name);
-        println!("{}", atom_p);
+        let atom_pretty = pretty(atom.to_string().as_str(), 3);
+        // info!("ATOM for pac: <{}>", self.name);
+        // write prettified atom to file
+        // write prettified atom to file
+        std::fs::write("pac.atom.at", atom_pretty.as_bytes()).map_err(|e| e.into())
     }
 
     pub fn get_target(&self, name: impl Into<AutoStr>) -> Option<&Target> {

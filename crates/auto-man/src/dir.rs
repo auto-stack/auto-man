@@ -23,7 +23,7 @@ impl Dir {
     pub fn from_str(name: AutoStr, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = name;
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
-        info!("making Dir {}::{} with root: {}", parent, name, root);
+        debug!("making Dir {}::{} with root: {}", parent, name, root);
         Self {
             name,
             root,
