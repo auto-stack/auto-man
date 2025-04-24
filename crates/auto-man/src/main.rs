@@ -25,7 +25,7 @@ use simplelog::*;
 
 // use std::fs::File;
 
-const AUTOMAN_VERSION: &str = "v0.0.8";
+const AUTOMAN_VERSION: &str = "v0.0.9";
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;

@@ -47,7 +47,7 @@ impl Dir {
             parent_path.join(name.as_str()).unified()
         };
 
-        info!("making Dir {}::{} with root: {}", parent, name, root);
+        // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
             node.props.get_bool_of("scan")
         } else {
@@ -75,11 +75,11 @@ impl Dir {
             .into_iter()
             .map(|s| AutoStr::from(s))
             .collect::<HashSet<AutoStr>>();
-        info!("dir contents: {}", name);
-        info!("root: {}", root);
-        info!("srcs: {:?}", srcs);
-        info!("incs: {:?}", incs);
-        info!("skips: {:?}", skips);
+        // info!("dir contents: {}", name);
+        // info!("root: {}", root);
+        // info!("srcs: {:?}", srcs);
+        // info!("incs: {:?}", incs);
+        // info!("skips: {:?}", skips);
         Self {
             name,
             root,
