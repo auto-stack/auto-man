@@ -223,12 +223,16 @@ impl Pac {
     }
 
     fn update_repo(&self, path: &AutoPath) -> AutoResult<()> {
-        let output = std::process::Command::new("git")
-            .arg("pull")
-            .arg(path.to_string())
-            .output()?;
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("pull");
+        cmd.current_dir(path.to_string().as_str());
+        let output = cmd.output()?;
         if output.status.success() {
             info!("updated dependency {}", path);
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        } else {
+            error!("failed to update dependency {}", path);
+            println!("{}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(())
     }
@@ -479,11 +483,14 @@ impl Pac {
             let loc = target.location();
             match target.kind {
                 TargetKind::Dep | TargetKind::Device => {
-                    if target.exists() {
+                    println!("updating target: {} at {}", target.name, loc);
+                    if target.downloaded() {
+                        println!("update downloaded");
                         // git update
                         self.update_repo(&loc)?;
                         continue;
                     }
+                    println!("not downloaded");
                     self.download_dep(&target)?;
                     // TODO: recursively update dependencies
                 }

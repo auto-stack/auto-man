@@ -342,9 +342,6 @@ impl Target {
 
     pub fn location(&self) -> AutoPath {
         // if `at` is specified, root will be overridden
-        println!("root: {}", self.root);
-        println!("at: {}", self.at);
-        println!("default_loc: {}", self.default_location());
         if self.at.is_empty() {
             if self.root.is_empty() {
                 self.default_location()
@@ -466,6 +463,11 @@ impl Target {
             }
         }
         false
+    }
+
+    pub fn downloaded(&self) -> bool {
+        let loc = self.location();
+        return loc.is_dir();
     }
 
     pub fn merge(&mut self, other: &Target) {
