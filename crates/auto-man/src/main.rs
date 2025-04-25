@@ -49,12 +49,9 @@ enum Commands {
     #[command(about = "New C Library Package")]
     Clib { name: String },
     #[command(about = "Scan Dependencies")]
-    Scan { port: Option<String> },
+    Scan,
     #[command(about = "Build Project", alias = "b")]
-    Build {
-        dir: Option<String>,
-        port: Option<String>,
-    },
+    Build { dir: Option<String> },
     #[command(about = "Run Executable", alias = "r")]
     Run,
     #[command(about = "Clean Project")]
@@ -67,8 +64,8 @@ enum Commands {
     Devices,
     #[command(about = "Open Related IDE", alias = "o")]
     Open { port: Option<String> },
-    #[command(about = "Show Package Info")]
-    Info,
+    #[command(about = "Show Package or Target Info", alias = "i")]
+    Info { target: Option<String> },
     #[command(about = "Show and select port")]
     Port,
 }
@@ -138,14 +135,12 @@ Hello, I'm Automan {}!
             info!("Creating new C library package {}", name);
             Automan::create_clib(&name)?;
         }
-        Some(Commands::Scan { port }) => {
+        Some(Commands::Scan) => {
             info!("Scanning dependencies");
             let mut am = Automan::new(".", config)?;
-            let port = select_port(port, &am.list_port_names())?;
-            am.set_port(port)?;
             am.scan()?;
         }
-        Some(Commands::Build { dir, port }) => {
+        Some(Commands::Build { dir }) => {
             let dir = if let Some(dir) = dir {
                 dir
             } else {
@@ -194,15 +189,15 @@ Hello, I'm Automan {}!
             am.set_port(port)?;
             am.open_ide()?;
         }
-        Some(Commands::Info) => {
+        Some(Commands::Info { target }) => {
             let am = Automan::new(".", config)?;
-            am.info()?;
+            am.info(target)?;
         }
         Some(Commands::Port) => {
             let mut am = Automan::new(".", config)?;
             let port = select_port(None, &am.list_port_names())?;
-            am.set_port(port)?;
-            am.info()?;
+            am.set_port(port.clone())?;
+            info!("port \"{}\" written to .am/state.at", port)
         }
         None => {
             Cli::command().print_help()?;

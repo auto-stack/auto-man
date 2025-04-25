@@ -581,6 +581,22 @@ impl Target {
 
         Ok(())
     }
+
+    pub fn print_info(&self) -> AutoResult<()> {
+        println!("Target: {}", self.name);
+        println!("Kind: {}", self.kind);
+        println!("Root: {}", self.root);
+        println!(
+            "Dirs: {}",
+            self.dirs
+                .values()
+                .map(|d| d.name.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
+        Ok(())
+    }
 }
 
 #[derive(Tabled)]

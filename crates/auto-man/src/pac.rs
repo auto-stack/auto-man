@@ -101,6 +101,14 @@ impl Pac {
         Ok(())
     }
 
+    pub fn print_target_info(&self, target: &str) -> AutoResult<()> {
+        if let Some(target) = self.targets.iter().find(|t| t.name == target) {
+            target.print_info()
+        } else {
+            return Err("Target not found".into());
+        }
+    }
+
     // print targets as a table
     pub fn print_targets(&self) {
         info!("\n--- pac: {} ---\n", self.name);
@@ -207,7 +215,6 @@ impl Pac {
     }
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
-        println!("Setting port: {}", port);
         // 0. check port
         let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
         let Some(port_node) = port_node else {

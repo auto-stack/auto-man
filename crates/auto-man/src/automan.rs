@@ -125,9 +125,13 @@ impl Automan {
         self.pac.print_atom()
     }
 
-    pub fn info(&self) -> AutoResult<()> {
-        self.pac.print_targets();
-        self.pac.print_atom()
+    pub fn info(&self, target: Option<String>) -> AutoResult<()> {
+        if let Some(target) = target {
+            self.pac.print_target_info(&target)
+        } else {
+            self.pac.print_targets();
+            self.pac.print_atom()
+        }
     }
 
     pub fn build(&mut self) -> AutoResult<()> {
