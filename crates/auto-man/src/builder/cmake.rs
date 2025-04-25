@@ -51,7 +51,6 @@ fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
 
 impl Builder for CMakeBuilder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
-        println!("Building with CMake");
         self.setup(pac)?;
         for t in &pac.targets {
             self.target(t)?;

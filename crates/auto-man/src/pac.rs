@@ -186,18 +186,18 @@ impl Pac {
             self.props.set("defines", defines);
         }
         // 1. resolve dependencies: download dep targets recursively if needed
-        info!("downloading dependencies");
+        info!("Downloading deps");
         self.download_deps(&AutoStr::new())?;
 
         self.print_targets();
         // 2. link targets with dependencies
-        info!("linking targets with dependencies");
+        info!("Linking targets with dependencies");
         for target in &mut self.targets {
             target.check_links()?;
         }
 
         // 3. scan targets for its local source files
-        info!("scanning targets for local source files");
+        info!("Scanning targets for srcs and incs");
         for target in &mut self.targets {
             target.scan()?;
         }
@@ -248,23 +248,19 @@ impl Pac {
         for t in targets.iter() {
             target_names.insert(t.name.clone(), true);
         }
-
-        println!("Downloading deps with at {}", at);
-
         for target in targets.iter_mut() {
             // override target's at location
             if !at.is_empty() {
                 target.set_at(at);
             };
             let loc = target.location();
-            println!("target root; {}", target.root);
 
             match target.kind {
                 TargetKind::Dep | TargetKind::Device => {
                     // 1. update if exists
                     if target.exists() {
                         // git update
-                        self.update_repo(&loc)?;
+                        // self.update_repo(&loc)?;
                         continue;
                     }
 
@@ -275,10 +271,10 @@ impl Pac {
                     // get args from dep node props
                     // read pac.at from dep and parse the lib target
                     let target_path = loc.join(target.config_name());
-                    info!(
-                        "reading pac {} with override props: {:?}",
-                        target_path, target.props
-                    );
+                    // info!(
+                    // "reading pac {} with override props: {:?}",
+                    // target_path, target.props
+                    // );
                     let dep_config = AutoConfig::from_file(
                         target_path.path(),
                         // override dep props
@@ -302,7 +298,6 @@ impl Pac {
                         if !new_deps.contains_key(&dep.name)
                             && !target_names.contains_key(&dep.name)
                         {
-                            println!("adding dep {} from pac {}", dep.name, pac.name);
                             new_deps.insert(dep.name.clone(), dep.clone());
                         }
                     }
@@ -325,7 +320,6 @@ impl Pac {
         let at = dep.at.clone();
         let rename = dep.props.get_str_or("rename", name.clone());
 
-        println!("looking up dependency from index: {}", name);
         let index = match dep.kind {
             TargetKind::Dep => self.index.borrow(),
             TargetKind::Device => self.device_index.borrow(),
@@ -353,7 +347,6 @@ impl Pac {
         at: &AutoStr,
         rename: &AutoStr,
     ) -> AutoResult<()> {
-        println!("Checking dependency from {}", info.repo);
         // 1. make deps folder if not exists
         let mut deps_dir = match kind {
             TargetKind::Dep => "deps",
@@ -369,7 +362,7 @@ impl Pac {
         // 2. use git to download the repo
         let url = format!("{}", info.repo);
         let path = format!("{}/{}", deps_dir, rename);
-        println!("Downloading dep rep {} to {}", info.name, path);
+        info!("- {}: ({})", path, info.repo);
         if Path::new(&path).exists() {
             // TODO: update the repo if necessary
             // TODO: or provide a command to update dependencies
@@ -409,23 +402,15 @@ impl Pac {
             if !version.starts_with("v") {
                 version = format!("v{}", version.as_str()).into();
             }
-            info!("checking out {} to version {}", info.name, version);
+            info!("    - checkout version {}", version);
             let mut cmd = std::process::Command::new("git");
             cmd.arg("-C")
                 .arg(path)
                 .arg("checkout")
                 .arg(version.as_str());
-
-            let cmd_str = format!("{:?}", cmd);
-            println!("cmd: {}", cmd_str);
             let output = cmd.output()?;
-            if output.status.success() {
-                println!(
-                    "Checked out dependency {} to version {}",
-                    info.name, info.version
-                );
-            } else {
-                println!("Failed to checkout {} to version {}", info.name, version);
+            if !output.status.success() {
+                error!("Failed to checkout {} to version {}", info.name, version);
                 println!("{}", String::from_utf8_lossy(&output.stderr));
             }
         }
@@ -448,6 +433,7 @@ impl Pac {
     }
 
     pub fn build(&mut self) -> AutoResult<()> {
+        info!("Building port at ./{}", self.build_location);
         let builder = std::mem::take(&mut self.builder);
         if let Some(mut builder) = builder {
             builder.build(self)?;

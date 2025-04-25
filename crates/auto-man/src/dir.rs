@@ -117,6 +117,7 @@ impl Dir {
     }
 
     pub fn scan(&mut self) -> AutoResult<()> {
+        // info!("- Scanning dir: {}", self.root.as_str());
         let root_path = Path::new(self.root.as_str());
         let mut all_incs = HashSet::new();
         let mut all_srcs = HashSet::new();
@@ -163,7 +164,7 @@ impl Dir {
 
         // TODO: recursively scan sub dirs
         for dir in self.dirs.iter_mut() {
-            info!("scanning sub dir: {}", dir.root);
+            // info!("scanning sub dir: {}", dir.root);
             dir.scan()?;
             all_incs.extend(dir.incs.clone());
             all_srcs.extend(dir.srcs.clone());
@@ -217,7 +218,6 @@ impl fmt::Display for Dir {
 pub fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<AutoStr>> {
     let mut succ_incs = HashSet::new();
     for inc in incs.iter() {
-        info!("checking inc: {}/{}", root.as_str(), inc.as_str());
         let path = AutoPath::new(inc.as_str());
         // if the absolute path itself is a dir, add it to the succ_srcs
         if path.is_file() {
@@ -226,7 +226,6 @@ pub fn check_incs(incs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<HashSet<Aut
             continue;
         }
         if path.is_dir() {
-            info!("got inc dir: {}", path.unified());
             succ_incs.insert(path.unified());
         } else {
             // try to find the path relative to the root dir
@@ -244,14 +243,14 @@ pub fn scan_specific_srcs(srcs: &Vec<AutoStr>, root: &AutoStr) -> AutoResult<Has
     let mut succ_srcs = HashSet::new();
     for src in srcs {
         let path = AutoPath::new(root.as_str()).join(src.as_str());
-        info!("scanning absolute path src: {}", path);
+        // info!("scanning absolute path src: {}", path);
         // if the path itself is a file, add it to the succ_srcs
         if path.is_file() {
             succ_srcs.insert(path.unified());
         } else {
             // try to find the path relative to the root dir
             let rel_path = AutoPath::new(root.as_str()).join(src.as_str());
-            info!("scanning relative path src: {}", rel_path);
+            // info!("scanning relative path src: {}", rel_path);
             if rel_path.is_file() {
                 succ_srcs.insert(rel_path.unified());
             }
@@ -285,7 +284,7 @@ pub fn scan_dir_flat(
             Some(file_name) => {
                 let file_name = AutoStr::from(file_name.to_str().unwrap());
                 if skips.contains(&file_name) {
-                    info!("skipping {}", file_name.as_str());
+                    info!("- skipping {}", file_name.as_str());
                     continue;
                 }
             }

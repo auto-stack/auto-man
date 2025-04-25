@@ -39,7 +39,6 @@ impl IARBuilder {
 
 impl Builder for IARBuilder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
-        println!("Building with IAR");
         self.setup(pac)?;
         self.finish(pac)
     }
@@ -62,7 +61,6 @@ impl Builder for IARBuilder {
         }
         // create iar project directory
         let project_dir = self.gen.out.path();
-        println!("project_dir: {}", project_dir.display());
         if project_dir.is_file() {
             error!("{} is a file, not a directory", project_dir.display());
         } else if project_dir.is_dir() {

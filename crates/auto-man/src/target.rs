@@ -479,14 +479,7 @@ impl Target {
             // check new root dir
             let path = Path::new(self.root.as_str()).join(dir.root.as_str());
             if path.is_dir() {
-                let cur_root = dir.root.clone();
-                // dir.root = path.unified();
                 dir.append_root(self.root.clone());
-                let new_root = dir.root.clone();
-                info!(
-                    "..   updating dir {} root {} -> {}",
-                    dir.name, cur_root, new_root
-                );
             }
             self.dirs.insert(k.clone(), dir);
         }
@@ -538,7 +531,7 @@ impl Target {
                 }
             }
         }
-        info!("scanning sources for {}", self.name);
+        // info!("scanning sources for {}", self.name);
         // TODO: why do we need to clone dirs?
         // 1. check dirs for existence
         self.check_dirs()?;
@@ -573,7 +566,7 @@ impl Target {
         // 3. for each dir, scan for source files, include dirs
         let mut dirs = std::mem::take(&mut self.dirs);
         for dir in dirs.values_mut() {
-            info!("scanning dir: {}", dir.to_string());
+            // info!("scanning dir: {}", dir.to_string());
             dir.scan()?;
             succ_srcs.extend(dir.srcs.clone());
             succ_incs.extend(dir.incs.clone());
@@ -607,7 +600,7 @@ impl TargetStatus {
             dirs: target
                 .dirs
                 .values()
-                .map(|d| d.to_string())
+                .map(|d| d.name.to_string())
                 .collect::<Vec<String>>()
                 .join(", ")
                 .into(),

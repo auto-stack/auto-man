@@ -65,10 +65,10 @@ impl Automan {
         // info!("Config: {}", config.root);
         let mut pac = Pac::new(config);
         let index_store = Self::index_store(am_config)?;
-        println!("loading index store from {}", index_store.path.to_astr());
+        info!("loading index store from {}", index_store.path.to_astr());
         pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
-        println!("index: {}", pac.index.borrow());
+        // println!("index: {}", pac.index.borrow());
         // pac.print_targets();
 
         Ok(pac)
@@ -117,7 +117,7 @@ impl Automan {
         // 3.2. Link targets with dependencies
         // 3.3. Scan targets for its local source files
         self.pac.resolve()?;
-        self.pac.print_targets();
+        // self.pac.print_targets();
         self.pac.print_atom()
     }
 

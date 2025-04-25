@@ -19,6 +19,7 @@ pub use target::*;
 
 use auto_val::AutoStr;
 use clap::{CommandFactory, Parser, Subcommand};
+use colored::Colorize;
 use dialoguer::Select;
 use log::*;
 use simplelog::*;
@@ -104,10 +105,13 @@ fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoSt
 
 fn main() -> Result<(), AutoError> {
     init_logger();
-    println!("-----------------------------------");
-    println!("Hello, I'm Automan {}!", AUTOMAN_VERSION);
-    println!("-----------------------------------");
-    println!();
+    let logo = format!(
+        r#"---------------------------
+Hello, I'm Automan {}!
+---------------------------"#,
+        AUTOMAN_VERSION,
+    );
+    println!("{}", logo.bright_yellow().bold());
     let cli = Cli::parse();
 
     let config = match load_am_config() {
