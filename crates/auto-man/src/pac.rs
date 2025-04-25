@@ -12,6 +12,8 @@ use auto_val::{shared, Shared};
 use log::*;
 use std::collections::HashMap;
 use std::fmt;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
@@ -30,6 +32,26 @@ pub struct Pac {
     pub props: Obj,
     pub build_at: AutoStr,
     pub build_location: AutoStr,
+}
+
+fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
+    use dialoguer::Select;
+    let port = if let Some(input) = input {
+        input.into()
+    } else {
+        if ports.len() == 1 {
+            ports[0].clone()
+        } else {
+            let selection = Select::new()
+                .with_prompt("Which port do you want to build?")
+                .default(0)
+                .items(&ports)
+                .interact()?;
+
+            ports[selection].clone()
+        }
+    };
+    Ok(port)
 }
 
 impl Pac {
@@ -138,6 +160,50 @@ impl Pac {
 
     pub fn list_port_names(&self) -> Vec<AutoStr> {
         self.ports.iter().map(|p| p.main_arg().to_astr()).collect()
+    }
+
+    pub fn get_state_file(&self) -> AutoResult<AutoPath> {
+        // check state file exists? .am/state.at
+        let am_dir = AutoPath::new(".am");
+
+        if !am_dir.is_dir() {
+            // Create the directory if it doesn't exist
+            std::fs::create_dir_all(&am_dir.path())?;
+        }
+
+        let state_file = am_dir.join("state.at");
+        if !state_file.is_file() {
+            // Create the state file if it doesn't exist
+            std::fs::File::create(&state_file.path())?;
+        }
+
+        Ok(state_file)
+    }
+
+    pub fn try_load_port(&mut self) -> AutoResult<()> {
+        // load local state from .am/state.at
+        let state_file = self.get_state_file()?;
+        let state = AutoConfig::read(&state_file.path())?;
+
+        let port = state.root.props.get_str_of("port");
+        if !port.is_empty() {
+            self.set_port(port)?;
+        } else {
+            let ports = self.list_port_names();
+            let port = select_port(None, &ports)?;
+            self.set_port(port.clone())?;
+            self.save_port(port)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn save_port(&mut self, port: AutoStr) -> AutoResult<()> {
+        let state_file = self.get_state_file()?;
+        let mut state = AutoConfig::read(&state_file.path())?;
+        state.root.props.set("port", port.clone());
+        state.save(&state_file)?;
+        Ok(())
     }
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {

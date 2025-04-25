@@ -69,6 +69,8 @@ enum Commands {
     Open { port: Option<String> },
     #[command(about = "Show Package Info")]
     Info,
+    #[command(about = "Show and select port")]
+    Port,
 }
 
 fn init_logger() {
@@ -150,8 +152,8 @@ Hello, I'm Automan {}!
                 ".".to_string()
             };
             let mut am = Automan::new(&dir, config)?;
-            let port = select_port(port, &am.list_port_names())?;
-            am.set_port(port)?;
+            // let port = select_port(port, &am.list_port_names())?;
+            // am.set_port(port)?;
             am.scan()?;
             am.build()?;
         }
@@ -194,6 +196,12 @@ Hello, I'm Automan {}!
         }
         Some(Commands::Info) => {
             let am = Automan::new(".", config)?;
+            am.info()?;
+        }
+        Some(Commands::Port) => {
+            let mut am = Automan::new(".", config)?;
+            let port = select_port(None, &am.list_port_names())?;
+            am.set_port(port)?;
             am.info()?;
         }
         None => {

@@ -70,6 +70,9 @@ impl Automan {
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
         // println!("index: {}", pac.index.borrow());
         // pac.print_targets();
+        //
+        // 3. read default port from config, or let user to choose
+        pac.try_load_port()?;
 
         Ok(pac)
     }
@@ -85,7 +88,8 @@ impl Automan {
     }
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
-        self.pac.set_port(port)
+        self.pac.set_port(port.clone())?;
+        self.pac.save_port(port)
     }
 
     pub fn open_ide(&mut self) -> AutoResult<()> {
