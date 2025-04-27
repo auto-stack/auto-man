@@ -166,6 +166,13 @@ impl Pac {
             .collect()
     }
 
+    pub fn apps(&self) -> Vec<&Target> {
+        self.targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::App)
+            .collect()
+    }
+
     pub fn list_port_names(&self) -> Vec<AutoStr> {
         self.ports.iter().map(|p| p.main_arg().to_astr()).collect()
     }
@@ -242,6 +249,10 @@ impl Pac {
                 let path = AutoPath::new(at).join("iar");
                 self.builder = Some(new_builder(BuilderKind::IAR(path)));
             }
+            "ghs" => {
+                let path = AutoPath::new(at).join("ghs");
+                self.builder = Some(new_builder(BuilderKind::GHS(path)));
+            }
             _ => {
                 panic!("Invalid port name: {}", port);
             }
@@ -261,6 +272,8 @@ impl Pac {
         // 1. resolve dependencies: download dep targets recursively if needed
         info!("Downloading deps");
         self.download_deps(&AutoStr::new())?;
+
+        println!("download done!");
 
         self.print_targets();
         // 2. link targets with dependencies
@@ -578,17 +591,23 @@ impl Pac {
         false
     }
 
+    pub fn all_incs(&self) -> Vec<AutoStr> {
+        let mut all_incs = vec![];
+        for target in &self.targets {
+            all_incs.extend(target.incs.clone());
+        }
+        all_incs.sort();
+        all_incs
+    }
+
     pub fn to_node(&self) -> Node {
         let mut root = Node::new("root");
         // name prop is the first positional arg
         root.add_arg(Arg::Pos(Value::Str(self.name.clone())));
         root.set_prop("version", self.version.clone());
-        let mut all_incs = vec![];
+        let mut all_incs = self.all_incs();
         for target in &self.targets {
             root.add_kid(target.to_node());
-
-            // incs
-            all_incs.extend(target.incs.clone());
         }
         all_incs.sort();
         root.set_prop("all_incs", Value::Array(Array::from_vec(all_incs)));

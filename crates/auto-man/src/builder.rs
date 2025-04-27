@@ -1,8 +1,11 @@
 mod cmake;
-mod iar;
-
 pub use cmake::*;
+
+mod iar;
 pub use iar::*;
+
+mod ghs;
+pub use ghs::*;
 
 use crate::AutoResult;
 use crate::{Pac, Target};
@@ -20,11 +23,13 @@ pub trait Builder {
 pub enum BuilderKind {
     CMake(String), // Cmake with path to CMakeLists.txt
     IAR(AutoPath), // IAR with path to project folder
+    GHS(AutoPath), // GHS with path to project folder
 }
 
 pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
     match kind {
         BuilderKind::CMake(path) => Box::new(CMakeBuilder::new(&path)),
         BuilderKind::IAR(path) => Box::new(IARBuilder::new(path)),
+        BuilderKind::GHS(path) => Box::new(GHSBuilder::new(path)),
     }
 }

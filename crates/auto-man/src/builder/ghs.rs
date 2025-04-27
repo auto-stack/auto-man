@@ -1,0 +1,171 @@
+use super::Builder;
+use crate::asset::GHSTemplate;
+use crate::pac::Pac;
+use crate::target::{Target, TargetKind};
+use crate::{AutoResult, AutoStr};
+use auto_atom::Atom;
+use auto_gen::*;
+use auto_val::{AutoPath, StrExt};
+use log::*;
+use tabled::derive::display::debug;
+
+pub struct GHSBuilder {
+    pub gen: AutoGen,
+    pub apps: Vec<OneGen>,
+    pub path: AutoPath,
+}
+
+impl GHSBuilder {
+    pub fn new(path: AutoPath) -> Self {
+        let gen = AutoGen::new().out(path.clone()).note('$');
+        Self {
+            gen,
+            apps: Vec::new(),
+            path,
+        }
+    }
+
+    fn check_devices(&self, pac: &mut Pac) -> AutoResult<()> {
+        let mut has_device = false;
+        for target in &pac.targets {
+            if target.kind == TargetKind::Device {
+                has_device = true;
+                break;
+            }
+        }
+        if !has_device {
+            // let mut dummy_device = Target::new("dummy", TargetKind::Device);
+            // dummy_device.props.set("icf", "dummy");
+            // dummy_device.props.set("ddf", "dummy");
+            // dummy_device.props.set("board", "dummy");
+            // pac.targets.push(dummy_device);
+        }
+        return Ok(());
+    }
+}
+
+impl Builder for GHSBuilder {
+    fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
+        self.setup(pac)?;
+        self.finish(pac)
+    }
+
+    fn setup(&mut self, pac: &mut Pac) -> AutoResult<()> {
+        // check devices
+        self.check_devices(pac)?;
+        // check necessary configs
+        // create iar project directory
+        let project_dir = self.gen.out.path();
+        if project_dir.is_file() {
+            error!("{} is a file, not a directory", project_dir.display());
+        } else if project_dir.is_dir() {
+            // remove all files in the directory
+            // std::fs::remove_dir_all(project_dir)?;
+            std::fs::create_dir_all(project_dir)?;
+        } else {
+            std::fs::create_dir_all(project_dir)?;
+        }
+        // set data and molds for auto-gen
+        let mut gen = std::mem::take(&mut self.gen);
+
+        let mut rel = "".into();
+        let mut device_dir = "".into();
+        let mut device_inc = "".into();
+        // find device target in pac
+        let device_target = pac.targets.iter().find(|t| t.kind == TargetKind::Device);
+        if let Some(device_target) = device_target {
+            let device_loc = device_target.location();
+            let ghs_loc = pac.build_location.clone();
+            rel = AutoPath::new(ghs_loc).reverse_relative();
+            device_dir = device_loc.to_astr();
+            device_inc = device_loc.join("device").to_astr();
+        } else {
+            error!("Device target not found");
+        }
+        pac.props.set("rel", rel.clone());
+        pac.props.set("device_dir", device_dir.clone());
+        let atom = pac.to_atom();
+        let molds = vec![Mold::new("default.gpj", GHSTemplate::default()?)];
+        gen = gen.molds(molds);
+        gen = gen.data(atom);
+        self.gen = gen;
+
+        // generators for apps
+        let apps = pac.apps();
+        let dep_names: Vec<AutoStr> = pac
+            .targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::Lib || t.kind == TargetKind::Dep)
+            .map(|t| t.local_name().clone())
+            .collect();
+
+        let mut all_incs = pac.all_incs();
+        all_incs.sort();
+
+        for app in apps {
+            let app_loc = app.location();
+            let ghs_loc = pac.build_location.clone();
+            println!("GHS Location: {}", ghs_loc);
+            let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
+
+            let mold_name = format!("{}.gpj", app.local_name());
+            let app_mold = Mold::new(mold_name, GHSTemplate::program()?);
+            let mut app_node = app.to_node();
+            app_node.set_prop("libs", dep_names.clone());
+            app_node.set_prop("rel", rel.clone());
+            app_node.set_prop("device_dir", device_dir.clone());
+            app_node.set_prop("incs", all_incs.clone());
+            app_node.set_prop("device_inc", device_inc.clone());
+            let atom = Atom::node(app_node);
+            let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc));
+            self.apps.push(app_gen);
+        }
+
+        let lib_and_deps: Vec<&Target> = pac
+            .targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::Lib || t.kind == TargetKind::Dep)
+            .collect();
+
+        for lib in lib_and_deps {
+            let lib_loc = lib.location();
+            let ghs_loc = pac.build_location.clone();
+            println!("GHS Location: {}", ghs_loc);
+            let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
+
+            let mold_name = format!("{}.gpj", lib.local_name());
+            let app_mold = Mold::new(mold_name, GHSTemplate::subproject()?);
+            let mut app_node = lib.to_node();
+            app_node.set_prop("libs", dep_names.clone());
+            app_node.set_prop("rel", rel.clone());
+            app_node.set_prop("device_dir", device_dir.clone());
+            app_node.set_prop("incs", all_incs.clone());
+            app_node.set_prop("device_inc", device_inc.clone());
+            let atom = Atom::node(app_node);
+            let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc));
+            self.apps.push(app_gen);
+        }
+
+        Ok(())
+    }
+
+    fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
+        self.gen.gen();
+        for app in &self.apps {
+            app.gen()?;
+        }
+        Ok(())
+    }
+
+    fn target(&mut self, _t: &Target) -> AutoResult<()> {
+        Ok(())
+    }
+
+    fn clean(&mut self) -> AutoResult<()> {
+        Ok(())
+    }
+
+    fn run(&mut self, _pac: &Pac) -> AutoResult<()> {
+        Ok(())
+    }
+}

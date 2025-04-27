@@ -1,0 +1,5 @@
+#!gbuild
+[Subproject]
+$ for src in srcs {
+${rel}${src}
+$ }

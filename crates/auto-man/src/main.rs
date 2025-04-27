@@ -147,8 +147,6 @@ Hello, I'm Automan {}!
                 ".".to_string()
             };
             let mut am = Automan::new(&dir, config)?;
-            // let port = select_port(port, &am.list_port_names())?;
-            // am.set_port(port)?;
             am.scan()?;
             am.build()?;
         }
@@ -185,8 +183,6 @@ Hello, I'm Automan {}!
             // .arg("iar\\hello.eww")
             // .spawn()?;
             let mut am = Automan::new(".", config)?;
-            let port = select_port(port, &am.list_port_names())?;
-            am.set_port(port)?;
             am.open_ide()?;
         }
         Some(Commands::Info { target }) => {

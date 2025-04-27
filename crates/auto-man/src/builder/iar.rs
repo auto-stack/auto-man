@@ -14,7 +14,7 @@ pub struct IARBuilder {
 
 impl IARBuilder {
     pub fn new(path: AutoPath) -> Self {
-        let gen = AutoGen::new().out(path.clone()).note('@');
+        let gen = AutoGen::new().out(path.clone()).note('@').is_rename(true);
         Self { gen, path }
     }
 

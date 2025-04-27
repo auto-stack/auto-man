@@ -1,16 +1,15 @@
-use rust_embed::*;
 use crate::util::{split_first, split_last};
-use std::fs::{create_dir_all, File};
-use std::path::Path;
-use std::io::Write;
-use crate::AutoError;
+use crate::{AutoError, AutoResult};
 use auto_lang::Universe;
-use auto_val::Value;
 use auto_val::AutoStr;
+use auto_val::Value;
+use rust_embed::*;
+use std::fs::{create_dir_all, File};
+use std::io::Write;
+use std::path::Path;
 #[derive(Embed)]
 #[folder = "assets/templates"]
 pub struct Templates;
-
 
 impl Templates {
     // 复制模板到指定路径
@@ -29,7 +28,14 @@ impl Templates {
                 // 创建文件
                 let mut f = File::create(path.join(sub_path))?;
                 // 读取模板文件
-                let code = String::from_utf8(Templates::get(item.as_ref()).unwrap().data.as_ref().to_vec()).unwrap();
+                let code = String::from_utf8(
+                    Templates::get(item.as_ref())
+                        .unwrap()
+                        .data
+                        .as_ref()
+                        .to_vec(),
+                )
+                .unwrap();
                 // 替换模板中的 ${name} 为 pac_name
                 let mut universe = Universe::new();
                 universe.set_global("name", Value::from(pac_name));
@@ -46,11 +52,34 @@ impl Templates {
 }
 
 #[derive(Embed)]
+#[folder = "assets/builders/ghs"]
+pub struct GHSTemplate;
+
+impl GHSTemplate {
+    pub fn default() -> AutoResult<AutoStr> {
+        let file = GHSTemplate::get("default.gpj").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(str.into())
+    }
+
+    pub fn program() -> AutoResult<AutoStr> {
+        let file = GHSTemplate::get("program.gpj").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(str.into())
+    }
+
+    pub fn subproject() -> AutoResult<AutoStr> {
+        let file = GHSTemplate::get("subproject.gpj").unwrap();
+        let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
+        Ok(str.into())
+    }
+}
+
+#[derive(Embed)]
 #[folder = "assets/builders/iar"]
 pub struct IARTemplate;
 
 impl IARTemplate {
-
     pub fn eww() -> Result<AutoStr, AutoError> {
         let file = IARTemplate::get("iar.eww").unwrap();
         let str = String::from_utf8(file.data.as_ref().to_vec()).unwrap();
@@ -75,7 +104,6 @@ impl IARTemplate {
         Ok(AutoStr::from(str))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

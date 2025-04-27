@@ -1,7 +1,7 @@
 #!gbuild
 # Header Section
-defineConfig ("Debug" "dbg" "tgt\debug.gpc")
-defineConfig ("Release" "rel" "tgt\release.gpc")
+defineConfig ("Debug" "dbg" "${rel}${device_dir}\tgt\debug.gpc")
+defineConfig ("Release" "rel" "${rel}${device_dir}\tgt\release.gpc")
 primaryTarget=v800_standalone.tgt
 [Project]
 
@@ -36,6 +36,13 @@ primaryTarget=v800_standalone.tgt
 
    -e _RESET                           # Specifying an Alternate Program Start Address
    -D__GHS__
+   -ffunctions
+   :binDir=out
 
 # Target
-tgt/target.gpj
+${rel}${device_dir}/tgt/target.gpj
+
+# Project
+$ for app in apps {
+${app.id}.gpj    [Program]
+$ }

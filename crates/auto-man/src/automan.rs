@@ -107,6 +107,16 @@ impl Automan {
                     .arg(eww_path.as_str())
                     .output()?;
             }
+            "ghs" => {
+                let ghs_path = AutoPath::new(self.pac.build_location.as_str())
+                    .join("default.gpj")
+                    .to_astr()
+                    .replace("/", "\\");
+                println!("ghs: {}", ghs_path.clone());
+                std::process::Command::new("explorer.exe")
+                    .arg(ghs_path.as_str())
+                    .output()?;
+            }
             _ => {
                 todo!()
             }

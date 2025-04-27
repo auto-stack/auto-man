@@ -1,0 +1,28 @@
+#!gbuild
+[Program]
+	-cpu=rh850g3kh
+	-bsp generic
+$ for inc in incs {
+	-I${rel}${inc}
+$ }
+    -I${rel}${device_inc}
+	-g
+	-dual_debug
+	-ignore_debug_references
+	-object_dir=objs
+	-sda=all
+	-large_sda
+	-init_ram_at_startup
+	-e _RESET
+
+${rel}${device_dir}/device/device.gpj
+
+$ for lib in libs {
+# ${lib}
+${lib}.gpj
+$ }
+
+# Srcs
+$ for src in srcs {
+${rel}${src}
+$ }
