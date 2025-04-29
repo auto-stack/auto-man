@@ -102,6 +102,8 @@ impl Builder for GHSBuilder {
         let mut all_incs = pac.all_incs();
         all_incs.sort();
 
+        let defines = pac.props.get_or_nil("defines");
+
         for app in apps {
             let app_loc = app.location();
             let ghs_loc = pac.build_location.clone();
@@ -116,6 +118,7 @@ impl Builder for GHSBuilder {
             app_node.set_prop("device_dir", device_dir.clone());
             app_node.set_prop("incs", all_incs.clone());
             app_node.set_prop("device_inc", device_inc.clone());
+            app_node.set_prop("defines", defines.clone());
             let atom = Atom::node(app_node);
             let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc));
             self.apps.push(app_gen);

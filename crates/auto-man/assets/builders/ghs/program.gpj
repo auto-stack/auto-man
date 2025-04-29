@@ -1,5 +1,9 @@
 #!gbuild
 [Program]
+$ for define in defines {
+    -D${define}
+$ }
+
 	-cpu=rh850g3kh
 	-bsp generic
 $ for inc in incs {
