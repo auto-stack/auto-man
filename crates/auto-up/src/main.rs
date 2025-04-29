@@ -11,7 +11,7 @@ use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
-const AUTOUP_VERSION: &str = "v0.0.9";
+const AUTOUP_VERSION: &str = "v0.1.0";
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
 fn select_tool() -> AutoResult<AutoStr> {
     // Implement logic to select a tool
