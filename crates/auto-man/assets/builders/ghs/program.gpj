@@ -26,6 +26,13 @@ $ for lib in libs {
 ${lib}.gpj
 $ }
 
+# Dirs
+
+$ for dir in dirs {
+# ${dir.name}
+${dir.lpath}.gpj
+$ }
+
 # Srcs
 $ for src in srcs {
 ${rel}${src}

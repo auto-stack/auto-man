@@ -111,7 +111,7 @@ impl Pac {
 
     // print targets as a table
     pub fn print_targets(&self) {
-        info!("\n--- pac: {} ---\n", self.name);
+        info!("--- pac: {} ---\n", self.name);
         let mut statuses = vec![];
         for target in &self.targets {
             statuses.push(TargetStatus::from(target));

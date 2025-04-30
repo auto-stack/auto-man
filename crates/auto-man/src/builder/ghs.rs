@@ -2,7 +2,7 @@ use super::Builder;
 use crate::asset::GHSTemplate;
 use crate::pac::Pac;
 use crate::target::{Target, TargetKind};
-use crate::{AutoResult, AutoStr};
+use crate::{AutoResult, AutoStr, Dir};
 use auto_atom::Atom;
 use auto_gen::*;
 use auto_val::{AutoPath, StrExt};
@@ -12,6 +12,7 @@ use tabled::derive::display::debug;
 pub struct GHSBuilder {
     pub gen: AutoGen,
     pub apps: Vec<OneGen>,
+    pub subprojects: Vec<OneGen>,
     pub path: AutoPath,
 }
 
@@ -21,6 +22,7 @@ impl GHSBuilder {
         Self {
             gen,
             apps: Vec::new(),
+            subprojects: Vec::new(),
             path,
         }
     }
@@ -41,6 +43,37 @@ impl GHSBuilder {
             // pac.targets.push(dummy_device);
         }
         return Ok(());
+    }
+}
+
+impl GHSBuilder {
+    fn setup_dir(&mut self, rel: AutoStr, ghs_loc: AutoStr, dir: &Dir) -> AutoResult<()> {
+        // let rel: AutoStr = format!("../{}", rel).into();
+        // Implement directory setup logic here
+        let mname = format!("{}.gpj", dir.lpath.clone());
+        // replace / to _
+        // let mname = mname.replace("/", "_");
+        println!("MOLD name: {}", mname);
+        let lib_mold = Mold::new(mname, GHSTemplate::subproject()?);
+        let sub_dirs = &dir.dirs;
+        let sub_names: Vec<AutoStr> = sub_dirs
+            .iter()
+            // .map(|dir| dir.root.replace("/", "_"))
+            .map(|dir| dir.lpath.clone())
+            .collect();
+        let mut dir_node = dir.to_node();
+        dir_node.set_prop("dir_names", sub_names.clone());
+        dir_node.set_prop("rel", rel.clone());
+        let atom = Atom::node(dir_node);
+        let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
+        self.subprojects.push(lib_gen);
+
+        // recursively setup subdirectories
+        for sub_dir in sub_dirs {
+            let sub_rel = format!("../{}", rel);
+            self.setup_dir(sub_rel.into(), ghs_loc.clone(), sub_dir)?;
+        }
+        Ok(())
     }
 }
 
@@ -113,6 +146,7 @@ impl Builder for GHSBuilder {
             let mold_name = format!("{}.gpj", app.local_name());
             let app_mold = Mold::new(mold_name, GHSTemplate::program()?);
             let mut app_node = app.to_node();
+            app_node.set_prop("local_name", app.local_name());
             app_node.set_prop("libs", dep_names.clone());
             app_node.set_prop("rel", rel.clone());
             app_node.set_prop("device_dir", device_dir.clone());
@@ -120,8 +154,13 @@ impl Builder for GHSBuilder {
             app_node.set_prop("device_inc", device_inc.clone());
             app_node.set_prop("defines", defines.clone());
             let atom = Atom::node(app_node);
-            let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc));
+            let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc.clone()));
             self.apps.push(app_gen);
+
+            let sub_rel: AutoStr = format!("../{}", rel).into();
+            for (_key, dir) in &app.dirs {
+                self.setup_dir(sub_rel.clone(), ghs_loc.clone(), dir)?;
+            }
         }
 
         let lib_and_deps: Vec<&Target> = pac
@@ -133,20 +172,31 @@ impl Builder for GHSBuilder {
         for lib in lib_and_deps {
             let lib_loc = lib.location();
             let ghs_loc = pac.build_location.clone();
+            let dir_names = lib
+                .dirs
+                .values()
+                .map(|dir| dir.root.replace("/", "_"))
+                .collect::<Vec<AutoStr>>();
             println!("GHS Location: {}", ghs_loc);
-            let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
+            // let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
+            //
 
             let mold_name = format!("{}.gpj", lib.local_name());
-            let app_mold = Mold::new(mold_name, GHSTemplate::subproject()?);
-            let mut app_node = lib.to_node();
-            app_node.set_prop("libs", dep_names.clone());
-            app_node.set_prop("rel", rel.clone());
-            app_node.set_prop("device_dir", device_dir.clone());
-            app_node.set_prop("incs", all_incs.clone());
-            app_node.set_prop("device_inc", device_inc.clone());
-            let atom = Atom::node(app_node);
-            let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc));
-            self.apps.push(app_gen);
+            let lib_mold = Mold::new(mold_name, GHSTemplate::subproject()?);
+            let mut lib_node = lib.to_node();
+            lib_node.set_prop("libs", dep_names.clone());
+            lib_node.set_prop("dir_names", dir_names.clone());
+            lib_node.set_prop("rel", rel.clone());
+            lib_node.set_prop("device_dir", device_dir.clone());
+            lib_node.set_prop("incs", all_incs.clone());
+            lib_node.set_prop("device_inc", device_inc.clone());
+            let atom = Atom::node(lib_node);
+            let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
+            self.apps.push(lib_gen);
+
+            for (_key, dir) in &lib.dirs {
+                self.setup_dir(rel.clone(), ghs_loc.clone(), dir)?;
+            }
         }
 
         Ok(())
@@ -156,6 +206,10 @@ impl Builder for GHSBuilder {
         self.gen.gen();
         for app in &self.apps {
             app.gen()?;
+        }
+
+        for sub in &self.subprojects {
+            sub.gen()?;
         }
         Ok(())
     }

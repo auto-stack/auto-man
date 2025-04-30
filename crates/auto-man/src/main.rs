@@ -26,7 +26,7 @@ use simplelog::*;
 
 // use std::fs::File;
 
-const AUTOMAN_VERSION: &str = "v0.1.0";
+const AUTOMAN_VERSION: &str = "v0.0.10";
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
@@ -63,7 +63,7 @@ enum Commands {
     #[command(about = "Show Devices")]
     Devices,
     #[command(about = "Open Related IDE", alias = "o")]
-    Open { port: Option<String> },
+    Open,
     #[command(about = "Show Package or Target Info", alias = "i")]
     Info { target: Option<String> },
     #[command(about = "Show and select port")]
@@ -178,7 +178,7 @@ Hello, I'm Automan {}!
         Some(Commands::Devices) => {
             Automan::list_devices(&config)?;
         }
-        Some(Commands::Open { port }) => {
+        Some(Commands::Open) => {
             // std::process::Command::new("explorer.exe")
             // .arg("iar\\hello.eww")
             // .spawn()?;

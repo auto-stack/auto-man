@@ -43,95 +43,6 @@ impl fmt::Display for TargetKind {
     }
 }
 
-// pub struct TargetConfig {
-//     pub name: AutoStr,
-//     pub kind: TargetKind,
-//     pub root: AutoStr,
-//     pub scan: bool,
-//     pub dirs: Vec<Dir>,
-//     pub srcs: Vec<AutoStr>,
-//     pub incs: Vec<AutoStr>,
-//     pub skips: Vec<AutoStr>,
-//     pub links: Vec<AutoStr>,
-//     pub pac: AutoStr,
-//     pub props: Obj,
-// }
-
-// impl TargetConfig {
-
-//     pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr {
-//         // 现在只支持最简单的当前目录
-//         // 如果target的名称和pac名称相同，说明是主target，使用当前目录
-//         if name == pac {
-//             AutoStr::from(".")
-//         } else { // 否则，使用libs/apps/deps中的目录
-//             let target_dir = match kind {
-//                 TargetKind::App => "apps",
-//                 TargetKind::Lib => "libs",
-//                 TargetKind::Dep => "deps",
-//             };
-//             AutoStr::from(format!("{}/{}", target_dir, name))
-//         }
-//     }
-
-//     pub fn from_node(node: Node, pac: AutoStr) -> Self {
-//         let mut name = AutoStr::new();
-//         if !node.args.is_empty() {
-//             name = node.args.args[0].to_astr()
-//         }
-
-//         let kind = TargetKind::from_str(&node.name);
-
-//         // scan
-//         let scan = if node.has_prop("scan") {
-//             node.props.get_bool_of("scan")
-//         } else {
-//             true
-//         };
-
-//         // root dir
-//         let root = Self::get_root_dir(&name, &kind, &pac);
-//         info!("target config: {} root: {}", name, root);
-//         // check for dirs
-//         let mut dirs = node.props.get_array_of_str("dirs");
-//         dirs.push(".".into());
-//         let mut dirs: Vec<Dir> = dirs.into_iter().map(|d| { Dir::from_str(d, root.clone()) }).collect();
-//         // check for dir nodes
-//         let dir_nodes = node.nodes(&"dir");
-//         let dirs_from_nodes: Vec<Dir> = dir_nodes.iter().map(|n| { Dir::from_node(n, root.clone()) }).collect();
-//         dirs.extend(dirs_from_nodes);
-
-//         // check for srcs
-//         let srcs = node.props.get_array_of_str("srcs");
-
-//         // check for incs
-//         let incs = node.props.get_array_of_str("incs");
-
-//         // check for links
-//         let links = node.props.get_array_of_str("links");
-
-//         // check for skips
-//         let skips = node.props.get_array_of_str("skips");
-
-//         // check for props (dep target only)
-//         let props = node.props.clone();
-
-//         Self {
-//             kind,
-//             pac,
-//             name,
-//             root,
-//             scan,
-//             dirs,
-//             srcs,
-//             incs,
-//             links,
-//             skips,
-//             props,
-//         }
-//     }
-// }
-
 #[derive(Clone)]
 pub struct Target {
     pub name: AutoStr,
@@ -140,6 +51,7 @@ pub struct Target {
     pub root: AutoStr, // root dir of the target, including its name
     pub at: AutoStr,
     pub is_scan: bool,
+    pub recurse: bool,
     pub dirs: HashMap<AutoStr, Dir>,
     // Auto Source files
     pub autos: Vec<AutoStr>,
@@ -207,6 +119,7 @@ impl Target {
             root: AutoStr::new(),
             at: AutoStr::default(),
             is_scan: true,
+            recurse: false,
             dirs: HashMap::new(),
             autos: Vec::new(),
             srcs: HashSet::new(),
@@ -239,6 +152,13 @@ impl Target {
             node.props.get_bool_of("scan")
         } else {
             true
+        };
+
+        // recurse
+        let recurse = if node.has_prop("recurse") {
+            node.props.get_bool_of("recurse")
+        } else {
+            false
         };
 
         // rename
@@ -293,6 +213,10 @@ impl Target {
             .map(|n| Dir::from_node(n, root.clone(), kind.clone()))
             .collect();
         dirs.extend(dirs_from_nodes);
+
+        for d in &mut dirs {
+            d.set_lpath(rename.clone());
+        }
         // convert vec to hashmap
         let dirs = dirs
             .into_iter()
@@ -317,6 +241,7 @@ impl Target {
             root,
             at,
             is_scan,
+            recurse,
             dirs,
             autos: Vec::new(),
             srcs,
@@ -419,6 +344,8 @@ impl Target {
             let mut obj = Obj::new();
             obj.set("name", Value::Str(dir.name.clone()));
             obj.set("srcs", array_val);
+            obj.set("lpath", dir.lpath.clone());
+            obj.set("spath", dir.lpath.clone());
             dirs.push(obj);
         }
         // array of objects
@@ -540,6 +467,10 @@ impl Target {
         let mut succ_srcs = HashSet::new();
         let mut succ_incs = HashSet::new();
 
+        if self.recurse {
+            return self.scan_recurse();
+        }
+
         if self.is_scan {
             let mut target_dir = Dir::from_str(".".into(), self.root.clone(), self.kind.clone());
             target_dir.scan()?;
@@ -580,6 +511,10 @@ impl Target {
         // so we don't need to store dirs anymore
         // self.dirs is empty now
 
+        Ok(())
+    }
+
+    pub fn scan_recurse(&mut self) -> AutoResult<()> {
         Ok(())
     }
 

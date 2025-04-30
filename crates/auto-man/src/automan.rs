@@ -131,7 +131,7 @@ impl Automan {
         // 3.2. Link targets with dependencies
         // 3.3. Scan targets for its local source files
         self.pac.resolve()?;
-        // self.pac.print_targets();
+        self.pac.print_targets();
         self.pac.print_atom()
     }
 
@@ -232,7 +232,7 @@ impl Automan {
         let index_path = am_path.join("index");
         if !index_path.is_dir() {
             // try to clone
-            info!("cloneing index dir: {}", index_path.to_astr());
+            info!("cloning index dir: {}", index_path.to_astr());
             std::fs::create_dir_all(index_path.path())?;
             let repo = config.index.as_str();
             let result = std::process::Command::new("git")
@@ -250,6 +250,25 @@ impl Automan {
                 Ok(_) => {}
             }
         }
+        // else {
+        // // try to update
+        // info!("updating index dir: {}", index_path.to_astr());
+        // let result = std::process::Command::new("git")
+        //     .arg("pull")
+        //     .arg("--rebase")
+        //     .current_dir(index_path.path())
+        //     .output();
+        // match result {
+        //     Err(e) => {
+        //         let repo = config.index.as_str();
+        //         error!(
+        //             "Failed to update repository {} to {} with error {}",
+        //             repo, index_path, e
+        //         );
+        //     }
+        //     Ok(_) => {}
+        // }
+        // }
         return Ok(IndexStore::new(index_path));
 
         // let dir = Self::search_dirs_or_clone(
@@ -353,45 +372,34 @@ impl Display for AmConfig {
 }
 
 pub fn load_am_config() -> Option<AmConfig> {
-    // try to look for am.at file beside am.exe or in the current directory
+    // try to look for am.at file in the working directory
     let mut am_path = None;
-    match env::current_exe() {
-        Ok(path) => {
-            let config_path = path.as_path().parent();
-            if let Some(config_path) = config_path {
-                let config_path = config_path.join("am.at");
-                if config_path.is_file() {
-                    am_path = Some(config_path);
-                }
-            }
-        }
-        _ => {}
+
+    let local_config_path = env::current_dir().unwrap().join("am.at");
+    if local_config_path.is_file() {
+        am_path = Some(local_config_path);
     }
-    // check local directory
-    if am_path.is_none() {
-        let local_config_path = env::current_dir().unwrap().join("am.at");
-        if local_config_path.is_file() {
-            am_path = Some(local_config_path);
-        }
+
+    let Some(am_path) = am_path else {
+        return None;
+    };
+    let code = std::fs::read_to_string(am_path.clone());
+    let Ok(code) = code else {
+        return None;
+    };
+    let config = AutoConfig::from_code(code, &Obj::EMPTY);
+    let Ok(config) = config else {
+        return None;
+    };
+    let mut am = AmConfig::default();
+    if config.root.has_prop("index") {
+        am.index = config.root.get_prop("index").to_astr();
     }
-    if let Some(am_path) = am_path {
-        let code = std::fs::read_to_string(am_path.clone());
-        if let Ok(code) = code {
-            let config = AutoConfig::from_code(code, &Obj::EMPTY);
-            if let Ok(config) = config {
-                let mut am = AmConfig::default();
-                if config.root.has_prop("index") {
-                    am.index = config.root.get_prop("index").to_astr();
-                }
-                if config.root.has_prop("am") {
-                    am.am = config.root.get_prop_of("am").to_astr();
-                }
-                am.is_default = false;
-                println!("Loading AmConfig from {:?}...", am_path.to_str());
-                println!("AmConfig: {}", am);
-                return Some(am);
-            }
-        }
+    if config.root.has_prop("am") {
+        am.am = config.root.get_prop_of("am").to_astr();
     }
-    None
+    am.is_default = false;
+    println!("Loading AmConfig from {:?}...", am_path.to_str());
+    println!("AmConfig: {}", am);
+    Some(am)
 }
