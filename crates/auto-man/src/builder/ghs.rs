@@ -47,7 +47,7 @@ impl GHSBuilder {
 }
 
 impl GHSBuilder {
-    fn setup_dir(&mut self, rel: AutoStr, ghs_loc: AutoStr, dir: &Dir) -> AutoResult<()> {
+    fn setup_dir(&mut self, ghs_loc: AutoStr, dir: &Dir) -> AutoResult<()> {
         // let rel: AutoStr = format!("../{}", rel).into();
         // Implement directory setup logic here
         let mname = format!("{}.gpj", dir.lpath.clone());
@@ -56,13 +56,13 @@ impl GHSBuilder {
         println!("MOLD name: {}", mname);
         let lib_mold = Mold::new(mname, GHSTemplate::subproject()?);
         let sub_dirs = &dir.dirs;
-        let sub_names: Vec<AutoStr> = sub_dirs
-            .iter()
-            // .map(|dir| dir.root.replace("/", "_"))
-            .map(|dir| dir.lpath.clone())
-            .collect();
+        let sub_names: Vec<AutoStr> = sub_dirs.iter().map(|dir| dir.lpath.clone()).collect();
         let mut dir_node = dir.to_node();
         dir_node.set_prop("dir_names", sub_names.clone());
+        // 计算从.gpj到dir对应的实际目录之间的相对路径
+        // rel_depth = [depth of ghs project] + [depth of .gpj]
+        let rel_depth = self.path.depth() + dir.logical_depths() - 1;
+        let rel = "../".repeat(rel_depth);
         dir_node.set_prop("rel", rel.clone());
         let atom = Atom::node(dir_node);
         let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
@@ -70,8 +70,7 @@ impl GHSBuilder {
 
         // recursively setup subdirectories
         for sub_dir in sub_dirs {
-            let sub_rel = format!("../{}", rel);
-            self.setup_dir(sub_rel.into(), ghs_loc.clone(), sub_dir)?;
+            self.setup_dir(ghs_loc.clone(), sub_dir)?;
         }
         Ok(())
     }
@@ -157,9 +156,8 @@ impl Builder for GHSBuilder {
             let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc.clone()));
             self.apps.push(app_gen);
 
-            let sub_rel: AutoStr = format!("../{}", rel).into();
             for (_key, dir) in &app.dirs {
-                self.setup_dir(sub_rel.clone(), ghs_loc.clone(), dir)?;
+                self.setup_dir(ghs_loc.clone(), dir)?;
             }
         }
 
@@ -195,7 +193,7 @@ impl Builder for GHSBuilder {
             self.apps.push(lib_gen);
 
             for (_key, dir) in &lib.dirs {
-                self.setup_dir(rel.clone(), ghs_loc.clone(), dir)?;
+                self.setup_dir(ghs_loc.clone(), dir)?;
             }
         }
 

@@ -10,12 +10,21 @@ use std::{collections::HashSet, fmt};
 
 #[derive(Clone)]
 pub struct Dir {
+    /// Name of this directory. TODO: should not be a path?
     pub name: AutoStr,
+    /// Root directory of this directory. This is the real path in local file system .
+    // TODO: This should replace the local name of the directory?
     pub root: AutoStr,
+    /// Logical path of this directory. Logical path are made of {target_name}/{dir_name}/{dir_name}s
     pub lpath: AutoStr,
+    /// Whether to scan regular source directories like `src`, `include` and `inc`.
     pub scan: bool,
+    /// Whether to recursively scan all subdirectories.
     pub recurse: bool,
-    pub headers: bool,
+    /// Whether to recognize header files as source files.
+    ///  - if set `true`, header files are put into `srcs`
+    ///  - if set `false`, only directory names are put into `incs`
+    pub show_headers: bool,
     pub target_kind: TargetKind,
     // TODO: add sub dirs
     pub dirs: Vec<Dir>,
@@ -35,7 +44,7 @@ impl Dir {
             lpath: AutoStr::new(),
             scan: true,
             recurse: false,
-            headers: false,
+            show_headers: false,
             target_kind,
             dirs: Vec::new(),
             srcs: Vec::new(),
@@ -107,7 +116,7 @@ impl Dir {
             lpath: AutoStr::new(),
             scan,
             recurse,
-            headers,
+            show_headers: headers,
             target_kind,
             dirs,
             srcs,
@@ -122,6 +131,10 @@ impl Dir {
         for d in &mut self.dirs {
             d.set_lpath(self.lpath.clone());
         }
+    }
+
+    pub fn logical_depths(&self) -> usize {
+        AutoPath::new(self.lpath.clone()).depth()
     }
 
     pub fn update_root(&mut self, root: AutoStr) {
@@ -173,6 +186,7 @@ impl Dir {
         let root_path = Path::new(root.as_str());
         self.scan = true;
         // check current dir
+        //
 
         // for each subdir
         for entry in fs::read_dir(root_path)? {
@@ -184,7 +198,7 @@ impl Dir {
                 let name: AutoStr = path.file_name().unwrap().to_str().unwrap().into();
                 info!("dir name: {}", name.clone());
                 let mut sub_dir = Dir::from_str(name, self.root.clone(), self.target_kind.clone());
-                sub_dir.headers = self.headers;
+                sub_dir.show_headers = self.show_headers;
                 sub_dir.recurse = self.recurse;
                 sub_dir.scan = self.scan;
                 sub_dir.set_lpath(self.lpath.clone());
@@ -204,7 +218,7 @@ impl Dir {
         let mut all_srcs = HashSet::new();
 
         let (files, has_headers) =
-            scan_dir_flat(root_path, &self.target_kind, &self.skips, self.headers)?;
+            scan_dir_flat(root_path, &self.target_kind, &self.skips, self.show_headers)?;
         all_srcs.extend(files);
         if has_headers {
             all_incs.insert(self.root.clone());
@@ -223,7 +237,7 @@ impl Dir {
 
         if self.scan {
             let (files, has_headers) =
-                scan_dir_flat(root_path, &self.target_kind, &self.skips, self.headers)?;
+                scan_dir_flat(root_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_srcs.extend(files);
             if has_headers {
                 all_incs.insert(self.root.clone());
@@ -232,7 +246,7 @@ impl Dir {
             // check `src` folder in current dir
             let src_path = root_path.join("src");
             let (files, has_headers) =
-                scan_dir_flat(&src_path, &self.target_kind, &self.skips, self.headers)?;
+                scan_dir_flat(&src_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_srcs.extend(files);
             if has_headers {
                 all_incs.insert(src_path.unified());
@@ -241,7 +255,7 @@ impl Dir {
             // check `include` folder in current dir
             let inc_path = root_path.join("include");
             let (files, has_headers) =
-                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.headers)?;
+                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_incs.extend(files);
             if has_headers {
                 all_incs.insert(inc_path.unified());
@@ -250,7 +264,7 @@ impl Dir {
             // check `inc` folder in current dir
             let inc_path = root_path.join("inc");
             let (files, has_headers) =
-                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.headers)?;
+                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_incs.extend(files);
             if has_headers {
                 all_incs.insert(inc_path.unified());

@@ -52,6 +52,7 @@ pub struct Target {
     pub at: AutoStr,
     pub is_scan: bool,
     pub recurse: bool,
+    pub show_headers: bool,
     pub dirs: HashMap<AutoStr, Dir>,
     // Auto Source files
     pub autos: Vec<AutoStr>,
@@ -120,6 +121,7 @@ impl Target {
             at: AutoStr::default(),
             is_scan: true,
             recurse: false,
+            show_headers: false,
             dirs: HashMap::new(),
             autos: Vec::new(),
             srcs: HashSet::new(),
@@ -242,6 +244,7 @@ impl Target {
             at,
             is_scan,
             recurse,
+            show_headers: false,
             dirs,
             autos: Vec::new(),
             srcs,
@@ -467,12 +470,9 @@ impl Target {
         let mut succ_srcs = HashSet::new();
         let mut succ_incs = HashSet::new();
 
-        if self.recurse {
-            return self.scan_recurse();
-        }
-
         if self.is_scan {
             let mut target_dir = Dir::from_str(".".into(), self.root.clone(), self.kind.clone());
+            target_dir.show_headers = self.show_headers;
             target_dir.scan()?;
             succ_srcs.extend(target_dir.srcs.clone());
             succ_incs.extend(target_dir.incs.clone());
@@ -499,9 +499,10 @@ impl Target {
         let mut dirs = std::mem::take(&mut self.dirs);
         for dir in dirs.values_mut() {
             // info!("scanning dir: {}", dir.to_string());
+            dir.show_headers = self.show_headers;
             dir.scan()?;
-            succ_srcs.extend(dir.srcs.clone());
-            succ_incs.extend(dir.incs.clone());
+            // succ_srcs.extend(dir.srcs.clone());
+            // succ_incs.extend(dir.incs.clone());
         }
         self.dirs = dirs;
 
@@ -511,10 +512,6 @@ impl Target {
         // so we don't need to store dirs anymore
         // self.dirs is empty now
 
-        Ok(())
-    }
-
-    pub fn scan_recurse(&mut self) -> AutoResult<()> {
         Ok(())
     }
 
@@ -568,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_dirs() {
-        let dir = Dir::from_str("main".into(), ".".into(), TargetKind::App);
+        let dir = Dir::from_str("main".into(), ".".into(), TargetKind::App, 0);
         assert_eq!(dir.to_string(), "main");
     }
 
@@ -586,7 +583,7 @@ mod tests {
         "#;
         let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
         let app_node = config.root.nodes[0].clone();
-        let target = Target::from(app_node, "main".into());
+        let target = Target::from(app_node, "main".into(), 0);
         let root = target.root.clone();
         assert_eq!(root, ".");
 
@@ -631,7 +628,7 @@ mod tests {
         "#;
         let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
         let node = config.root.nodes[0].clone();
-        let target = Target::from(node, "main".into());
+        let target = Target::from(node, "main".into(), 0);
         let root_dir = target.root.clone();
         assert_eq!(root_dir, ".");
         assert_eq!(target.name, "main");

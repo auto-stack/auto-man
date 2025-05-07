@@ -12,8 +12,6 @@ use auto_val::{shared, Shared};
 use log::*;
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
@@ -32,6 +30,8 @@ pub struct Pac {
     pub props: Obj,
     pub build_at: AutoStr,
     pub build_location: AutoStr,
+    /// Whether to show header files in `srcs`
+    pub show_headers: bool,
 }
 
 fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
@@ -89,6 +89,7 @@ impl Pac {
             device_index: shared(Index::default()),
             build_at: ".".into(),
             build_location: "cmake".into(),
+            show_headers: false,
         }
     }
 
@@ -252,6 +253,7 @@ impl Pac {
             "ghs" => {
                 let path = AutoPath::new(at).join("ghs");
                 self.builder = Some(new_builder(BuilderKind::GHS(path)));
+                self.set_show_headers();
             }
             _ => {
                 panic!("Invalid port name: {}", port);
@@ -259,6 +261,10 @@ impl Pac {
         }
         self.port = port.clone();
         Ok(())
+    }
+
+    pub fn set_show_headers(&mut self) {
+        self.show_headers = true;
     }
 
     pub fn resolve(&mut self) -> AutoResult<()> {
@@ -285,6 +291,7 @@ impl Pac {
         // 3. scan targets for its local source files
         info!("Scanning targets for srcs and incs");
         for target in &mut self.targets {
+            target.show_headers = self.show_headers;
             target.scan()?;
         }
         Ok(())
