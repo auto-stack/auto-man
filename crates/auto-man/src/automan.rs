@@ -3,6 +3,7 @@ use crate::AutoResult;
 use crate::Pac;
 use crate::{Index, IndexStore};
 use auto_lang::config::AutoConfig;
+use auto_lang::Universe;
 use auto_val::shared;
 use auto_val::{AutoPath, AutoStr, Obj};
 use log::*;
@@ -56,25 +57,95 @@ impl Automan {
 impl Automan {
     pub fn parse_pac(path: &str, am_config: &AmConfig) -> AutoResult<Pac> {
         // 1. Find pac.at
-        let config = Path::new(path).join("pac.at");
-        if !config.is_file() {
+        let config_path = Path::new(path).join("pac.at");
+        if !config_path.is_file() {
             return Err(format!("No pac.at file found in {}", path).into());
         }
-        // 2. Parse pac.at
-        let config = AutoConfig::from_file(config.as_path(), &Obj::new())?;
-        // info!("Config: {}", config.root);
+
+        // 2. try load saved port
+        let mut port = Self::try_load_port()?;
+
+        if port.is_none() {
+            let mut env = Universe::new();
+            env.set_global("port", "win32".into());
+            // let user select a port
+            let config = AutoConfig::from_file(config_path.as_path(), &Obj::EMPTY, env)?;
+            let ports = config.root.get_nodes("port");
+            let mut port_names = Vec::new();
+            for port in ports {
+                port_names.push(port.main_arg().to_astr());
+            }
+            let win32: AutoStr = "win32".into();
+            if !port_names.contains(&win32) {
+                // default port is win32
+                port_names.push(win32);
+            }
+            println!("choose one!");
+            let port_name = Self::select_port(&port_names)?;
+            port = Some(port_name);
+        };
+
+        // use this port to reload config and make a pac
+        let port_name = port.unwrap();
+        let mut env = Universe::new();
+        env.set_global("port", port_name.clone().into());
+
+        let config = AutoConfig::from_file(config_path.as_path(), &Obj::EMPTY, env)?;
         let mut pac = Pac::new(config);
         let index_store = Self::index_store(am_config)?;
         info!("loading index store from {}", index_store.path.to_astr());
         pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
-        // println!("index: {}", pac.index.borrow());
-        // pac.print_targets();
-        //
-        // 3. read default port from config, or let user to choose
-        pac.try_load_port()?;
-
+        pac.set_port(port_name.clone())?;
+        pac.save_port(port_name.clone())?;
         Ok(pac)
+    }
+
+    fn select_port(ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
+        use dialoguer::Select;
+        let port = if ports.len() == 1 {
+            ports[0].clone()
+        } else {
+            let selection = Select::new()
+                .with_prompt("Which port do you want to build?")
+                .default(0)
+                .items(&ports)
+                .interact()?;
+
+            ports[selection].clone()
+        };
+        Ok(port)
+    }
+
+    pub fn get_state_file() -> AutoResult<AutoPath> {
+        // check state file exists? .am/state.at
+        let am_dir = AutoPath::new(".am");
+
+        if !am_dir.is_dir() {
+            // Create the directory if it doesn't exist
+            std::fs::create_dir_all(&am_dir.path())?;
+        }
+
+        let state_file = am_dir.join("state.at");
+        if !state_file.is_file() {
+            // Create the state file if it doesn't exist
+            std::fs::File::create(&state_file.path())?;
+        }
+
+        Ok(state_file)
+    }
+
+    pub fn try_load_port() -> AutoResult<Option<AutoStr>> {
+        // load local state from .am/state.at
+        let state_file = Self::get_state_file()?;
+        let state = AutoConfig::read(&state_file.path())?;
+
+        let port_name = state.root.props.get_str_of("port");
+        if !port_name.is_empty() {
+            Ok(Some(port_name))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn new(path: &str, am: AmConfig) -> AutoResult<Self> {
@@ -94,8 +165,8 @@ impl Automan {
 
     pub fn open_ide(&mut self) -> AutoResult<()> {
         println!("builder: {}", self.pac.build_location);
-        println!("port: {}", self.pac.port);
-        match self.pac.port.as_str() {
+        println!("port: {}", self.pac.port.name);
+        match self.pac.port.builder.as_str() {
             "iar" => {
                 // open iar ide in the build_location
                 let eww_path = AutoPath::new(self.pac.build_location.as_str())
@@ -387,7 +458,7 @@ pub fn load_am_config() -> Option<AmConfig> {
     let Ok(code) = code else {
         return None;
     };
-    let config = AutoConfig::from_code(code, &Obj::EMPTY);
+    let config = AutoConfig::new(code);
     let Ok(config) = config else {
         return None;
     };

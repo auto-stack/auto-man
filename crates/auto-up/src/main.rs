@@ -1,5 +1,5 @@
 use auto_lang::{AutoResult, config::AutoConfig};
-use auto_val::{AutoStr, Obj};
+use auto_val::AutoStr;
 use colored::Colorize;
 use dialoguer::{Input, Select, console::Style, theme::ColorfulTheme};
 use reqwest::blocking::get;
@@ -40,7 +40,7 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
 
     let page = get(url)?.text()?;
 
-    let config = AutoConfig::from_code(page, &Obj::EMPTY)?;
+    let config = AutoConfig::new(page)?;
 
     let releases = config.root.get_nodes("release");
 
@@ -96,7 +96,7 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
     let au_conf = auto_dir.join("auto-up.at");
     if au_conf.is_file() {
         // look for installation dir
-        let conf = AutoConfig::from_file(&au_conf, &Obj::EMPTY)?;
+        let conf = AutoConfig::read(&au_conf)?;
         let install_dir = conf.root.props.get_str_of("auto-man");
         println!("Last installation directory for {}: {}", tool, install_dir);
         return Ok(install_dir);

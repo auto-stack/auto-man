@@ -3,10 +3,13 @@ use crate::builder::Builder;
 use crate::builder::BuilderKind;
 use crate::group::Group;
 use crate::AutoResult;
+use crate::Dir;
+use crate::Port;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
 use auto_lang::config::AutoConfig;
+use auto_lang::Universe;
 use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey};
 use auto_val::{shared, Shared};
 use log::*;
@@ -20,7 +23,7 @@ use tabled::{
 
 pub struct Pac {
     pub name: AutoStr,
-    pub port: AutoStr,
+    pub port: Port,
     pub version: AutoStr,
     pub ports: Vec<Node>,
     pub builder: Option<Box<dyn Builder>>,
@@ -56,7 +59,6 @@ fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoSt
 
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
-        let mut targets = vec![];
         let pac_name = config.name();
         let version = config.version();
         let props = config.root.props.clone();
@@ -69,7 +71,9 @@ impl Pac {
             ports.push(port);
         }
         let builder = None;
+
         // targets, NOTE: ports are not targets
+        let mut targets = vec![];
         for n in config.root.nodes.into_iter() {
             if n.name != "port" {
                 let target = Target::from(n, pac_name.clone());
@@ -80,7 +84,7 @@ impl Pac {
         Self {
             name: pac_name,
             version,
-            port: "cmake".into(),
+            port: Port::default(),
             ports,
             builder,
             targets,
@@ -201,14 +205,14 @@ impl Pac {
         let state_file = self.get_state_file()?;
         let state = AutoConfig::read(&state_file.path())?;
 
-        let port = state.root.props.get_str_of("port");
-        if !port.is_empty() {
-            self.set_port(port)?;
+        let port_name = state.root.props.get_str_of("port");
+        if !port_name.is_empty() {
+            self.set_port(port_name)?;
         } else {
             let ports = self.list_port_names();
-            let port = select_port(None, &ports)?;
-            self.set_port(port.clone())?;
-            self.save_port(port)?;
+            let port_name = select_port(None, &ports)?;
+            self.set_port(port_name.clone())?;
+            self.save_port(port_name)?;
         }
 
         Ok(())
@@ -222,11 +226,14 @@ impl Pac {
         Ok(())
     }
 
-    pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
+    pub fn set_port(&mut self, port_name: AutoStr) -> AutoResult<()> {
         // 0. check port
-        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
+        let port_node = self
+            .ports
+            .iter()
+            .find(|p| p.main_arg().to_astr() == port_name);
         let Some(port_node) = port_node else {
-            return Err(format!("Port {} not found", port).into());
+            return Err(format!("Port {} not found", port_name).into());
         };
         let mut at = if port_node.has_prop("at") {
             port_node.get_prop_of("at").to_astr()
@@ -237,11 +244,11 @@ impl Pac {
             at = at[0..at.len() - 1].into()
         }
         self.build_at = at.clone();
-        self.build_location = AutoPath::new(at.clone()).join(port.clone()).to_astr();
+        self.build_location = AutoPath::new(at.clone()).join(port_name.clone()).to_astr();
         // merge configs within the port into the pac
-        self.merge_port(port.clone())?;
+        self.merge_port(port_name.clone())?;
         // set builder
-        match port.as_str() {
+        match self.port.builder.as_str() {
             "cmake" => {
                 let path = AutoPath::new(at).join("CMakeLists.txt");
                 self.builder = Some(new_builder(BuilderKind::CMake(path.to_string())));
@@ -251,15 +258,18 @@ impl Pac {
                 self.builder = Some(new_builder(BuilderKind::IAR(path)));
             }
             "ghs" => {
-                let path = AutoPath::new(at).join("ghs");
-                self.builder = Some(new_builder(BuilderKind::GHS(path)));
+                self.builder = Some(new_builder(BuilderKind::GHS(AutoPath::new(
+                    self.build_location.clone(),
+                ))));
                 self.set_show_headers();
             }
             _ => {
-                panic!("Invalid port name: {}", port);
+                panic!(
+                    "Invalid port builder name: {}:{}",
+                    self.port.name, self.port.builder
+                );
             }
         }
-        self.port = port.clone();
         Ok(())
     }
 
@@ -298,11 +308,14 @@ impl Pac {
     }
 
     fn merge_port(&mut self, port: AutoStr) -> AutoResult<()> {
-        let port_node = self
-            .ports
-            .iter()
-            .find(|p| p.main_arg().to_astr() == port)
-            .unwrap();
+        // reload config with said port
+        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
+
+        let Some(port_node) = port_node else {
+            self.port = Port::default();
+            return Ok(());
+        };
+
         // props
         let props = port_node.props.clone();
         self.props.merge(&props);
@@ -312,6 +325,13 @@ impl Pac {
             let target = Target::from(n, self.name.clone());
             self.targets.push(target);
         }
+
+        let mut port = Port::default();
+        port.name = port_node.main_arg().to_astr();
+        port.builder = port_node.props.get_str_of("builder");
+        port.platform = port_node.props.get_str_of("platform");
+        port.at = port_node.props.get_str_of("at");
+        self.port = port;
         Ok(())
     }
 
@@ -372,6 +392,8 @@ impl Pac {
                         target_path.path(),
                         // override dep props
                         &target.props,
+                        // env
+                        Universe::default(),
                     )?;
                     let mut pac = Pac::new(dep_config);
                     pac.index = self.index.clone();
@@ -668,13 +690,21 @@ impl Pac {
             // set dirs
             for (_n, d) in &t.dirs {
                 let dg = g.mut_kid(&d.name);
-                for s in &d.srcs {
-                    let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), s);
-                    dg.files.push(crate::group::File { name: fpath.into() })
-                }
+                self.group_dir(dg, d);
             }
         }
         group
+    }
+
+    fn group_dir(&self, dg: &mut Group, d: &Dir) {
+        for s in &d.srcs {
+            let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), s);
+            dg.files.push(crate::group::File { name: fpath.into() })
+        }
+        for s in &d.dirs {
+            let sg = dg.mut_kid(&s.name);
+            self.group_dir(sg, s);
+        }
     }
 
     #[allow(dead_code)]
@@ -743,7 +773,6 @@ impl fmt::Display for Pac {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use auto_val::Obj;
     #[test]
     fn test_pac() {
         let code = r#"
@@ -752,7 +781,7 @@ mod tests {
 
         app("main") {}
         "#;
-        let config = AutoConfig::from_code(code, &Obj::new());
+        let config = AutoConfig::new(code);
         match config {
             Ok(config) => {
                 let pac = Pac::new(config);
@@ -775,7 +804,7 @@ mod tests {
         app("main") {}
         lib("lib") {}
         "#;
-        let config = AutoConfig::from_code(code, &Obj::new());
+        let config = AutoConfig::new(code);
         let pac = Pac::new(config.unwrap());
         pac.print_targets();
         let atom = pac.to_atom();

@@ -5,9 +5,8 @@ use crate::target::{Target, TargetKind};
 use crate::{AutoResult, AutoStr, Dir};
 use auto_atom::Atom;
 use auto_gen::*;
-use auto_val::{AutoPath, StrExt};
+use auto_val::AutoPath;
 use log::*;
-use tabled::derive::display::debug;
 
 pub struct GHSBuilder {
     pub gen: AutoGen,

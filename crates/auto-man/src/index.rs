@@ -52,7 +52,7 @@ impl Index {
             return Err(format!("index file {} not found", path.display()).into());
         }
         let code = std::fs::read_to_string(path)?;
-        let config = AutoConfig::from_code(&code, &Obj::new())?;
+        let config = AutoConfig::new(&code)?;
         // config is a bunch of index nodes
         let root = config.root;
         root.nodes
