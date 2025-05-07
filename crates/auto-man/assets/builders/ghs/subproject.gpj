@@ -7,5 +7,5 @@ $ }
 
 ## Subdirs of this subproject
 $ for dir in dirs {
-${dir.spath}.gpj
+${name}/${dir.rpath}.gpj
 $ }

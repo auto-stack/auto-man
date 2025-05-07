@@ -348,7 +348,7 @@ impl Target {
             obj.set("name", Value::Str(dir.name.clone()));
             obj.set("srcs", array_val);
             obj.set("lpath", dir.lpath.clone());
-            obj.set("spath", dir.lpath.clone());
+            obj.set("rpath", dir.rpath.clone());
             dirs.push(obj);
         }
         // array of objects
@@ -502,7 +502,7 @@ impl Target {
             dir.show_headers = self.show_headers;
             dir.scan()?;
             // succ_srcs.extend(dir.srcs.clone());
-            // succ_incs.extend(dir.incs.clone());
+            succ_incs.extend(dir.incs.clone());
         }
         self.dirs = dirs;
 

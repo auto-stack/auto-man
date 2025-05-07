@@ -17,6 +17,8 @@ pub struct Dir {
     pub root: AutoStr,
     /// Logical path of this directory. Logical path are made of {target_name}/{dir_name}/{dir_name}s
     pub lpath: AutoStr,
+    /// Relative path of this directory.
+    pub rpath: AutoStr,
     /// Whether to scan regular source directories like `src`, `include` and `inc`.
     pub scan: bool,
     /// Whether to recursively scan all subdirectories.
@@ -37,11 +39,12 @@ impl Dir {
     pub fn from_str(name: AutoStr, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = name;
         let root = Path::new(parent.as_str()).join(name.as_str()).unified();
-        info!("making Dir {}::{} with root: {}", parent, name, root);
+        debug!("making Dir {}::{} with root: {}", parent, name, root);
         Self {
-            name,
+            name: name.clone(),
             root,
             lpath: AutoStr::new(),
+            rpath: name,
             scan: true,
             recurse: false,
             show_headers: false,
@@ -56,13 +59,12 @@ impl Dir {
     pub fn from_node(node: &Node, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = AutoStr::from(node.args.args[0].to_astr());
         let parent_path = Path::new(parent.as_str());
-        let root = if node.has_prop("root") {
-            parent_path
-                .join(node.props.get_str_of("root").as_str())
-                .unified()
+        let rel_path = if node.has_prop("root") {
+            node.props.get_str_of("root")
         } else {
-            parent_path.join(name.as_str()).unified()
+            name.clone()
         };
+        let root = parent_path.join(rel_path.as_str()).unified();
 
         // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
@@ -114,6 +116,7 @@ impl Dir {
             name,
             root,
             lpath: AutoStr::new(),
+            rpath: rel_path,
             scan,
             recurse,
             show_headers: headers,
@@ -154,8 +157,8 @@ impl Dir {
         node.props.set("srcs", self.srcs.clone());
         node.props.set("incs", self.incs.clone());
         node.props.set("lpath", self.lpath.clone());
-        let spath = AutoPath::new(self.lpath.clone());
-        node.props.set("spath", spath.tail(2).to_astr());
+        // relative path
+        node.props.set("rpath", self.rpath.clone());
         node.props.set(
             "skips",
             self.skips.clone().into_iter().collect::<Vec<AutoStr>>(),
@@ -202,7 +205,9 @@ impl Dir {
                 sub_dir.recurse = self.recurse;
                 sub_dir.scan = self.scan;
                 sub_dir.set_lpath(self.lpath.clone());
+                sub_dir.skips = self.skips.clone();
                 sub_dir.scan_recursive()?;
+                self.incs.extend(sub_dir.incs.clone());
                 self.dirs.push(sub_dir);
             }
         }
@@ -284,7 +289,7 @@ impl Dir {
             // info!("scanning sub dir: {}", dir.root);
             dir.scan()?;
             all_incs.extend(dir.incs.clone());
-            all_srcs.extend(dir.srcs.clone());
+            // all_srcs.extend(dir.srcs.clone());
         }
 
         self.srcs = all_srcs.into_iter().collect();
@@ -389,6 +394,11 @@ pub fn scan_dir_flat(
     let mut files_found = HashSet::new();
     let mut headers_found = false;
     let files = std::fs::read_dir(path)?;
+    let skip_globs = skips
+        .iter()
+        .filter(|s| s.contains("*"))
+        .map(|s| s.clone())
+        .collect::<Vec<AutoStr>>();
     for file in files {
         let file = file?;
         // check for Auto Source files
@@ -402,6 +412,17 @@ pub fn scan_dir_flat(
             Some(file_name) => {
                 let file_name = AutoStr::from(file_name.to_str().unwrap());
                 if skips.contains(&file_name) {
+                    info!("- skipping {}", file_name.as_str());
+                    continue;
+                }
+                let mut is_skip = false;
+                for skip in &skip_globs {
+                    if glob_match::glob_match(skip.as_str(), file_name.as_str()) {
+                        is_skip = true;
+                        break;
+                    }
+                }
+                if is_skip {
                     info!("- skipping {}", file_name.as_str());
                     continue;
                 }

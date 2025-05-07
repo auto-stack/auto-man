@@ -19,4 +19,5 @@ glob = { workspace = true }
 dirs = { workspace = true }
 git2 = { workspace = true }
 colored = { workspace = true }
+glob-match = { workspace = true }
 # walkdir = { workspace = true }
