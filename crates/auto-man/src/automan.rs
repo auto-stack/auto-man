@@ -5,8 +5,9 @@ use crate::{Index, IndexStore};
 use auto_lang::config::AutoConfig;
 use auto_lang::Universe;
 use auto_val::shared;
-use auto_val::{AutoPath, AutoStr, Obj};
+use auto_val::{AutoPath, AutoStr, Obj, Value};
 use log::*;
+use std::collections::HashMap;
 use std::env;
 use std::fmt::Display;
 use std::path::Path;
@@ -65,34 +66,56 @@ impl Automan {
         // 2. try load saved port
         let mut port = Self::try_load_port()?;
 
-        if port.is_none() {
-            let mut env = Universe::new();
-            env.set_global("port", "win32".into());
-            // let user select a port
-            let config = AutoConfig::from_file(config_path.as_path(), &Obj::EMPTY, env)?;
-            let ports = config.root.get_nodes("port");
-            let mut port_names = Vec::new();
-            for port in ports {
-                port_names.push(port.main_arg().to_astr());
+        // let user select a port
+        let config = AutoConfig::read(config_path.as_path())?;
+        let ports = config.root.get_nodes("port");
+
+        let mut port_names = Vec::new();
+        for port in ports {
+            port_names.push(port.main_arg().to_astr());
+        }
+
+        let win32: AutoStr = "win32".into();
+        let port_name = match port {
+            None => {
+                if !port_names.contains(&win32) {
+                    // default port is win32
+                    port_names.push(win32);
+                }
+                Self::select_port(&port_names)?
             }
-            let win32: AutoStr = "win32".into();
-            if !port_names.contains(&win32) {
-                // default port is win32
-                port_names.push(win32);
+            Some(port) => {
+                if !port_names.contains(&port) {
+                    if !port_names.contains(&win32) {
+                        // default port is win32
+                        port_names.push(win32);
+                    }
+                    Self::select_port(&port_names)?
+                } else {
+                    port
+                }
             }
-            println!("choose one!");
-            let port_name = Self::select_port(&port_names)?;
-            port = Some(port_name);
         };
 
+        println!("PORT NAME: {}", port_name);
+
         // use this port to reload config and make a pac
-        let port_name = port.unwrap();
         let mut env = Universe::new();
         env.set_global("port", port_name.clone().into());
 
         let config = AutoConfig::from_file(config_path.as_path(), &Obj::EMPTY, env)?;
+        let mut index_used: Vec<AutoStr> = Vec::new();
+        if config.root.has_prop("index") {
+            index_used = config
+                .root
+                .get_prop("index")
+                .as_array()
+                .iter()
+                .map(|t| t.to_astr())
+                .collect();
+        }
         let mut pac = Pac::new(config);
-        let index_store = Self::index_store(am_config)?;
+        let index_store = Self::index_store(am_config, index_used)?;
         info!("loading index store from {}", index_store.path.to_astr());
         pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
@@ -289,36 +312,54 @@ impl Automan {
     }
 
     pub fn list_deps(config: &AmConfig) -> AutoResult<()> {
-        let store = Self::index_store(config)?;
+        let store = Self::index_store(config, vec![])?;
         store.list_deps()
     }
 
-    pub fn index_store(config: &AmConfig) -> AutoResult<IndexStore> {
+    pub fn index_store(config: &AmConfig, indexs: Vec<AutoStr>) -> AutoResult<IndexStore> {
         // try to get index location from amconfig
         let am_path = AutoPath::new(&config.am);
         if !am_path.is_dir() {
             info!("creating am dir: {}", am_path.to_astr());
             std::fs::create_dir_all(am_path.path())?;
         }
-        let index_path = am_path.join("index");
-        if !index_path.is_dir() {
-            // try to clone
-            info!("cloning index dir: {}", index_path.to_astr());
-            std::fs::create_dir_all(index_path.path())?;
-            let repo = config.index.as_str();
-            let result = std::process::Command::new("git")
-                .arg("clone")
-                .arg(repo)
-                .arg(index_path.path())
-                .output();
-            match result {
-                Err(e) => {
-                    error!(
-                        "Failed to clone repository {} to {} with error {}",
-                        repo, index_path, e
-                    );
+        // get index name and urls from config and indexs
+        let all_index = &config.index;
+        println!("all index: {:?}", all_index);
+        let mut used_indexs = indexs;
+        if used_indexs.is_empty() {
+            // fill all index
+            for k in all_index.keys() {
+                used_indexs.push(k.clone());
+            }
+        }
+        println!("used index: {:?}", used_indexs);
+
+        let mut used_index_path = AutoPath::new(".");
+
+        for index in used_indexs {
+            let index_path = am_path.join("index").join(index.clone());
+            used_index_path = index_path.clone();
+            let repo = all_index.get(&index).unwrap();
+            if !index_path.is_dir() {
+                // try to clone
+                info!("cloning index dir: {}", index_path.to_astr());
+                std::fs::create_dir_all(index_path.path())?;
+
+                let result = std::process::Command::new("git")
+                    .arg("clone")
+                    .arg(repo.as_str())
+                    .arg(index_path.path())
+                    .output();
+                match result {
+                    Err(e) => {
+                        error!(
+                            "Failed to clone repository {} to {} with error {}",
+                            repo, index_path, e
+                        );
+                    }
+                    Ok(_) => {}
                 }
-                Ok(_) => {}
             }
         }
         // else {
@@ -340,7 +381,7 @@ impl Automan {
         //     Ok(_) => {}
         // }
         // }
-        return Ok(IndexStore::new(index_path));
+        return Ok(IndexStore::new(used_index_path));
 
         // let dir = Self::search_dirs_or_clone(
         //     config,
@@ -356,7 +397,7 @@ impl Automan {
     }
 
     pub fn list_devices(config: &AmConfig) -> AutoResult<()> {
-        let store = Self::index_store(config)?;
+        let store = Self::index_store(config, vec![])?;
         store.list_devices()
     }
 }
@@ -418,15 +459,22 @@ mod tests {
 }
 
 pub struct AmConfig {
-    pub index: AutoStr,
+    pub name: AutoStr,
+    pub index: HashMap<AutoStr, AutoStr>,
     pub am: AutoStr,
     pub is_default: bool,
 }
 
 impl Default for AmConfig {
     fn default() -> Self {
+        let mut map = HashMap::new();
+        map.insert(
+            "default".into(),
+            "git@gitee.com:auto-stack/auto-index.git".into(),
+        );
         Self {
-            index: "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git".into(),
+            name: "default".into(),
+            index: map,
             am: home_path().join(".auto/auto-man").to_astr(),
             is_default: true,
         }
@@ -435,10 +483,15 @@ impl Default for AmConfig {
 
 impl Display for AmConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("AmConfig {\n")?;
-        f.write_str(format!("  index: {}\n", self.index).as_str())?;
-        f.write_str(format!("  am: {}\n", self.am).as_str())?;
-        f.write_str("}\n")
+        writeln!(f, "AmConfig {{")?;
+        writeln!(f, "  name: {}", self.name)?;
+        writeln!(f, "  index: {{")?;
+        for (k, v) in self.index.iter() {
+            writeln!(f, "    {}: {}", k, v)?;
+        }
+        writeln!(f, "  }}")?;
+        writeln!(f, "  am: {}", self.am)?;
+        writeln!(f, "}}\n")
     }
 }
 
@@ -451,7 +504,19 @@ pub fn load_am_config() -> Option<AmConfig> {
         am_path = Some(local_config_path);
     }
 
+    if am_path.is_none() {
+        let user_home_config_path = env::home_dir()
+            .unwrap()
+            .join(".auto")
+            .join("auto-man")
+            .join("am.at");
+        if user_home_config_path.is_file() {
+            am_path = Some(user_home_config_path);
+        }
+    }
+
     let Some(am_path) = am_path else {
+        info!("Automan Config file am.at not found in current or home directory, using the default one");
         return None;
     };
     let code = std::fs::read_to_string(am_path.clone());
@@ -464,7 +529,10 @@ pub fn load_am_config() -> Option<AmConfig> {
     };
     let mut am = AmConfig::default();
     if config.root.has_prop("index") {
-        am.index = config.root.get_prop("index").to_astr();
+        let index_prop = config.root.get_prop("index");
+        if let Value::Obj(obj) = index_prop {
+            am.index = obj.to_hashmap();
+        }
     }
     if config.root.has_prop("am") {
         am.am = config.root.get_prop_of("am").to_astr();

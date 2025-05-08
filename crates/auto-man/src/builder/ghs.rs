@@ -130,6 +130,15 @@ impl Builder for GHSBuilder {
             .map(|t| t.local_name().clone())
             .collect();
 
+        let device_names: Vec<AutoStr> = pac
+            .targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::Device)
+            .map(|t| t.local_name().clone())
+            .collect();
+
+        println!("DEVICES: {:?}", device_names);
+
         let mut all_incs = pac.all_incs();
         all_incs.sort();
 
@@ -146,6 +155,7 @@ impl Builder for GHSBuilder {
             let mut app_node = app.to_node();
             app_node.set_prop("local_name", app.local_name());
             app_node.set_prop("libs", dep_names.clone());
+            app_node.set_prop("devices", device_names.clone());
             app_node.set_prop("rel", rel.clone());
             app_node.set_prop("device_dir", device_dir.clone());
             app_node.set_prop("incs", all_incs.clone());
@@ -163,7 +173,11 @@ impl Builder for GHSBuilder {
         let lib_and_deps: Vec<&Target> = pac
             .targets
             .iter()
-            .filter(|t| t.kind == TargetKind::Lib || t.kind == TargetKind::Dep)
+            .filter(|t| {
+                t.kind == TargetKind::Lib
+                    || t.kind == TargetKind::Dep
+                    || t.kind == TargetKind::Device
+            })
             .collect();
 
         for lib in lib_and_deps {
@@ -179,6 +193,9 @@ impl Builder for GHSBuilder {
             //
 
             let mold_name = format!("{}.gpj", lib.local_name());
+            if lib.kind == TargetKind::Device {
+                println!("MOLDNAME: {}", mold_name);
+            }
             let lib_mold = Mold::new(mold_name, GHSTemplate::subproject()?);
             let mut lib_node = lib.to_node();
             lib_node.set_prop("libs", dep_names.clone());

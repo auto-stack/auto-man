@@ -1,3 +1,4 @@
+use auto_lang::ast::Pair;
 use auto_lang::{AutoResult, config::AutoConfig};
 use auto_val::AutoStr;
 use colored::Colorize;
@@ -150,12 +151,15 @@ fn auto_up() -> AutoResult<()> {
     let zip_name = info.url.split('/').last().unwrap();
     let zip_path = temp_dir.join(zip_name);
     if zip_path.is_file() {
-        println!("zip file {} already exists", zip_path.to_str().unwrap());
-    } else {
-        let resp = reqwest::blocking::get(info.url.as_str()).expect("request failed");
-        let body = resp.bytes().expect("body invalid");
-        std::fs::write(zip_path.clone(), &body)?;
+        println!(
+            "zip file {} already exists, deleting...",
+            zip_path.to_str().unwrap()
+        );
+        std::fs::remove_file(zip_path.as_path())?;
     }
+    let resp = reqwest::blocking::get(info.url.as_str()).expect("request failed");
+    let body = resp.bytes().expect("body invalid");
+    std::fs::write(zip_path.clone(), &body)?;
 
     let install_path = Path::new(install_dir.as_str());
 
@@ -174,7 +178,7 @@ fn auto_up() -> AutoResult<()> {
 
 fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     // let user select which index base to use:
-    let index_bases = vec!["CodeUp-Soutek", "CodeUp-Boe", "UserInput"];
+    let index_bases = vec!["soutek", "boe"];
     let selection = Select::with_theme(MY_THEME.get().unwrap())
         .with_prompt("Which index base do you want to use?")
         .default(0)
@@ -186,12 +190,13 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
         "git@codeup.aliyun.com:soutek/boe/index.git",
     ];
 
-    let url = if selection == 2 {
-        let input = Input::<String>::with_theme(MY_THEME.get().unwrap())
-            .with_prompt("Enter the index base URL:")
-            .interact_text()?;
-        input
-    } else if selection <= 1 {
+    // let url = if selection == 2 {
+    //     let input = Input::<String>::with_theme(MY_THEME.get().unwrap())
+    //         .with_prompt("Enter the index base URL:")
+    //         .interact_text()?;
+    //     input
+    // } else if selection <= 1 {
+    let name = if selection <= 1 {
         index_urls[selection].to_string()
     } else {
         panic!("Invalid selection");
@@ -199,19 +204,20 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
 
     // write to am.at
     let am_at_file = File::create(install_path.join("am.at"))?;
-    let mut am_at_writer = BufWriter::new(am_at_file);
-    writeln!(am_at_writer, "// repo of index base")?;
-    writeln!(am_at_writer, "index: \"{}\"", url)?;
-    writeln!(
-        am_at_writer,
-        "// location to store automan related configurations"
-    )?;
 
+    let mut w = BufWriter::new(am_at_file);
+    writeln!(w, "// index bases")?;
+    writeln!(w, "index: {{")?;
+    for i in 0..index_bases.len() {
+        writeln!(w, "    {}: \"{}\"", index_bases[i], index_urls[i])?;
+    }
+    writeln!(w, "}}\n")?;
+    writeln!(w, "// default index")?;
+    writeln!(w, "default_index: \"{}\"\n", name)?;
+    writeln!(w, "// location to store automan related configurations")?;
     let install_dir = install_path.to_str().unwrap();
-    writeln!(am_at_writer, "am: \"{}\"", install_dir)?;
-
+    writeln!(w, "am: \"{}\"", install_dir)?;
     println!("am.at written to {}", install_dir);
-
     Ok(())
 }
 

@@ -439,7 +439,7 @@ pub fn scan_dir_flat(
         if let Some(ext) = ext {
             match ext.to_str().unwrap() {
                 "at" => {
-                    if file_name == "pac.at" {
+                    if file_name == "pac.at" || file_name == "device.at" {
                         continue;
                     }
                     files_found.insert(path_str);
@@ -459,11 +459,12 @@ pub fn scan_dir_flat(
                 "S" => {
                     files_found.insert(path_str);
                 }
+                "gpj" => {
+                    continue;
+                }
                 _ => {
                     if kind == &TargetKind::Device {
-                        if file_name != "pac.at" {
-                            files_found.insert(path_str);
-                        }
+                        files_found.insert(path_str);
                     } else {
                         continue;
                     }

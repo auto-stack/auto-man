@@ -21,6 +21,11 @@ $ }
 
 ${rel}${device_dir}/device/device.gpj
 
+$ for dev in devices {
+# ${dev}
+${dev}.gpj
+$ }
+
 $ for lib in libs {
 # ${lib}
 ${lib}.gpj

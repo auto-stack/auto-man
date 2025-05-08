@@ -216,6 +216,7 @@ impl Target {
             .collect();
         dirs.extend(dirs_from_nodes);
 
+        println!("DDDDD: rename: {}", rename);
         for d in &mut dirs {
             d.set_lpath(rename.clone());
         }

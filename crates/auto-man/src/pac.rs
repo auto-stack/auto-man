@@ -62,6 +62,8 @@ impl Pac {
         let pac_name = config.name();
         let version = config.version();
         let props = config.root.props.clone();
+        println!("props of the config: {}", pac_name);
+        println!("props: {}", props);
 
         // ports
         let mut ports = config.root.get_nodes("port");
@@ -72,10 +74,27 @@ impl Pac {
         }
         let builder = None;
 
+        // target related properties
+        let target_props = vec!["rename", "root", "at"];
+
         // targets, NOTE: ports are not targets
         let mut targets = vec![];
-        for n in config.root.nodes.into_iter() {
+        for mut n in config.root.nodes.into_iter() {
             if n.name != "port" {
+                // main target should receive target related args from the pac
+                println!("checking target: {}", n.main_arg().to_astr());
+                if n.main_arg().to_astr() == pac_name && n.name == "device" {
+                    for p in &target_props {
+                        println!("Checking target prop! {}", p);
+                        if config.args.has(*p) {
+                            let value = config.args.get(*p).unwrap();
+                            println!("Setting prop: {}: {}", *p, value.clone());
+                            // TODO: find a better way to transfer args to dependencies target
+                            n.set_prop(*p, value);
+                        }
+                    }
+                }
+
                 let target = Target::from(n, pac_name.clone());
                 targets.push(target);
             }
@@ -244,7 +263,7 @@ impl Pac {
             at = at[0..at.len() - 1].into()
         }
         self.build_at = at.clone();
-        self.build_location = AutoPath::new(at.clone()).join(port_name.clone()).to_astr();
+        self.build_location = AutoPath::new(at.clone()).to_astr();
         // merge configs within the port into the pac
         self.merge_port(port_name.clone())?;
         // set builder
