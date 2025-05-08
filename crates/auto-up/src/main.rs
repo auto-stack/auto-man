@@ -1,4 +1,3 @@
-use auto_lang::ast::Pair;
 use auto_lang::{AutoResult, config::AutoConfig};
 use auto_val::AutoStr;
 use colored::Colorize;
@@ -12,7 +11,7 @@ use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
-const AUTOUP_VERSION: &str = "v0.0.10";
+const AUTOUP_VERSION: &str = "v0.0.11";
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
 fn select_tool() -> AutoResult<AutoStr> {
     // Implement logic to select a tool
