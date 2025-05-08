@@ -48,8 +48,8 @@ pub struct Target {
     pub name: AutoStr,
     pub version: AutoStr,
     pub kind: TargetKind,
-    pub root: AutoStr, // root dir of the target, including its name
-    pub at: AutoStr,
+    pub at: AutoStr, // root dir of the target, including its name
+    pub rename: AutoStr,
     pub is_scan: bool,
     pub recurse: bool,
     pub show_headers: bool,
@@ -117,8 +117,8 @@ impl Target {
             name: name.into(),
             version: AutoStr::new(),
             kind,
-            root: AutoStr::new(),
-            at: AutoStr::default(),
+            at: AutoStr::new(),
+            rename: AutoStr::default(),
             is_scan: true,
             recurse: false,
             show_headers: false,
@@ -163,30 +163,26 @@ impl Target {
             false
         };
 
-        // rename
-        let rename = if node.has_prop("rename") {
-            node.props.get_str_of("rename")
-        } else {
-            name.clone()
-        };
-
-        // root
-        let mut root = if node.has_prop("root") {
-            node.props.get_str_of("root")
-        } else {
-            get_root_dir(&rename, &kind, &pac)
-        };
-
         // at
-        let at = if node.has_prop("at") {
+        let mut at = if node.has_prop("at") {
             node.props.get_str_of("at")
+        } else {
+            get_root_dir(&name, &kind, &pac)
+        };
+
+        // parent
+        let parent = if node.has_prop("parent") {
+            node.props.get_str_of("parent")
         } else {
             AutoStr::default()
         };
 
-        if !at.is_empty() {
-            root = AutoPath::new(at.clone()).join(rename.clone()).to_astr();
+        if !parent.is_empty() {
+            at = AutoPath::new(parent.clone()).join(name.clone()).to_astr();
         }
+
+        // rename
+        let rename = AutoPath::new(at.clone()).filename();
 
         // selects
         let mut selects = node.props.get_array_of_str("selects").to_set();
@@ -204,7 +200,7 @@ impl Target {
         let mut dirs: Vec<Dir> = dirs
             .into_iter()
             .filter(|d| dir_filter(d, &selects, &skips))
-            .map(|d| Dir::from_str(d, root.clone(), kind.clone()))
+            .map(|d| Dir::from_str(d, at.clone(), kind.clone()))
             .collect();
 
         // check for dir nodes
@@ -212,11 +208,10 @@ impl Target {
         let dirs_from_nodes: Vec<Dir> = dir_nodes
             .into_iter()
             .filter(|d| dir_filter(&d.main_arg().to_astr(), &selects, &skips))
-            .map(|n| Dir::from_node(n, root.clone(), kind.clone()))
+            .map(|n| Dir::from_node(n, at.clone(), kind.clone()))
             .collect();
         dirs.extend(dirs_from_nodes);
 
-        println!("DDDDD: rename: {}", rename);
         for d in &mut dirs {
             d.set_lpath(rename.clone());
         }
@@ -241,8 +236,8 @@ impl Target {
             name,
             version,
             kind,
-            root,
             at,
+            rename,
             is_scan,
             recurse,
             show_headers: false,
@@ -270,21 +265,11 @@ impl Target {
     }
 
     pub fn location(&self) -> AutoPath {
-        // if `at` is specified, root will be overridden
-        if self.at.is_empty() {
-            if self.root.is_empty() {
-                self.default_location()
-            } else {
-                AutoPath::new(self.root.clone())
-            }
-        } else {
-            AutoPath::new(self.at.clone()).join(&self.local_name())
-        }
+        AutoPath::new(self.at.clone())
     }
 
     pub fn local_name(&self) -> AutoStr {
-        let rename = self.props.get_str_or("rename", self.name.clone());
-        rename
+        self.rename.clone()
     }
 
     pub fn config_name(&self) -> AutoStr {
@@ -294,15 +279,11 @@ impl Target {
         }
     }
 
-    pub fn set_at(&mut self, at: impl Into<AutoStr>) {
-        let at = at.into();
-        self.at = at.clone();
-        if !self.at.is_empty() {
-            self.root = self.location().to_astr();
-            // update root of each sub dirs
-            for dir in self.dirs.iter_mut() {
-                dir.1.update_root(self.root.clone());
-            }
+    pub fn set_parent(&mut self, parent: impl Into<AutoStr>) {
+        self.at = AutoPath::new(parent.into()).join(&self.rename).to_astr();
+        // update root of each sub dirs
+        for dir in self.dirs.iter_mut() {
+            dir.1.update_root(self.at.clone());
         }
     }
 
@@ -317,7 +298,7 @@ impl Target {
         node.args.add_pos(self.name.clone());
         node.props.set("name", self.local_name().clone());
         node.props.set("id", self.local_name().clone());
-        node.props.set("root", self.root.clone());
+        node.props.set("root", self.at.clone());
         node.props.set("srcs", set_to_vec(self.srcs.clone()));
         node.props.set("incs", set_to_vec(self.incs.clone()));
         node.props.set("skips", set_to_vec(self.skips.clone()));
@@ -330,7 +311,7 @@ impl Target {
                     if n.name == "file" {
                         // for file node, add target's root to the file's path
                         let path = n.main_arg();
-                        let path = Path::new(self.root.as_str()).join(path.as_str());
+                        let path = Path::new(self.at.as_str()).join(path.as_str());
                         node.props.set(p.clone(), path.unified());
                     } else {
                         node.props.set(p.clone(), n.to_astr());
@@ -409,9 +390,9 @@ impl Target {
         for (k, v) in other.dirs.iter() {
             let mut dir = v.clone();
             // check new root dir
-            let path = Path::new(self.root.as_str()).join(dir.root.as_str());
+            let path = Path::new(self.at.as_str()).join(dir.at.as_str());
             if path.is_dir() {
-                dir.append_root(self.root.clone());
+                dir.append_root(self.at.clone());
             }
             self.dirs.insert(k.clone(), dir);
         }
@@ -472,7 +453,7 @@ impl Target {
         let mut succ_incs = HashSet::new();
 
         if self.is_scan {
-            let mut target_dir = Dir::from_str(".".into(), self.root.clone(), self.kind.clone());
+            let mut target_dir = Dir::from_str(".".into(), self.at.clone(), self.kind.clone());
             target_dir.show_headers = self.show_headers;
             target_dir.scan()?;
             succ_srcs.extend(target_dir.srcs.clone());
@@ -485,7 +466,7 @@ impl Target {
             .iter()
             .map(|s| s.clone())
             .collect::<Vec<AutoStr>>();
-        let scanned_srcs = scan_specific_srcs(&srcs, &self.root)?;
+        let scanned_srcs = scan_specific_srcs(&srcs, &self.at)?;
         succ_srcs.extend(scanned_srcs);
 
         let incs = self
@@ -493,7 +474,7 @@ impl Target {
             .iter()
             .map(|s| s.clone())
             .collect::<Vec<AutoStr>>();
-        let scanned_incs = check_incs(&incs, &self.root)?;
+        let scanned_incs = check_incs(&incs, &self.at)?;
         succ_incs.extend(scanned_incs);
 
         // 3. for each dir, scan for source files, include dirs
@@ -519,7 +500,7 @@ impl Target {
     pub fn print_info(&self) -> AutoResult<()> {
         println!("Target: {}", self.name);
         println!("Kind: {}", self.kind);
-        println!("Root: {}", self.root);
+        println!("Root: {}", self.at);
         println!(
             "Dirs: {}",
             self.dirs
@@ -546,7 +527,7 @@ impl TargetStatus {
         Self {
             name: target.name.clone(),
             kind: target.kind.to_string().into(),
-            root: target.root.clone(),
+            root: target.at.clone(),
             dirs: target
                 .dirs
                 .values()
@@ -566,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_dirs() {
-        let dir = Dir::from_str("main".into(), ".".into(), TargetKind::App, 0);
+        let dir = Dir::from_str("main".into(), ".".into(), TargetKind::App);
         assert_eq!(dir.to_string(), "main");
     }
 
@@ -582,16 +563,16 @@ mod tests {
             }
         }
         "#;
-        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let config = AutoConfig::new(code).unwrap();
         let app_node = config.root.nodes[0].clone();
-        let target = Target::from(app_node, "main".into(), 0);
-        let root = target.root.clone();
-        assert_eq!(root, ".");
+        let target = Target::from(app_node, "main".into());
+        let at = target.at.clone();
+        assert_eq!(at, ".");
 
         let src_dir = target.get_dir("src");
         if let Some(dir) = src_dir {
             assert_eq!(dir.to_string(), "src");
-            assert_eq!(dir.root, "src");
+            assert_eq!(dir.at, "src");
             assert_eq!(dir.name, "src");
         } else {
             panic!("src_dir is None");
@@ -600,7 +581,7 @@ mod tests {
         let util_dir = target.get_dir("util");
         if let Some(dir) = util_dir {
             assert_eq!(dir.to_string(), "util");
-            assert_eq!(dir.root, "util");
+            assert_eq!(dir.at, "util");
             assert_eq!(dir.name, "util");
         } else {
             panic!("util_dir is None");
@@ -615,10 +596,10 @@ mod tests {
         app("demo") {
         }
         "#;
-        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let config = AutoConfig::new(code).unwrap();
         let pac = Pac::new(config);
         let target = pac.get_target("demo").unwrap();
-        let root = target.root.clone();
+        let root = target.at.clone();
         assert_eq!(root, "apps/demo");
     }
 
@@ -627,10 +608,10 @@ mod tests {
         let code = r#"
         app("main") {}
         "#;
-        let config = AutoConfig::from_code(code, &Obj::new()).unwrap();
+        let config = AutoConfig::new(code).unwrap();
         let node = config.root.nodes[0].clone();
-        let target = Target::from(node, "main".into(), 0);
-        let root_dir = target.root.clone();
+        let target = Target::from(node, "main".into());
+        let root_dir = target.at.clone();
         assert_eq!(root_dir, ".");
         assert_eq!(target.name, "main");
         assert_eq!(target.kind, TargetKind::App);

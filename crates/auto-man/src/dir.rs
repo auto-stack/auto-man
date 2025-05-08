@@ -14,7 +14,7 @@ pub struct Dir {
     pub name: AutoStr,
     /// Root directory of this directory. This is the real path in local file system .
     // TODO: This should replace the local name of the directory?
-    pub root: AutoStr,
+    pub at: AutoStr,
     /// Logical path of this directory. Logical path are made of {target_name}/{dir_name}/{dir_name}s
     pub lpath: AutoStr,
     /// Relative path of this directory.
@@ -42,7 +42,7 @@ impl Dir {
         debug!("making Dir {}::{} with root: {}", parent, name, root);
         Self {
             name: name.clone(),
-            root,
+            at: root,
             lpath: AutoStr::new(),
             rpath: name,
             scan: true,
@@ -59,12 +59,12 @@ impl Dir {
     pub fn from_node(node: &Node, parent: AutoStr, target_kind: TargetKind) -> Self {
         let name = AutoStr::from(node.args.args[0].to_astr());
         let parent_path = Path::new(parent.as_str());
-        let rel_path = if node.has_prop("root") {
-            node.props.get_str_of("root")
+        let rel_path = if node.has_prop("at") {
+            node.props.get_str_of("at")
         } else {
             name.clone()
         };
-        let root = parent_path.join(rel_path.as_str()).unified();
+        let at = parent_path.join(rel_path.as_str()).unified();
 
         // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
@@ -90,12 +90,12 @@ impl Dir {
             .props
             .get_array_of_str("dirs")
             .into_iter()
-            .map(|s| Dir::from_str(s, root.clone(), target_kind.clone()))
+            .map(|s| Dir::from_str(s, at.clone(), target_kind.clone()))
             .collect::<Vec<Dir>>();
         // read sub dirs by dir() node
         let dir_nodes = node.nodes(&"dir");
         for dir_node in dir_nodes {
-            let dir = Dir::from_node(dir_node, root.clone(), target_kind.clone());
+            let dir = Dir::from_node(dir_node, at.clone(), target_kind.clone());
             dirs.push(dir);
         }
 
@@ -114,7 +114,7 @@ impl Dir {
         // info!("skips: {:?}", skips);
         Self {
             name,
-            root,
+            at,
             lpath: AutoStr::new(),
             rpath: rel_path,
             scan,
@@ -142,18 +142,18 @@ impl Dir {
 
     pub fn update_root(&mut self, root: AutoStr) {
         // set dir's root
-        let old_root = self.root.clone();
-        self.root = AutoPath::new(root).join(old_root).to_astr();
+        let old_root = self.at.clone();
+        self.at = AutoPath::new(root).join(old_root).to_astr();
         // recursively set root of subdirs
         for dir in self.dirs.iter_mut() {
-            dir.update_root(self.root.clone());
+            dir.update_root(self.at.clone());
         }
     }
 
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("dir");
         node.args.add_pos(self.name.clone());
-        node.props.set("root", self.root.clone());
+        node.props.set("root", self.at.clone());
         node.props.set("srcs", self.srcs.clone());
         node.props.set("incs", self.incs.clone());
         node.props.set("lpath", self.lpath.clone());
@@ -185,7 +185,7 @@ impl Dir {
     }
 
     pub fn scan_recursive(&mut self) -> AutoResult<()> {
-        let root = self.root.clone();
+        let root = self.at.clone();
         let root_path = Path::new(root.as_str());
         self.scan = true;
         // check current dir
@@ -200,7 +200,7 @@ impl Dir {
                 info!("got subdir: {}", path.display());
                 let name: AutoStr = path.file_name().unwrap().to_str().unwrap().into();
                 info!("dir name: {}", name.clone());
-                let mut sub_dir = Dir::from_str(name, self.root.clone(), self.target_kind.clone());
+                let mut sub_dir = Dir::from_str(name, self.at.clone(), self.target_kind.clone());
                 sub_dir.show_headers = self.show_headers;
                 sub_dir.recurse = self.recurse;
                 sub_dir.scan = self.scan;
@@ -218,7 +218,7 @@ impl Dir {
     }
 
     pub fn scan_flat(&mut self) -> AutoResult<()> {
-        let root_path = Path::new(self.root.as_str());
+        let root_path = Path::new(self.at.as_str());
         let mut all_incs = HashSet::new();
         let mut all_srcs = HashSet::new();
 
@@ -226,7 +226,7 @@ impl Dir {
             scan_dir_flat(root_path, &self.target_kind, &self.skips, self.show_headers)?;
         all_srcs.extend(files);
         if has_headers {
-            all_incs.insert(self.root.clone());
+            all_incs.insert(self.at.clone());
         }
 
         self.srcs.extend(all_srcs);
@@ -236,7 +236,7 @@ impl Dir {
 
     pub fn scan_dir(&mut self) -> AutoResult<()> {
         // info!("- Scanning dir: {}", self.root.as_str());
-        let root_path = Path::new(self.root.as_str());
+        let root_path = Path::new(self.at.as_str());
         let mut all_incs = HashSet::new();
         let mut all_srcs = HashSet::new();
 
@@ -245,7 +245,7 @@ impl Dir {
                 scan_dir_flat(root_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_srcs.extend(files);
             if has_headers {
-                all_incs.insert(self.root.clone());
+                all_incs.insert(self.at.clone());
             }
 
             // check `src` folder in current dir
@@ -277,11 +277,11 @@ impl Dir {
         }
 
         // check specified srcs
-        let succ_srcs = scan_specific_srcs(&self.srcs, &self.root)?;
+        let succ_srcs = scan_specific_srcs(&self.srcs, &self.at)?;
         all_srcs.extend(succ_srcs);
 
         // check specified incs
-        let succ_incs = check_incs(&self.incs, &self.root)?;
+        let succ_incs = check_incs(&self.incs, &self.at)?;
         all_incs.extend(succ_incs);
 
         // TODO: recursively scan sub dirs
@@ -298,8 +298,8 @@ impl Dir {
     }
 
     pub fn append_root(&mut self, root: AutoStr) {
-        self.root = AutoPath::new(root.as_str())
-            .join(self.root.as_str())
+        self.at = AutoPath::new(root.as_str())
+            .join(self.at.as_str())
             .unified();
 
         for dir in self.dirs.iter_mut() {
@@ -310,7 +310,7 @@ impl Dir {
 
 impl PartialEq for Dir {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.root == other.root
+        self.name == other.name && self.at == other.at
     }
 }
 
@@ -319,7 +319,7 @@ impl Eq for Dir {}
 impl Hash for Dir {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
-        self.root.hash(state);
+        self.at.hash(state);
     }
 }
 
@@ -331,7 +331,7 @@ impl fmt::Debug for Dir {
 
 impl fmt::Display for Dir {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let path = AutoPath::new(self.root.as_str());
+        let path = AutoPath::new(self.at.as_str());
         write!(f, "{}", path.unified())
     }
 }

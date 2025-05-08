@@ -186,7 +186,7 @@ impl Builder for GHSBuilder {
             let dir_names = lib
                 .dirs
                 .values()
-                .map(|dir| dir.root.replace("/", "_"))
+                .map(|dir| dir.at.replace("/", "_"))
                 .collect::<Vec<AutoStr>>();
             println!("GHS Location: {}", ghs_loc);
             // let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();

@@ -75,7 +75,7 @@ impl Pac {
         let builder = None;
 
         // target related properties
-        let target_props = vec!["rename", "root", "at"];
+        let target_props = vec!["at"];
 
         // targets, NOTE: ports are not targets
         let mut targets = vec![];
@@ -267,19 +267,17 @@ impl Pac {
         // merge configs within the port into the pac
         self.merge_port(port_name.clone())?;
         // set builder
+        let build_path = AutoPath::new(self.build_location.clone());
         match self.port.builder.as_str() {
             "cmake" => {
-                let path = AutoPath::new(at).join("CMakeLists.txt");
+                let path = build_path.join("CMakeLists.txt");
                 self.builder = Some(new_builder(BuilderKind::CMake(path.to_string())));
             }
             "iar" => {
-                let path = AutoPath::new(at).join("iar");
-                self.builder = Some(new_builder(BuilderKind::IAR(path)));
+                self.builder = Some(new_builder(BuilderKind::IAR(build_path)));
             }
             "ghs" => {
-                self.builder = Some(new_builder(BuilderKind::GHS(AutoPath::new(
-                    self.build_location.clone(),
-                ))));
+                self.builder = Some(new_builder(BuilderKind::GHS(build_path)));
                 self.set_show_headers();
             }
             _ => {
@@ -383,7 +381,7 @@ impl Pac {
         for target in targets.iter_mut() {
             // override target's at location
             if !at.is_empty() {
-                target.set_at(at);
+                target.set_parent(at);
             };
             let loc = target.location();
 
@@ -452,7 +450,6 @@ impl Pac {
         // 查询索引
         let name = dep.name.clone();
         let at = dep.at.clone();
-        let rename = dep.props.get_str_or("rename", name.clone());
 
         let index = match dep.kind {
             TargetKind::Dep => self.index.borrow(),
@@ -465,7 +462,7 @@ impl Pac {
                 let mut info = info.clone();
                 // TODO: check if dep version is in index
                 info.version = dep.version.clone();
-                self.download_repo(&info, &dep.kind, &at, &rename)?;
+                self.download_repo(&info, &dep.kind, &at)?;
                 return Ok(());
             }
             None => {
@@ -474,13 +471,7 @@ impl Pac {
         }
     }
 
-    pub fn download_repo(
-        &self,
-        info: &PacInfo,
-        kind: &TargetKind,
-        at: &AutoStr,
-        rename: &AutoStr,
-    ) -> AutoResult<()> {
+    pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind, at: &AutoStr) -> AutoResult<()> {
         // 1. make deps folder if not exists
         let mut deps_dir = match kind {
             TargetKind::Dep => "deps",
@@ -490,12 +481,9 @@ impl Pac {
         if !at.is_empty() {
             deps_dir = at.as_str();
         }
-        if !std::path::Path::new(deps_dir).exists() {
-            std::fs::create_dir_all(deps_dir)?;
-        }
         // 2. use git to download the repo
         let url = format!("{}", info.repo);
-        let path = format!("{}/{}", deps_dir, rename);
+        let path = deps_dir;
         info!("- {}: ({})", path, info.repo);
         if Path::new(&path).exists() {
             // TODO: update the repo if necessary
@@ -518,7 +506,7 @@ impl Pac {
             let output = std::process::Command::new("git")
                 .arg("clone")
                 .arg(url)
-                .arg(path.clone())
+                .arg(path)
                 .output()?;
             if output.status.success() {
                 println!("Downloaded dependency {} from {}", info.name, info.repo);
@@ -693,7 +681,7 @@ impl Pac {
 
     fn relative_path(&self) -> AutoStr {
         let depth = path_depth(&self.build_at) as usize;
-        "/..".repeat(depth + 1).into()
+        "/..".repeat(depth).into()
     }
 
     fn groups(&self) -> Group {
