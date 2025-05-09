@@ -160,6 +160,7 @@ fn auto_up() -> AutoResult<()> {
     let body = resp.bytes().expect("body invalid");
     std::fs::write(zip_path.clone(), &body)?;
 
+    println!("Download successful, installing...");
     let install_path = Path::new(install_dir.as_str());
 
     // unzip
@@ -177,14 +178,16 @@ fn auto_up() -> AutoResult<()> {
 
 fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     // let user select which index base to use:
-    let index_bases = vec!["soutek", "boe"];
-    let selection = Select::with_theme(MY_THEME.get().unwrap())
-        .with_prompt("Which index base do you want to use?")
-        .default(0)
-        .items(&index_bases)
-        .interact()?;
+    let index_bases = vec!["default", "soutek", "boe"];
+    // let selection = Select::with_theme(MY_THEME.get().unwrap())
+    //     .with_prompt("Which index base do you want to use?")
+    //     .default(0)
+    //     .items(&index_bases)
+    //     .interact()?;
+    let selection = 0;
 
     let index_urls = vec![
+        "git@gitee.com:auto-stack/auto-index.git",
         "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git",
         "git@codeup.aliyun.com:soutek/boe/index.git",
     ];
