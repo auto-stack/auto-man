@@ -12,3 +12,4 @@ version-compare = { workspace = true }
 colored = { workspace = true }
 dirs = { workspace = true }
 zip = { workspace = true }
+auto-man = { workspace = true }

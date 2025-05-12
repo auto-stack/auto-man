@@ -1,37 +1,10 @@
-pub mod asset;
-mod automan;
-mod builder;
-mod dir;
-pub mod fs;
-pub mod group;
-mod index;
-mod pac;
-mod port;
-pub mod pull;
-mod target;
-pub mod util;
-
-pub use automan::*;
-pub use builder::*;
-pub use dir::*;
-pub use index::*;
-pub use pac::*;
-pub use port::*;
-pub use target::*;
-
+use auto_man::*;
 use auto_val::AutoStr;
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use dialoguer::Select;
 use log::*;
 use simplelog::*;
-
-// use std::fs::File;
-
-const AUTOMAN_VERSION: &str = "v0.0.11";
-
-pub type AutoError = Box<dyn std::error::Error>;
-pub type AutoResult<T> = Result<T, AutoError>;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]

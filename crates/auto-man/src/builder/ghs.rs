@@ -2,10 +2,10 @@ use super::Builder;
 use crate::asset::GHSTemplate;
 use crate::pac::Pac;
 use crate::target::{Target, TargetKind};
-use crate::{AutoResult, AutoStr, Dir};
+use crate::{AutoResult, Dir};
 use auto_atom::Atom;
 use auto_gen::*;
-use auto_val::AutoPath;
+use auto_val::{AutoPath, AutoStr};
 use log::*;
 
 pub struct GHSBuilder {
@@ -209,6 +209,7 @@ impl Builder for GHSBuilder {
             self.apps.push(lib_gen);
 
             for (_key, dir) in &lib.dirs {
+                println!("setting up dir {} for lib {}", dir.name, lib.name);
                 self.setup_dir(ghs_loc.clone(), dir)?;
             }
         }

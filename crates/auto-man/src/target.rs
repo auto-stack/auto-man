@@ -182,7 +182,10 @@ impl Target {
         }
 
         // rename
-        let rename = AutoPath::new(at.clone()).filename();
+        let mut rename = AutoPath::new(at.clone()).filename();
+        if rename.is_empty() {
+            rename = name.clone();
+        }
 
         // selects
         let mut selects = node.props.get_array_of_str("selects").to_set();
@@ -285,6 +288,10 @@ impl Target {
         for dir in self.dirs.iter_mut() {
             dir.1.update_root(self.at.clone());
         }
+    }
+
+    pub fn parent(&self) -> AutoStr {
+        AutoPath::new(self.at.clone()).parent().to_astr()
     }
 
     pub fn to_node(&self) -> Node {

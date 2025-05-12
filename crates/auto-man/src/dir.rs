@@ -65,6 +65,7 @@ impl Dir {
             name.clone()
         };
         let at = parent_path.join(rel_path.as_str()).unified();
+        info!(" <<<<<<<<<<< making Dir {}::{} with root: {}", parent, name, at);
 
         // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
@@ -129,7 +130,11 @@ impl Dir {
     }
 
     pub fn set_lpath(&mut self, parent_lpath: AutoStr) {
-        self.lpath = format!("{}/{}", parent_lpath, self.name).into();
+        self.lpath = if parent_lpath.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{}/{}", parent_lpath, self.name).into()
+        };
 
         for d in &mut self.dirs {
             d.set_lpath(self.lpath.clone());

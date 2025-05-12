@@ -371,7 +371,7 @@ impl Pac {
         self.targets.iter().any(|t| t.name == *name)
     }
 
-    pub fn download_deps(&mut self, at: &AutoStr) -> AutoResult<()> {
+    pub fn download_deps(&mut self, parent: &AutoStr) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
         let mut new_deps = HashMap::new();
         let mut target_names = HashMap::new();
@@ -380,8 +380,8 @@ impl Pac {
         }
         for target in targets.iter_mut() {
             // override target's at location
-            if !at.is_empty() {
-                target.set_parent(at);
+            if !parent.is_empty() {
+                target.set_parent(parent);
             };
             let loc = target.location();
 
@@ -424,7 +424,7 @@ impl Pac {
                     }
 
                     // 4. recursively download dep's deps
-                    pac.download_deps(&target.at)?;
+                    pac.download_deps(&target.parent())?;
                     // merge dep's dep into current pac if not exists
                     for dep in pac.deps() {
                         if !new_deps.contains_key(&dep.name)

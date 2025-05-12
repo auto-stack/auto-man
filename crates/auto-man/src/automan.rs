@@ -49,7 +49,7 @@ impl Automan {
         Ok(())
     }
 
-    pub(crate) fn update_deps(&mut self) -> AutoResult<()> {
+    pub fn update_deps(&mut self) -> AutoResult<()> {
         self.pac.update_deps()
     }
 }
@@ -340,7 +340,14 @@ impl Automan {
         for index in used_indexs {
             let index_path = am_path.join("index").join(index.clone());
             used_index_path = index_path.clone();
-            let repo = all_index.get(&index).unwrap();
+            let repo = all_index.get(&index);
+            let Some(repo) = repo else {
+                error!(
+                    "index base not found! {}, please check ~/.auto/auto-man/am.at",
+                    index
+                );
+                continue;
+            };
             if !index_path.is_dir() {
                 // try to clone
                 info!("cloning index dir: {}", index_path.to_astr());

@@ -1,4 +1,5 @@
 use auto_lang::{AutoResult, config::AutoConfig};
+use auto_man::AUTOMAN_VERSION;
 use auto_val::AutoStr;
 use colored::Colorize;
 use dialoguer::{Input, Select, console::Style, theme::ColorfulTheme};
@@ -11,7 +12,7 @@ use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
-const AUTOUP_VERSION: &str = "v0.0.11";
+const AUTOUP_VERSION: &str = AUTOMAN_VERSION;
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
 fn select_tool() -> AutoResult<AutoStr> {
     // Implement logic to select a tool
