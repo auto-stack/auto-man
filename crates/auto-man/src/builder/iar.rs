@@ -94,6 +94,14 @@ impl Builder for IARBuilder {
     }
 
     fn clean(&mut self) -> AutoResult<()> {
+        if self.path.is_dir() {
+            info!("deleting directory {}", self.path);
+            self.path.clean_with_parents()?;
+            // std::fs::remove_dir_all(self.path.path())?;
+        } else {
+            info!("build directory {} does not exist, skipping ...", self.path);
+        }
+
         Ok(())
     }
 

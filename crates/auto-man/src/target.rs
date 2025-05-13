@@ -3,7 +3,7 @@ use crate::AutoResult;
 use crate::Dir;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
-use auto_val::{Array, Obj};
+use auto_val::{Array, NodeBody, Obj};
 use auto_val::{AutoPath, AutoStr, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
@@ -294,6 +294,58 @@ impl Target {
         AutoPath::new(self.at.clone()).parent().to_astr()
     }
 
+    pub fn to_nodebody(&self) -> NodeBody {
+        let node_type = match self.kind {
+            TargetKind::App => "app",
+            TargetKind::Lib => "lib",
+            TargetKind::Dep => "dep",
+            TargetKind::Device => "device",
+        };
+        let mut nb = NodeBody::new();
+        nb.add_prop("kind", node_type);
+        nb.add_prop("at", self.at.clone());
+        nb.add_prop("name", self.local_name().clone());
+        nb.add_prop("id", self.local_name().clone());
+        nb.add_prop("root", self.at.clone());
+        nb.add_prop("srcs", set_to_vec(self.srcs.clone()));
+        nb.add_prop("incs", set_to_vec(self.incs.clone()));
+        nb.add_prop("skips", set_to_vec(self.skips.clone()));
+        for (p, v) in self.props.iter() {
+            match v {
+                Value::Str(s) => {
+                    nb.add_prop(p.clone(), s.clone());
+                }
+                Value::Node(n) => {
+                    if n.name == "file" {
+                        // for file node, add target's root to the file's path
+                        let path = n.main_arg();
+                        let path = Path::new(self.at.as_str()).join(path.as_str());
+                        nb.add_prop(p.clone(), path.unified());
+                    } else {
+                        nb.add_prop(p.clone(), n.to_astr());
+                    }
+                }
+                _ => {
+                    nb.add_prop(p.clone(), v.clone());
+                }
+            }
+        }
+        let mut dirs = Array::new();
+        for dir in self.dirs.values() {
+            // node.add_kid(dir.to_node());
+            let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
+            let mut obj = Obj::new();
+            obj.set("name", Value::Str(dir.name.clone()));
+            obj.set("srcs", array_val);
+            obj.set("lpath", dir.lpath.clone());
+            obj.set("rpath", dir.rpath.clone());
+            dirs.push(obj);
+        }
+        // array of objects
+        nb.add_prop("dirs", dirs);
+        nb
+    }
+
     pub fn to_node(&self) -> Node {
         let node_type = match self.kind {
             TargetKind::App => "app",
@@ -306,6 +358,7 @@ impl Target {
         node.props.set("name", self.local_name().clone());
         node.props.set("id", self.local_name().clone());
         node.props.set("root", self.at.clone());
+        node.props.set("at", self.at.clone());
         node.props.set("srcs", set_to_vec(self.srcs.clone()));
         node.props.set("incs", set_to_vec(self.incs.clone()));
         node.props.set("skips", set_to_vec(self.skips.clone()));
@@ -504,6 +557,49 @@ impl Target {
         Ok(())
     }
 
+    pub fn clean(&self) -> AutoResult<()> {
+        if !(self.kind == TargetKind::Dep || self.kind == TargetKind::Device) {
+            return Err(format!(
+                "Target {} is not a dependency or device, no need to clean",
+                self.name
+            )
+            .into());
+        }
+        // check if dir is a git directory
+        let dir = AutoPath::new(self.at.clone());
+        if !dir.is_dir() {
+            return Err(format!("Target location {} is not a dir", self.at).into());
+        }
+        let gitdir = dir.join(".git");
+        if !gitdir.is_dir() {
+            return Err(format!("Target location {} is not a git dir", self.at).into());
+        }
+        // check if there is any modifications to this git repository
+        let cmd = std::process::Command::new("git")
+            .arg("status")
+            .arg("-s")
+            .current_dir(&dir.path())
+            .output()
+            .map_err(|e| format!("Failed to run git status: {}", e))?;
+        if !cmd.status.success() {
+            return Err(format!(
+                "Failed to run git status: {}",
+                String::from_utf8_lossy(&cmd.stderr)
+            )
+            .into());
+        }
+        if !cmd.stdout.is_empty() {
+            println!(
+                "\n--- git status ---\n\n{}",
+                String::from_utf8_lossy(&cmd.stdout)
+            );
+            return Err(format!("Target location {} has uncommitted changes", self.at).into());
+        }
+        println!("target {} is ok to clean!", self.name);
+        std::fs::remove_dir_all(&dir.path())?;
+        Ok(())
+    }
+
     pub fn print_info(&self) -> AutoResult<()> {
         println!("Target: {}", self.name);
         println!("Kind: {}", self.kind);
@@ -525,7 +621,7 @@ impl Target {
 pub struct TargetStatus {
     pub name: AutoStr,
     pub kind: AutoStr,
-    pub root: AutoStr,
+    pub at: AutoStr,
     pub dirs: AutoStr,
 }
 
@@ -534,7 +630,7 @@ impl TargetStatus {
         Self {
             name: target.name.clone(),
             kind: target.kind.to_string().into(),
-            root: target.at.clone(),
+            at: target.at.clone(),
             dirs: target
                 .dirs
                 .values()

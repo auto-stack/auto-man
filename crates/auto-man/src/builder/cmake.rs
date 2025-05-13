@@ -1,5 +1,6 @@
 use super::Builder;
 use auto_val::AutoStr;
+use log::*;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
@@ -146,6 +147,16 @@ impl Builder for CMakeBuilder {
         std::fs::remove_file(&self.cmake_path)?;
         // remove build directory
         std::fs::remove_dir_all("build")?;
+
+        // CMake
+        let files = glob::glob("CMakeLists*")?;
+        for file in files {
+            if let Ok(file) = file {
+                info!("deleting file {}", file.display());
+                std::fs::remove_file(file)?;
+            }
+        }
+
         Ok(())
     }
 

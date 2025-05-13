@@ -1,6 +1,6 @@
-use auto_lang::{AutoResult, config::AutoConfig};
+use auto_lang::config::AutoConfig;
 use auto_man::AUTOMAN_VERSION;
-use auto_val::AutoStr;
+use auto_val::{AutoResult, AutoStr};
 use colored::Colorize;
 use dialoguer::{Input, Select, console::Style, theme::ColorfulTheme};
 use reqwest::blocking::get;

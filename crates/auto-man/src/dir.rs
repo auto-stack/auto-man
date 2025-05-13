@@ -1,6 +1,7 @@
 use crate::AutoResult;
 use crate::TargetKind;
 use auto_val::Array;
+use auto_val::NodeBody;
 use auto_val::{AutoPath, AutoStr, Node, PathBufExt};
 use log::*;
 use std::fs;
@@ -65,7 +66,7 @@ impl Dir {
             name.clone()
         };
         let at = parent_path.join(rel_path.as_str()).unified();
-        info!(" <<<<<<<<<<< making Dir {}::{} with root: {}", parent, name, at);
+        // info!(" <<<<<<<<<<< making Dir {}::{} with root: {}", parent, name, at);
 
         // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
@@ -155,6 +156,31 @@ impl Dir {
         }
     }
 
+    pub fn to_nodebody(&self) -> NodeBody {
+        let mut nb = NodeBody::new();
+        nb.add_prop("name", self.name.clone());
+        nb.add_prop("root", self.at.clone());
+        nb.add_prop("srcs", self.srcs.clone());
+        nb.add_prop("incs", self.incs.clone());
+        nb.add_prop("lpath", self.lpath.clone());
+        // relative path
+        nb.add_prop("rpath", self.rpath.clone());
+        nb.add_prop(
+            "skips",
+            self.skips.clone().into_iter().collect::<Vec<AutoStr>>(),
+        );
+
+        // add sub dirs
+        if self.dirs.is_empty() {
+            nb.add_prop("dirs", Array::new());
+        }
+        for dir in &self.dirs {
+            let n = dir.to_node();
+            nb.add_kid(n);
+        }
+
+        nb
+    }
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("dir");
         node.args.add_pos(self.name.clone());

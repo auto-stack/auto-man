@@ -42,7 +42,7 @@ primaryTarget=v800_standalone.tgt
 # Target
 ${rel}${device_dir}/tgt/target.gpj
 
-# Project
+# Projects
 $ for app in apps {
 ${app.id}.gpj    [Program]
 $ }

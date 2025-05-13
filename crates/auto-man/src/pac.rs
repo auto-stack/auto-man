@@ -10,6 +10,7 @@ use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
 use auto_lang::config::AutoConfig;
 use auto_lang::Universe;
+use auto_val::NodeBody;
 use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey};
 use auto_val::{shared, Shared};
 use log::*;
@@ -62,8 +63,6 @@ impl Pac {
         let pac_name = config.name();
         let version = config.version();
         let props = config.root.props.clone();
-        println!("props of the config: {}", pac_name);
-        println!("props: {}", props);
 
         // ports
         let mut ports = config.root.get_nodes("port");
@@ -427,9 +426,9 @@ impl Pac {
                     pac.download_deps(&target.parent())?;
                     // merge dep's dep into current pac if not exists
                     for dep in pac.deps() {
-                        if !new_deps.contains_key(&dep.name)
-                            && !target_names.contains_key(&dep.name)
-                        {
+                        // if !new_deps.contains_key(&dep.name)
+                        // && !target_names.contains_key(&dep.name)
+                        if !target_names.contains_key(&dep.name) {
                             new_deps.insert(dep.name.clone(), dep.clone());
                         }
                     }
@@ -577,11 +576,19 @@ impl Pac {
     }
 
     pub fn clean(&mut self) -> AutoResult<()> {
+        // 1. remove build directory
+        // TODO: what about other builders that are not choosed yet?
         let builder = std::mem::take(&mut self.builder);
         if let Some(mut builder) = builder {
             builder.clean()?;
             self.builder = Some(builder);
         }
+        // 2. remove downloaded deps and devices
+
+        // NOTE: if content is modified (yet to be committed), a warning should be displayed and the directory should be left
+        // for t in self.downloaded() {
+        // t.clean()?;
+        // }
         Ok(())
     }
 
@@ -634,6 +641,49 @@ impl Pac {
         }
         all_incs.sort();
         all_incs
+    }
+
+    pub fn to_nodebody(&self) -> NodeBody {
+        let mut nb = NodeBody::new();
+        // name prop is the first positional arg
+        nb.add_prop("name", self.name.clone());
+        nb.add_prop("version", self.version.clone());
+        let mut all_incs = self.all_incs();
+        for target in &self.targets {
+            nb.add_kid(target.to_node());
+        }
+        all_incs.sort();
+        nb.add_prop("all_incs", Value::Array(Array::from_vec(all_incs)));
+
+        if !self.has_target(TargetKind::Dep) {
+            nb.add_prop("deps", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::Device) {
+            nb.add_prop("devices", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::Lib) {
+            nb.add_prop("libs", Value::Array(Array::new()));
+        }
+
+        if !self.has_target(TargetKind::App) {
+            nb.add_prop("apps", Value::Array(Array::new()));
+        }
+
+        // root.set_prop("files", self.files_list());
+        // root.set_prop("groups", self.group_list());
+        nb.add_prop("files", Array::new());
+        nb.add_prop("groups", self.groups().to_xml());
+
+        let props = self.props.clone();
+        for (k, v) in props.iter() {
+            nb.add_prop(k.to_string().as_str(), v.clone());
+        }
+
+        // set builder folder
+        nb.add_prop("relative_path", self.relative_path());
+        nb
     }
 
     pub fn to_node(&self) -> Node {
@@ -767,7 +817,9 @@ impl Pac {
     }
 
     pub fn to_atom(&self) -> Atom {
-        Atom::node(self.to_node())
+        let mut atom = Atom::node(self.to_nodebody());
+        atom.name = self.name.clone();
+        atom
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::asset::Templates;
 use crate::AutoResult;
 use crate::Pac;
+use crate::TargetKind;
 use crate::{Index, IndexStore};
 use auto_lang::config::AutoConfig;
 use auto_lang::Universe;
@@ -230,12 +231,17 @@ impl Automan {
     }
 
     pub fn info(&self, target: Option<String>) -> AutoResult<()> {
-        if let Some(target) = target {
-            self.pac.print_target_info(&target)
-        } else {
-            self.pac.print_targets();
-            self.pac.print_atom()
-        }
+        // read content from pac.atom.at
+        let config = AutoConfig::read(Path::new("pac.atom.at"))?;
+        let pac = Pac::new(config);
+        pac.print_targets();
+        Ok(())
+        // if let Some(target) = target {
+        //     self.pac.print_target_info(&target)
+        // } else {
+        //     self.pac.print_targets();
+        //     self.pac.print_atom()
+        // }
     }
 
     pub fn build(&mut self) -> AutoResult<()> {
@@ -255,45 +261,6 @@ impl Automan {
     }
 
     pub fn clean(&mut self) -> AutoResult<()> {
-        // deps and devices
-        if Path::new("deps").is_dir() {
-            info!("deleting directory deps");
-            std::fs::remove_dir_all("deps")?;
-        }
-        if Path::new("devices").is_dir() {
-            info!("deleting directory devices");
-            std::fs::remove_dir_all("devices")?;
-        }
-
-        // builds
-        if Path::new("build").is_dir() {
-            info!("deleting directory build");
-            std::fs::remove_dir_all("build")?;
-        }
-        if Path::new("Debug").is_dir() {
-            info!("deleting directory Debug");
-            std::fs::remove_dir_all("Debug")?;
-        }
-        if Path::new("Release").is_dir() {
-            info!("deleting directory Release");
-            std::fs::remove_dir_all("Release")?;
-        }
-
-        // CMake
-        let files = glob::glob("CMakeLists*")?;
-        for file in files {
-            if let Ok(file) = file {
-                info!("deleting file {}", file.display());
-                std::fs::remove_file(file)?;
-            }
-        }
-
-        // IAR: TODO: dir maybe configured in pac.at
-        if Path::new("iar").is_dir() {
-            info!("deleting directory iar");
-            std::fs::remove_dir_all("iar")?;
-        }
-
         // logs
         let files = glob::glob("*.log")?;
         for file in files {
@@ -303,6 +270,17 @@ impl Automan {
             }
         }
 
+        // clean downloaded deps with pac.atom.at
+        let history_config = AutoConfig::read(Path::new("pac.atom.at"))?;
+        let mut history_pac = Pac::new(history_config);
+        for t in history_pac
+            .targets
+            .iter_mut()
+            .filter(|t| t.kind == TargetKind::Dep || t.kind == TargetKind::Device)
+        {
+            println!("Trying to clean target [{}] at {} ...", t.name, t.at);
+            t.clean()?
+        }
         // clean pac related files
         self.pac.clean()
     }

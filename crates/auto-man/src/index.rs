@@ -1,6 +1,5 @@
 use auto_lang::config::AutoConfig;
-use auto_lang::AutoResult;
-use auto_val::{AutoPath, AutoStr};
+use auto_val::{AutoPath, AutoResult, AutoStr};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;

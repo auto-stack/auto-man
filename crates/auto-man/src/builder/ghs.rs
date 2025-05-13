@@ -56,13 +56,13 @@ impl GHSBuilder {
         let lib_mold = Mold::new(mname, GHSTemplate::subproject()?);
         let sub_dirs = &dir.dirs;
         let sub_names: Vec<AutoStr> = sub_dirs.iter().map(|dir| dir.lpath.clone()).collect();
-        let mut dir_node = dir.to_node();
-        dir_node.set_prop("dir_names", sub_names.clone());
+        let mut dir_node = dir.to_nodebody();
+        dir_node.add_prop("dir_names", sub_names.clone());
         // 计算从.gpj到dir对应的实际目录之间的相对路径
         // rel_depth = [depth of ghs project] + [depth of .gpj]
         let rel_depth = self.path.depth() + dir.logical_depths() - 1;
         let rel = "../".repeat(rel_depth);
-        dir_node.set_prop("rel", rel.clone());
+        dir_node.add_prop("rel", rel.clone());
         let atom = Atom::node(dir_node);
         let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
         self.subprojects.push(lib_gen);
@@ -152,15 +152,15 @@ impl Builder for GHSBuilder {
 
             let mold_name = format!("{}.gpj", app.local_name());
             let app_mold = Mold::new(mold_name, GHSTemplate::program()?);
-            let mut app_node = app.to_node();
-            app_node.set_prop("local_name", app.local_name());
-            app_node.set_prop("libs", dep_names.clone());
-            app_node.set_prop("devices", device_names.clone());
-            app_node.set_prop("rel", rel.clone());
-            app_node.set_prop("device_dir", device_dir.clone());
-            app_node.set_prop("incs", all_incs.clone());
-            app_node.set_prop("device_inc", device_inc.clone());
-            app_node.set_prop("defines", defines.clone());
+            let mut app_node = app.to_nodebody();
+            app_node.add_prop("local_name", app.local_name());
+            app_node.add_prop("libs", dep_names.clone());
+            app_node.add_prop("devices", device_names.clone());
+            app_node.add_prop("rel", rel.clone());
+            app_node.add_prop("device_dir", device_dir.clone());
+            app_node.add_prop("incs", all_incs.clone());
+            app_node.add_prop("device_inc", device_inc.clone());
+            app_node.add_prop("defines", defines.clone());
             let atom = Atom::node(app_node);
             let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc.clone()));
             self.apps.push(app_gen);
@@ -197,13 +197,13 @@ impl Builder for GHSBuilder {
                 println!("MOLDNAME: {}", mold_name);
             }
             let lib_mold = Mold::new(mold_name, GHSTemplate::subproject()?);
-            let mut lib_node = lib.to_node();
-            lib_node.set_prop("libs", dep_names.clone());
-            lib_node.set_prop("dir_names", dir_names.clone());
-            lib_node.set_prop("rel", rel.clone());
-            lib_node.set_prop("device_dir", device_dir.clone());
-            lib_node.set_prop("incs", all_incs.clone());
-            lib_node.set_prop("device_inc", device_inc.clone());
+            let mut lib_node = lib.to_nodebody();
+            lib_node.add_prop("libs", dep_names.clone());
+            lib_node.add_prop("dir_names", dir_names.clone());
+            lib_node.add_prop("rel", rel.clone());
+            lib_node.add_prop("device_dir", device_dir.clone());
+            lib_node.add_prop("incs", all_incs.clone());
+            lib_node.add_prop("device_inc", device_inc.clone());
             let atom = Atom::node(lib_node);
             let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
             self.apps.push(lib_gen);
@@ -234,6 +234,13 @@ impl Builder for GHSBuilder {
     }
 
     fn clean(&mut self) -> AutoResult<()> {
+        if self.path.is_dir() {
+            info!("deleting directory {}", self.path);
+            self.path.clean_with_parents()?;
+            // std::fs::remove_dir_all(self.path.path())?;
+        } else {
+            info!("build directory {} does not exist, skipping ...", self.path);
+        }
         Ok(())
     }
 
