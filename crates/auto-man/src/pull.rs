@@ -1,7 +1,5 @@
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use auto_lang::parse;
     use auto_lang::util::pretty;
 

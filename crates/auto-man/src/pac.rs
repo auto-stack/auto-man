@@ -81,10 +81,8 @@ impl Pac {
         for mut n in config.root.nodes.into_iter() {
             if n.name != "port" {
                 // main target should receive target related args from the pac
-                println!("checking target: {}", n.main_arg().to_astr());
                 if n.main_arg().to_astr() == pac_name && n.name == "device" {
                     for p in &target_props {
-                        println!("Checking target prop! {}", p);
                         if config.args.has(*p) {
                             let value = config.args.get(*p).unwrap();
                             println!("Setting prop: {}: {}", *p, value.clone());

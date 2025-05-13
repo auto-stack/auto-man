@@ -65,7 +65,7 @@ impl Automan {
         }
 
         // 2. try load saved port
-        let mut port = Self::try_load_port()?;
+        let port = Self::try_load_port()?;
 
         // let user select a port
         let config = AutoConfig::read(config_path.as_path())?;
@@ -230,7 +230,7 @@ impl Automan {
         self.pac.print_atom()
     }
 
-    pub fn info(&self, target: Option<String>) -> AutoResult<()> {
+    pub fn info(&self, _target: Option<String>) -> AutoResult<()> {
         // read content from pac.atom.at
         let config = AutoConfig::read(Path::new("pac.atom.at"))?;
         let pac = Pac::new(config);
@@ -490,7 +490,7 @@ pub fn load_am_config() -> Option<AmConfig> {
     }
 
     if am_path.is_none() {
-        let user_home_config_path = env::home_dir()
+        let user_home_config_path = dirs::home_dir()
             .unwrap()
             .join(".auto")
             .join("auto-man")

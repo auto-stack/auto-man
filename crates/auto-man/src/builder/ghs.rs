@@ -145,10 +145,10 @@ impl Builder for GHSBuilder {
         let defines = pac.props.get_or_nil("defines");
 
         for app in apps {
-            let app_loc = app.location();
+            // let app_loc = app.location();
             let ghs_loc = pac.build_location.clone();
             println!("GHS Location: {}", ghs_loc);
-            let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
+            // let relative_loc = AutoPath::new(ghs_loc.clone()).reverse_relative();
 
             let mold_name = format!("{}.gpj", app.local_name());
             let app_mold = Mold::new(mold_name, GHSTemplate::program()?);
@@ -181,7 +181,6 @@ impl Builder for GHSBuilder {
             .collect();
 
         for lib in lib_and_deps {
-            let lib_loc = lib.location();
             let ghs_loc = pac.build_location.clone();
             let dir_names = lib
                 .dirs

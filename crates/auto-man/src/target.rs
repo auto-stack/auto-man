@@ -257,15 +257,15 @@ impl Target {
         }
     }
 
-    fn default_location(&self) -> AutoPath {
-        let default_dir = match self.kind {
-            TargetKind::App => "apps",
-            TargetKind::Lib => "libs",
-            TargetKind::Dep => "deps",
-            TargetKind::Device => "devices",
-        };
-        AutoPath::new(default_dir).join(self.name.clone())
-    }
+    // fn default_location(&self) -> AutoPath {
+    //     let default_dir = match self.kind {
+    //         TargetKind::App => "apps",
+    //         TargetKind::Lib => "libs",
+    //         TargetKind::Dep => "deps",
+    //         TargetKind::Device => "devices",
+    //     };
+    //     AutoPath::new(default_dir).join(self.name.clone())
+    // }
 
     pub fn location(&self) -> AutoPath {
         AutoPath::new(self.at.clone())
