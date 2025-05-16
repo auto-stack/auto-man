@@ -9,13 +9,22 @@ use log::*;
 
 pub struct IARBuilder {
     pub gen: AutoGen,
+    pub app_gens: Vec<AutoGen>,
     pub path: AutoPath,
 }
 
 impl IARBuilder {
     pub fn new(path: AutoPath) -> Self {
-        let gen = AutoGen::new().out(path.clone()).note('@').is_rename(true);
-        Self { gen, path }
+        let gen = Self::new_gen(&path);
+        Self {
+            gen,
+            app_gens: Vec::new(),
+            path,
+        }
+    }
+
+    fn new_gen(path: &AutoPath) -> AutoGen {
+        AutoGen::new().out(path.clone()).note('@').is_rename(true)
     }
 
     fn check_devices(&self, pac: &mut Pac) -> AutoResult<()> {
@@ -73,19 +82,33 @@ impl Builder for IARBuilder {
         // set data and molds for auto-gen
         let mut gen = std::mem::take(&mut self.gen);
         gen = gen.data(pac.to_atom());
-        let molds = vec![
-            Mold::new("iar.eww", IARTemplate::eww()?),
-            Mold::new("iar.ewp", IARTemplate::ewp()?),
-            Mold::new("iar.ewt", IARTemplate::ewt()?),
-            Mold::new("iar.ewd", IARTemplate::ewd()?),
-        ];
+        let molds = vec![Mold::new("iar.eww", IARTemplate::eww()?)];
         gen = gen.molds(molds);
         self.gen = gen;
+
+        let mut app_gens = Vec::new();
+
+        for app in &pac.build_targets_mut() {
+            let mut app_gen = Self::new_gen(&self.path);
+            app_gen = app_gen.data(app.to_atom());
+            let app_molds = vec![
+                Mold::new("iar.ewp", IARTemplate::ewp()?),
+                Mold::new("iar.ewt", IARTemplate::ewt()?),
+                Mold::new("iar.ewd", IARTemplate::ewd()?),
+            ];
+            app_gen = app_gen.molds(app_molds);
+            app_gens.push(app_gen);
+        }
+
+        self.app_gens = app_gens;
         Ok(())
     }
 
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
         self.gen.gen();
+        for g in &self.app_gens {
+            g.gen();
+        }
         Ok(())
     }
 

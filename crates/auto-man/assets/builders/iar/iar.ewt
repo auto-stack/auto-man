@@ -2923,32 +2923,4 @@
     <group>
         <name>Bsw</name>
     </group>
-@ for lib in libs {
-    <group>
-        <name>@{lib.name}</name>
-        @ for src in lib.srcs {
-            <file>
-                <name>$PROJ_DIR$@{relative_path}\@{src}</name>
-            </file>
-        @ }
-    </group>
-@ }
-@ for app in apps {
-    @ if app.name == "amdemo" {
-        @ for src in app.srcs {
-        <file>
-            <name>$PROJ_DIR$@{relative_path}\@{src}</name>
-        </file>
-        @ }
-    @ } else {
-    <group>
-        <name>@{ app.name }</name>
-        @ for src in app.srcs {
-        <file>
-            <name>$PROJ_DIR$@{relative_path}\@{src}</name>
-        </file>
-        @ }
-    </group>
-    @ }
-@ }
 </project>

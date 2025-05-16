@@ -99,6 +99,7 @@ impl Builder for CMakeBuilder {
 
         let cmd = match target.kind {
             TargetKind::App => "add_executable",
+            TargetKind::Bag => "add_library",
             TargetKind::Lib => "add_library",
             TargetKind::Dep => "add_library",
             TargetKind::Device => "add_library",

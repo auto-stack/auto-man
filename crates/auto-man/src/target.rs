@@ -1,6 +1,8 @@
 use crate::dir::{check_incs, scan_specific_srcs};
+use crate::group::Group;
 use crate::AutoResult;
 use crate::Dir;
+use auto_atom::Atom;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
 use auto_val::{Array, NodeBody, Obj};
@@ -16,6 +18,7 @@ use tabled::Tabled;
 pub enum TargetKind {
     App,    // 应用程序
     Lib,    // 静态代码库
+    Bag,    // 普通代码包，作为拼图的一部分，而不少单独的编译目标
     Dep,    // 依赖库
     Device, // 设备资源
 }
@@ -25,6 +28,7 @@ impl TargetKind {
         match s {
             "app" => TargetKind::App,
             "lib" => TargetKind::Lib,
+            "bag" => TargetKind::Bag,
             "dep" => TargetKind::Dep,
             "device" => TargetKind::Device,
             _ => panic!("Invalid target kind: {}", s),
@@ -39,6 +43,7 @@ impl fmt::Display for TargetKind {
             TargetKind::Lib => write!(f, "Lib"),
             TargetKind::Dep => write!(f, "Dep"),
             TargetKind::Device => write!(f, "Device"),
+            TargetKind::Bag => write!(f, "Bag"),
         }
     }
 }
@@ -62,10 +67,13 @@ pub struct Target {
     pub incs: HashSet<AutoStr>,
     pub selects: HashSet<AutoStr>,
     pub skips: HashSet<AutoStr>,
-    pub links: Vec<AutoStr>,
+    pub links: Vec<Node>,
     pub is_resolved: bool,
     pub is_main: bool,
     pub props: Obj,
+    pub deps: Vec<Target>,
+    pub rel: AutoStr,
+    pub defines: Vec<AutoStr>,
 }
 
 pub fn set_to_vec<T: Ord>(set: HashSet<T>) -> Vec<T> {
@@ -94,6 +102,7 @@ pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr
         let target_dir = match kind {
             TargetKind::App => "apps",
             TargetKind::Lib => "libs",
+            TargetKind::Bag => "bags",
             TargetKind::Dep => "deps",
             TargetKind::Device => "devices",
         };
@@ -132,6 +141,9 @@ impl Target {
             is_resolved: false,
             is_main: false,
             props: Obj::new(),
+            deps: Vec::new(),
+            rel: AutoStr::new(),
+            defines: Vec::new(),
         }
     }
 
@@ -229,11 +241,22 @@ impl Target {
         // check for incs
         let incs = node.props.get_array_of_str("incs").to_set();
         // check for links
-        let links = node.props.get_array_of_str("links");
+        let links = node.get_kids("link");
         // check for props (dep target only)
         let props = node.props.clone();
 
         let is_main = name == pac;
+
+        // deps
+        let mut deps = Vec::new();
+        // devices
+        node.nodes
+            .iter()
+            .filter(|n| n.name == "device")
+            .for_each(|n| {
+                //deps.push(Dep::from_node(n, at.clone(), kind.clone()));
+                warn!("Got dep: {}", n.main_arg());
+            });
 
         Self {
             name,
@@ -254,18 +277,11 @@ impl Target {
             is_resolved: false,
             is_main,
             props,
+            deps,
+            rel: AutoStr::new(),
+            defines: Vec::new(),
         }
     }
-
-    // fn default_location(&self) -> AutoPath {
-    //     let default_dir = match self.kind {
-    //         TargetKind::App => "apps",
-    //         TargetKind::Lib => "libs",
-    //         TargetKind::Dep => "deps",
-    //         TargetKind::Device => "devices",
-    //     };
-    //     AutoPath::new(default_dir).join(self.name.clone())
-    // }
 
     pub fn location(&self) -> AutoPath {
         AutoPath::new(self.at.clone())
@@ -294,21 +310,34 @@ impl Target {
         AutoPath::new(self.at.clone()).parent().to_astr()
     }
 
+    pub fn all_incs(&self) -> Vec<AutoStr> {
+        let mut all_incs = Vec::new();
+        all_incs.extend(self.incs.clone());
+        for target in &self.deps {
+            all_incs.extend(target.incs.clone());
+        }
+        all_incs.sort();
+        all_incs
+    }
+
     pub fn to_nodebody(&self) -> NodeBody {
         let node_type = match self.kind {
             TargetKind::App => "app",
             TargetKind::Lib => "lib",
+            TargetKind::Bag => "bag",
             TargetKind::Dep => "dep",
             TargetKind::Device => "device",
         };
         let mut nb = NodeBody::new();
         nb.add_prop("kind", node_type);
+        nb.add_prop("relative_path", self.rel.clone());
         nb.add_prop("at", self.at.clone());
         nb.add_prop("name", self.local_name().clone());
         nb.add_prop("id", self.local_name().clone());
         nb.add_prop("root", self.at.clone());
         nb.add_prop("srcs", set_to_vec(self.srcs.clone()));
         nb.add_prop("incs", set_to_vec(self.incs.clone()));
+        nb.add_prop("all_incs", self.all_incs());
         nb.add_prop("skips", set_to_vec(self.skips.clone()));
         for (p, v) in self.props.iter() {
             match v {
@@ -343,58 +372,80 @@ impl Target {
         }
         // array of objects
         nb.add_prop("dirs", dirs);
+
+        // deps
+        for dep in &self.deps {
+            let n = dep.to_node();
+            nb.add_kid(n);
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Device) {
+            nb.add_prop("devices", Value::Array(Array::new()));
+        }
+
+        // groups for IAR
+        nb.add_prop("groups", self.groups().to_xml());
+        nb.add_prop("defines", Value::str_array(self.defines.clone()));
         nb
+    }
+
+    pub fn to_atom(&self) -> Atom {
+        let mut atom = Atom::node(self.to_nodebody());
+        atom.name = self.name.clone();
+        atom
     }
 
     pub fn to_node(&self) -> Node {
         let node_type = match self.kind {
             TargetKind::App => "app",
             TargetKind::Lib => "lib",
+            TargetKind::Bag => "bag",
             TargetKind::Dep => "dep",
             TargetKind::Device => "device",
         };
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
-        node.props.set("name", self.local_name().clone());
-        node.props.set("id", self.local_name().clone());
-        node.props.set("root", self.at.clone());
-        node.props.set("at", self.at.clone());
-        node.props.set("srcs", set_to_vec(self.srcs.clone()));
-        node.props.set("incs", set_to_vec(self.incs.clone()));
-        node.props.set("skips", set_to_vec(self.skips.clone()));
-        for (p, v) in self.props.iter() {
-            match v {
-                Value::Str(s) => {
-                    node.props.set(p.clone(), s.clone());
-                }
-                Value::Node(n) => {
-                    if n.name == "file" {
-                        // for file node, add target's root to the file's path
-                        let path = n.main_arg();
-                        let path = Path::new(self.at.as_str()).join(path.as_str());
-                        node.props.set(p.clone(), path.unified());
-                    } else {
-                        node.props.set(p.clone(), n.to_astr());
-                    }
-                }
-                _ => {
-                    node.props.set(p.clone(), v.clone());
-                }
-            }
-        }
-        let mut dirs = Array::new();
-        for dir in self.dirs.values() {
-            // node.add_kid(dir.to_node());
-            let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
-            let mut obj = Obj::new();
-            obj.set("name", Value::Str(dir.name.clone()));
-            obj.set("srcs", array_val);
-            obj.set("lpath", dir.lpath.clone());
-            obj.set("rpath", dir.rpath.clone());
-            dirs.push(obj);
-        }
-        // array of objects
-        node.set_prop("dirs", dirs);
+        node.body = self.to_nodebody();
+        // node.props.set("name", self.local_name().clone());
+        // node.props.set("id", self.local_name().clone());
+        // node.props.set("root", self.at.clone());
+        // node.props.set("at", self.at.clone());
+        // node.props.set("srcs", set_to_vec(self.srcs.clone()));
+        // node.props.set("incs", set_to_vec(self.incs.clone()));
+        // node.props.set("skips", set_to_vec(self.skips.clone()));
+        // for (p, v) in self.props.iter() {
+        //     match v {
+        //         Value::Str(s) => {
+        //             node.props.set(p.clone(), s.clone());
+        //         }
+        //         Value::Node(n) => {
+        //             if n.name == "file" {
+        //                 // for file node, add target's root to the file's path
+        //                 let path = n.main_arg();
+        //                 let path = Path::new(self.at.as_str()).join(path.as_str());
+        //                 node.props.set(p.clone(), path.unified());
+        //             } else {
+        //                 node.props.set(p.clone(), n.to_astr());
+        //             }
+        //         }
+        //         _ => {
+        //             node.props.set(p.clone(), v.clone());
+        //         }
+        //     }
+        // }
+        // let mut dirs = Array::new();
+        // for dir in self.dirs.values() {
+        //     // node.add_kid(dir.to_node());
+        //     let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
+        //     let mut obj = Obj::new();
+        //     obj.set("name", Value::Str(dir.name.clone()));
+        //     obj.set("srcs", array_val);
+        //     obj.set("lpath", dir.lpath.clone());
+        //     obj.set("rpath", dir.rpath.clone());
+        //     dirs.push(obj);
+        // }
+        // // array of objects
+        // node.set_prop("dirs", dirs);
         node
     }
 
@@ -462,19 +513,22 @@ impl Target {
         self.skips.extend(other.skips.clone());
     }
 
-    /**
-     * If the target has links to dependency targets, check whether the links are valid.
-     */
-    pub fn check_links(&mut self) -> AutoResult<()> {
-        // 2. If the targets links to a dep target, recursively resolve the linked target
-        if !self.links.is_empty() {
-            for link in self.links.iter() {
-                let _ = link.as_str();
-                // TODO:
-            }
-        }
-        Ok(())
+    pub fn set_rel(&mut self, rel: AutoStr) {
+        self.rel = rel;
     }
+
+    pub fn set_defines(&mut self, defines: &Vec<AutoStr>) {
+        self.defines = defines.clone();
+    }
+
+    /// If the target has links, copy link's target info
+    pub fn check_links(&mut self) -> AutoResult<Vec<Node>> {
+        // 2. If the targets links to a dep target, recursively resolve the linked target
+        let links = std::mem::take(&mut self.links);
+        Ok(links)
+    }
+
+    pub fn apply_link(&mut self, link: &Node) {}
 
     // fn check_root(&mut self) -> AutoResult<()> {
     //     let root = self.get_root_dir();
@@ -496,6 +550,13 @@ impl Target {
     }
 
     pub fn scan(&mut self) -> AutoResult<()> {
+        if !self.props.has("defines") {
+            let defines = Vec::<AutoStr>::new();
+            // defines.push("DEBUG".into());
+            // defines.push("USE_KERNEL".into());
+            self.props.set("defines", defines);
+        }
+
         // 0. check for properties that needs to be scanned
         for (_, v) in self.props.iter() {
             if let Value::Node(n) = v {
@@ -553,6 +614,12 @@ impl Target {
         // dirs are moved out and scanned, with all infomation merged into the target
         // so we don't need to store dirs anymore
         // self.dirs is empty now
+
+        // 4. scan deps of this target
+
+        for dep in &mut self.deps {
+            dep.scan()?;
+        }
 
         Ok(())
     }
@@ -614,6 +681,49 @@ impl Target {
         );
 
         Ok(())
+    }
+
+    fn group_target(&self, g: &mut Group, t: &Target) {
+        // set files
+        for src in &t.srcs {
+            let fpath = format!("$PROJ_DIR${}\\{}", &self.rel, src);
+            g.files.push(crate::group::File { name: fpath.into() })
+        }
+        // set dirs
+        for (_n, d) in &t.dirs {
+            let dg = g.mut_kid(&d.name);
+            self.group_dir(dg, d);
+        }
+        if self.name != t.name {
+            // set deps
+            for dep in &t.deps {
+                let dg = g.mut_kid(&dep.name);
+                self.group_target(dg, dep);
+            }
+        }
+    }
+
+    fn group_dir(&self, dg: &mut Group, d: &Dir) {
+        for s in &d.srcs {
+            let fpath = format!("$PROJ_DIR${}\\{}", &self.rel, s);
+            dg.files.push(crate::group::File { name: fpath.into() })
+        }
+        for s in &d.dirs {
+            let sg = dg.mut_kid(&s.name);
+            self.group_dir(sg, s);
+        }
+    }
+
+    fn groups(&self) -> Group {
+        let mut group = Group::new(self.name.as_str());
+        let tg = group.mut_kid_path(&self.location());
+        self.group_target(tg, self);
+        for t in &self.deps {
+            let loc = t.location();
+            let g = group.mut_kid_path(&loc);
+            self.group_target(g, t);
+        }
+        group
     }
 }
 

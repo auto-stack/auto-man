@@ -36,6 +36,7 @@ pub struct Pac {
     pub build_location: AutoStr,
     /// Whether to show header files in `srcs`
     pub show_headers: bool,
+    pub defines: Vec<AutoStr>,
 }
 
 fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
@@ -72,6 +73,12 @@ impl Pac {
             ports.push(port);
         }
         let builder = None;
+
+        // defines
+        let mut defines = vec![];
+        if config.root.props.has("defines") {
+            defines = config.root.props.get_array_of_str("defines");
+        }
 
         // target related properties
         let target_props = vec!["at"];
@@ -110,6 +117,7 @@ impl Pac {
             build_at: ".".into(),
             build_location: "cmake".into(),
             show_headers: false,
+            defines,
         }
     }
 
@@ -172,7 +180,18 @@ impl Pac {
         // info!("ATOM for pac: <{}>", self.name);
         // write prettified atom to file
         // write prettified atom to file
-        std::fs::write("pac.atom.at", atom_pretty.as_bytes()).map_err(|e| e.into())
+        std::fs::write("pac.atom.at", atom_pretty.as_bytes())?;
+
+        for app in self.build_targets() {
+            let name = app.name.clone();
+
+            let app_atom = app.to_atom();
+            let app_atom_pretty = pretty(app_atom.to_string().as_str(), 3);
+
+            std::fs::write(format!("{}.atom.at", name), app_atom_pretty.as_bytes())?;
+        }
+
+        Ok(())
     }
 
     pub fn get_target(&self, name: impl Into<AutoStr>) -> Option<&Target> {
@@ -191,6 +210,20 @@ impl Pac {
         self.targets
             .iter()
             .filter(|t| t.kind == TargetKind::App)
+            .collect()
+    }
+
+    pub fn build_targets_mut(&mut self) -> Vec<&mut Target> {
+        self.targets
+            .iter_mut()
+            .filter(|t| t.kind == TargetKind::App || t.kind == TargetKind::Lib)
+            .collect()
+    }
+
+    pub fn build_targets(&self) -> Vec<&Target> {
+        self.targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::App || t.kind == TargetKind::Lib)
             .collect()
     }
 
@@ -291,6 +324,140 @@ impl Pac {
         self.show_headers = true;
     }
 
+    pub fn copy_target(&self, id: &AutoStr) -> Option<Target> {
+        for t in &self.targets {
+            if t.name == *id {
+                return Some(t.clone());
+            }
+        }
+        None
+    }
+
+    pub fn targets_map(&mut self) -> HashMap<AutoStr, Target> {
+        let mut targets_map = HashMap::new();
+        let targets = std::mem::take(&mut self.targets);
+        for target in targets {
+            targets_map.insert(target.name.clone(), target.clone());
+        }
+        targets_map
+    }
+
+    pub fn get_build_names(targets_map: &HashMap<AutoStr, Target>) -> Vec<AutoStr> {
+        let mut build_names = Vec::new();
+        for target in targets_map.values() {
+            if target.kind == TargetKind::App || target.kind == TargetKind::Lib {
+                build_names.push(target.name.clone());
+            }
+        }
+        build_names
+    }
+
+    fn resolve_target_deps(targets_map: &mut HashMap<AutoStr, Target>) -> bool {
+        let mut all_resolved = true;
+        let mut resolved: HashMap<AutoStr, Vec<AutoStr>> = HashMap::new();
+        for t in targets_map.values() {
+            if t.links.is_empty() {
+                resolved.insert(t.name.clone(), vec![]);
+            } else {
+                // try all links, if all links are resolved, copy their dependencies
+                let mut all_deps_resolved = true;
+                let mut links = Vec::new();
+                links.extend(t.links.iter().map(|t| t.id()));
+                for l in &t.links {
+                    let Some(dep) = targets_map.get(&l.id()) else {
+                        continue;
+                    };
+                    if !dep.is_resolved {
+                        all_deps_resolved = false;
+                        break;
+                    } else {
+                        links.extend(dep.links.iter().map(|t| t.id()));
+                    }
+                }
+                if all_deps_resolved {
+                    resolved.insert(t.name.clone(), links);
+                }
+            }
+            if t.is_resolved == false {
+                all_resolved = false;
+            }
+        }
+        // println!(">>>>>>>>>>>>>>>>>>> resolved: {:?}", resolved);
+        for (k, r) in resolved {
+            let mut deps = Vec::new();
+            for dep in r {
+                let Some(dep) = targets_map.get(&dep) else {
+                    continue;
+                };
+                deps.push(dep.clone());
+            }
+            let Some(t) = targets_map.get_mut(&k) else {
+                continue;
+            };
+            t.is_resolved = true;
+            t.deps = deps;
+        }
+        // for t in targets_map.values() {
+        // println!("Target: {}", t.name);
+        // println!(
+        //     "deps: {}",
+        //     t.deps
+        //         .iter()
+        //         .map(|t| t.name.clone())
+        //         .collect::<Vec<AutoStr>>()
+        //         .join(", ")
+        // );
+        // }
+        all_resolved
+
+        // let build_names = Self::get_build_names(&targets_map);
+
+        // for n in build_names {
+        //     let Some(mut target) = targets_map.remove(&n) else {
+        //         continue;
+        //     };
+        //     for link in &target.links {
+        //         let id = link.id();
+        //         let Some(dep) = targets_map.get(&id) else {
+        //             continue;
+        //         };
+        //         target.deps.push(dep.clone());
+        //     }
+
+        //     targets_map.insert(target.name.clone(), target.clone());
+        // }
+
+        // for n in build_names {
+        //     // take out the targett from targets_map
+        //     let mut target = targets_map.remove(&n);
+        //     let Some(mut target) = target else {
+        //         error!("Target {} not found", n);
+        //         continue;
+        //     };
+
+        //     let links = target.links;
+        //     let mut link_targets = Vec::new();
+        //     // check if a link is missing
+        //     for link in &links {
+        //         let id = link.id();
+        //         let dep = targets_map.get(&id);
+        //         match dep {
+        //             Some(dep) => {
+        //                 let mut dep = dep.clone();
+        //                 dep.apply_link(&link);
+        //                 link_targets.push(dep.clone());
+        //             }
+        //             None => {
+        //                 error!("Target {} not found", id);
+        //             }
+        //         }
+        //     }
+        //     target.links = links;
+        //     target.deps = link_targets;
+        //     targets_map.insert(target.name.clone(), target.clone());
+        // }
+    }
+
     pub fn resolve(&mut self) -> AutoResult<()> {
         // 0. check basic props
         if !self.props.has("defines") {
@@ -305,17 +472,48 @@ impl Pac {
 
         println!("download done!");
 
+        let rel = self.relative_path();
+        for t in &mut self.targets {
+            t.set_rel(rel.clone());
+            t.set_defines(&self.defines);
+        }
+
         self.print_targets();
+
         // 2. link targets with dependencies
         info!("Linking targets with dependencies");
-        for target in &mut self.targets {
-            target.check_links()?;
+
+        // let devices: Vec<Target> = self
+        //     .targets
+        //     .iter()
+        //     .filter(|t| t.kind == TargetKind::Device)
+        //     .map(|t| t.clone())
+        //     .collect();
+        let mut targets_map = self.targets_map();
+        let mut remained_targets = Vec::new();
+        // remained_targets.extend(devices);
+
+        let mut done = false;
+        while !done {
+            done = Self::resolve_target_deps(&mut targets_map);
         }
+
+        targets_map
+            .values()
+            .filter(|t| {
+                t.kind == TargetKind::Device
+                    || t.kind == TargetKind::App
+                    || t.kind == TargetKind::Lib
+            })
+            .for_each(|t| remained_targets.push(t.clone()));
+
+        self.targets = remained_targets;
 
         // 3. scan targets for its local source files
         info!("Scanning targets for srcs and incs");
+        let show_headers = self.show_headers;
         for target in &mut self.targets {
-            target.show_headers = self.show_headers;
+            target.show_headers = show_headers;
             target.scan()?;
         }
         Ok(())
@@ -672,7 +870,7 @@ impl Pac {
         // root.set_prop("files", self.files_list());
         // root.set_prop("groups", self.group_list());
         nb.add_prop("files", Array::new());
-        nb.add_prop("groups", self.groups().to_xml());
+        // nb.add_prop("groups", self.groups().to_xml());
 
         let props = self.props.clone();
         for (k, v) in props.iter() {
@@ -715,7 +913,7 @@ impl Pac {
         // root.set_prop("files", self.files_list());
         // root.set_prop("groups", self.group_list());
         root.set_prop("files", Array::new());
-        root.set_prop("groups", self.groups().to_xml());
+        // root.set_prop("groups", self.groups().to_xml());
 
         let props = self.props.clone();
         for (k, v) in props.iter() {
@@ -732,35 +930,33 @@ impl Pac {
         "/..".repeat(depth).into()
     }
 
-    fn groups(&self) -> Group {
-        let mut group = Group::new("root");
-        for t in &self.targets {
-            let loc = t.location();
-            let g = group.mut_kid_path(&loc);
-            // set files
-            for src in &t.srcs {
-                let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), src);
-                g.files.push(crate::group::File { name: fpath.into() })
-            }
-            // set dirs
-            for (_n, d) in &t.dirs {
-                let dg = g.mut_kid(&d.name);
-                self.group_dir(dg, d);
-            }
-        }
-        group
-    }
+    // fn group_target(&self, g: &mut Group, t: &Target) {
+    //     // set files
+    //     for src in &t.srcs {
+    //         let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), src);
+    //         g.files.push(crate::group::File { name: fpath.into() })
+    //     }
+    //     // set dirs
+    //     for (_n, d) in &t.dirs {
+    //         let dg = g.mut_kid(&d.name);
+    //         self.group_dir(dg, d);
+    //     }
+    //     // set deps
+    //     for dep in &t.deps {
+    //         let dg = g.mut_kid(&dep.name);
+    //         self.group_target(dg, dep);
+    //     }
+    // }
 
-    fn group_dir(&self, dg: &mut Group, d: &Dir) {
-        for s in &d.srcs {
-            let fpath = format!("$PROJ_DIR${}\\{}", &self.relative_path(), s);
-            dg.files.push(crate::group::File { name: fpath.into() })
-        }
-        for s in &d.dirs {
-            let sg = dg.mut_kid(&s.name);
-            self.group_dir(sg, s);
-        }
-    }
+    // fn groups(&self) -> Group {
+    //     let mut group = Group::new("root");
+    //     for t in &self.targets {
+    //         let loc = t.location();
+    //         let g = group.mut_kid_path(&loc);
+    //         self.group_target(g, t);
+    //     }
+    //     group
+    // }
 
     #[allow(dead_code)]
     fn files_list(&self) -> Array {
