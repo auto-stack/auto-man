@@ -389,13 +389,13 @@ impl Pac {
                 let Some(dep) = targets_map.get(&dep) else {
                     continue;
                 };
-                deps.push(dep.clone());
+                deps.push(dep.name.clone());
             }
             let Some(t) = targets_map.get_mut(&k) else {
                 continue;
             };
             t.is_resolved = true;
-            t.deps = deps;
+            t.dep_names = deps;
         }
         // for t in targets_map.values() {
         // println!("Target: {}", t.name);
@@ -475,7 +475,8 @@ impl Pac {
         let rel = self.relative_path();
         for t in &mut self.targets {
             t.set_rel(rel.clone());
-            t.set_defines(&self.defines);
+            t.set_defines(self.defines.clone());
+            t.set_port(self.port.clone());
         }
 
         self.print_targets();
@@ -490,14 +491,37 @@ impl Pac {
         //     .map(|t| t.clone())
         //     .collect();
         let mut targets_map = self.targets_map();
-        let mut remained_targets = Vec::new();
+        let mut major_targets = Vec::new();
         // remained_targets.extend(devices);
 
+        // resolve target's links, expanding indirect dependencies into target.dep_names
         let mut done = false;
         while !done {
             done = Self::resolve_target_deps(&mut targets_map);
         }
 
+        let major_target_names = targets_map
+            .values()
+            .filter(|t| t.is_major())
+            .map(|t| t.name.clone())
+            .collect::<Vec<AutoStr>>();
+
+        for n in major_target_names {
+            let mut deps = Vec::new();
+            let t = targets_map.get(&n).unwrap();
+            for dep in &t.dep_names {
+                let Some(dep) = targets_map.get(dep) else {
+                    continue;
+                };
+                deps.push(dep.clone());
+            }
+            let Some(t) = targets_map.get_mut(&n) else {
+                continue;
+            };
+            t.deps = deps;
+        }
+
+        // copy dep's target info into major targets
         targets_map
             .values()
             .filter(|t| {
@@ -505,9 +529,9 @@ impl Pac {
                     || t.kind == TargetKind::App
                     || t.kind == TargetKind::Lib
             })
-            .for_each(|t| remained_targets.push(t.clone()));
+            .for_each(|t| major_targets.push(t.clone()));
 
-        self.targets = remained_targets;
+        self.targets = major_targets;
 
         // 3. scan targets for its local source files
         info!("Scanning targets for srcs and incs");
@@ -852,19 +876,19 @@ impl Pac {
         nb.add_prop("all_incs", Value::Array(Array::from_vec(all_incs)));
 
         if !self.has_target(TargetKind::Dep) {
-            nb.add_prop("deps", Value::Array(Array::new()));
+            nb.add_prop("deps", Value::empty_array());
         }
 
         if !self.has_target(TargetKind::Device) {
-            nb.add_prop("devices", Value::Array(Array::new()));
+            nb.add_prop("devices", Value::empty_array());
         }
 
         if !self.has_target(TargetKind::Lib) {
-            nb.add_prop("libs", Value::Array(Array::new()));
+            nb.add_prop("libs", Value::empty_array());
         }
 
         if !self.has_target(TargetKind::App) {
-            nb.add_prop("apps", Value::Array(Array::new()));
+            nb.add_prop("apps", Value::empty_array());
         }
 
         // root.set_prop("files", self.files_list());

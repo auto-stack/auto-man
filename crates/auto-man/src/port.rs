@@ -1,5 +1,6 @@
 use auto_val::AutoStr;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Port {
     pub name: AutoStr,
     pub builder: AutoStr,

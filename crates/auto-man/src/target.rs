@@ -1,7 +1,7 @@
 use crate::dir::{check_incs, scan_specific_srcs};
 use crate::group::Group;
-use crate::AutoResult;
 use crate::Dir;
+use crate::{AutoResult, Port};
 use auto_atom::Atom;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
@@ -72,8 +72,10 @@ pub struct Target {
     pub is_main: bool,
     pub props: Obj,
     pub deps: Vec<Target>,
+    pub dep_names: Vec<AutoStr>,
     pub rel: AutoStr,
     pub defines: Vec<AutoStr>,
+    pub port: Port,
 }
 
 pub fn set_to_vec<T: Ord>(set: HashSet<T>) -> Vec<T> {
@@ -142,8 +144,10 @@ impl Target {
             is_main: false,
             props: Obj::new(),
             deps: Vec::new(),
+            dep_names: Vec::new(),
             rel: AutoStr::new(),
             defines: Vec::new(),
+            port: Port::default(),
         }
     }
 
@@ -278,8 +282,10 @@ impl Target {
             is_main,
             props,
             deps,
+            dep_names: Vec::new(),
             rel: AutoStr::new(),
             defines: Vec::new(),
+            port: Port::default(),
         }
     }
 
@@ -380,13 +386,31 @@ impl Target {
         }
 
         if !self.deps.iter().any(|t| t.kind == TargetKind::Device) {
-            nb.add_prop("devices", Value::Array(Array::new()));
+            nb.add_prop("devices", Value::empty_array());
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Dep) {
+            nb.add_prop("deps", Value::empty_array());
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Bag) {
+            nb.add_prop("bags", Value::empty_array());
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Lib) {
+            nb.add_prop("libs", Value::empty_array());
         }
 
         // groups for IAR
-        nb.add_prop("groups", self.groups().to_xml());
+        if self.is_major() && self.port.builder == "iar" {
+            nb.add_prop("groups", self.groups().to_xml());
+        }
         nb.add_prop("defines", Value::str_array(self.defines.clone()));
         nb
+    }
+
+    pub fn is_major(&self) -> bool {
+        self.kind == TargetKind::App || self.kind == TargetKind::Lib
     }
 
     pub fn to_atom(&self) -> Atom {
@@ -517,8 +541,12 @@ impl Target {
         self.rel = rel;
     }
 
-    pub fn set_defines(&mut self, defines: &Vec<AutoStr>) {
-        self.defines = defines.clone();
+    pub fn set_port(&mut self, port: Port) {
+        self.port = port;
+    }
+
+    pub fn set_defines(&mut self, defines: Vec<AutoStr>) {
+        self.defines = defines;
     }
 
     /// If the target has links, copy link's target info

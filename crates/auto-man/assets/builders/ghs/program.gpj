@@ -6,7 +6,7 @@ $ }
 
 	-cpu=rh850g3kh
 	-bsp generic
-$ for inc in incs {
+$ for inc in all_incs {
 	-I${rel}${inc}
 $ }
     -I${rel}${device_inc}
@@ -21,14 +21,27 @@ $ }
 
 ${rel}${device_dir}/device/device.gpj
 
+# Deps
+
 $ for dev in devices {
-# ${dev}
-${dev}.gpj
+# ${dev.id}
+${dev.id}.gpj
+$ }
+
+
+$ for dep in deps {
+# ${dep.id}
+${dep.id}.gpj
+$ }
+
+$ for bag in bags {
+# ${bag.id}
+${bag.id}.gpj
 $ }
 
 $ for lib in libs {
-# ${lib}
-${lib}.gpj
+# ${lib.id}
+${lib.id}.gpj
 $ }
 
 # Dirs
