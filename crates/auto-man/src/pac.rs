@@ -468,7 +468,7 @@ impl Pac {
         }
         // 1. resolve dependencies: download dep targets recursively if needed
         info!("Downloading deps");
-        self.download_deps(&AutoStr::new())?;
+        self.download_deps(&AutoStr::new(), &AutoStr::new())?;
 
         println!("download done!");
 
@@ -590,7 +590,7 @@ impl Pac {
         self.targets.iter().any(|t| t.name == *name)
     }
 
-    pub fn download_deps(&mut self, parent: &AutoStr) -> AutoResult<()> {
+    pub fn download_deps(&mut self, parent: &AutoStr, version: &AutoStr) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
         let mut new_deps = HashMap::new();
         let mut target_names = HashMap::new();
@@ -613,6 +613,9 @@ impl Pac {
                         continue;
                     }
 
+                    if version == "latest" {
+                        target.version = "latest".into();
+                    }
                     // 2. download the dep target
                     self.download_dep(&target)?;
 
@@ -643,7 +646,7 @@ impl Pac {
                     }
 
                     // 4. recursively download dep's deps
-                    pac.download_deps(&target.parent())?;
+                    pac.download_deps(&target.parent(), &target.version.clone())?;
                     // merge dep's dep into current pac if not exists
                     for dep in pac.deps() {
                         // if !new_deps.contains_key(&dep.name)
@@ -740,8 +743,12 @@ impl Pac {
         // 3. checkout wanted version
         let mut version = info.version.clone();
         if !version.is_empty() {
-            if !version.starts_with("v") {
-                version = format!("v{}", version.as_str()).into();
+            if version == "latest" {
+                version = "master".into();
+            } else {
+                if !version.starts_with("v") {
+                    version = format!("v{}", version.as_str()).into();
+                }
             }
             info!("    - checkout version {}", version);
             let mut cmd = std::process::Command::new("git");
