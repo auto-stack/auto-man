@@ -180,7 +180,11 @@ Hello, I'm Automan {}!
             let url =
                 "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/auto-up.at";
 
+            println!("downloading: {}", url);
+
             let page = get(url)?.text()?;
+
+            println!("got page: {}", page);
             let config = AutoConfig::new(page)?;
             let url = config.root.props.get_str_of("url");
             let resp = reqwest::blocking::get(url.as_str()).expect("request failed");

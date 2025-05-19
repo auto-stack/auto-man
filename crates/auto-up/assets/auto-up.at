@@ -1,3 +1,3 @@
 var v = "0.0.13"
 version: v
-url: `https://gitee.com/auto-stack/auto-man/releases/download/v${v}/auto-up_windows_x64_v${v}.zip"
+url: `https://gitee.com/auto-stack/auto-man/releases/download/v${v}/auto-up_windows_x64_v${v}.zip`
