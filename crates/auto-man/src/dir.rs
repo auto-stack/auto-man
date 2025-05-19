@@ -493,6 +493,10 @@ pub fn scan_dir_flat(
                 "gpj" => {
                     continue;
                 }
+                "850" => {
+                    // TODO: should only work in RH850 platform
+                    files_found.insert(path_str);
+                }
                 _ => {
                     if kind == &TargetKind::Device {
                         files_found.insert(path_str);

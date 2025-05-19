@@ -1,3 +1,5 @@
+use std::process::{Command, Stdio};
+
 use auto_lang::config::AutoConfig;
 use auto_man::*;
 use auto_val::{AutoPath, AutoStr};
@@ -7,7 +9,7 @@ use dialoguer::Select;
 use log::*;
 use reqwest::blocking::get;
 use simplelog::*;
-use std::process::{Command, Stdio};
+use zip::ZipArchive;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
@@ -197,14 +199,25 @@ Hello, I'm Automan {}!
             std::fs::write(zip_path.path(), &body)?;
             println!("download auto-up success");
 
-            // // invoke auto-up command
-            // let mut sid = Command::new("./auto-up.exe")
-            //     .stdout(Stdio::inherit())
-            //     .stdin(Stdio::inherit())
-            //     .spawn()
-            //     .unwrap();
+            // unzip auto-up.zip
+            let mut zip = ZipArchive::new(std::fs::File::open(zip_path.path())?)?;
+            for i in 0..zip.len() {
+                let mut file = zip.by_index(i)?;
+                let mut out = std::fs::File::create(file.name())?;
+                std::io::copy(&mut file, &mut out)?;
+            }
+            std::fs::remove_file(zip_path.path())?;
 
-            // std::process::abort();
+            // invoke auto-up command
+            Command::new("./auto-up.exe")
+                .stdout(Stdio::inherit())
+                .stdin(Stdio::inherit())
+                .spawn()
+                .unwrap();
+
+            // sleep for 300ms
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            std::process::exit(0);
 
             // sid.wait().unwrap();
         }

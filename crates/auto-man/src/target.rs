@@ -415,7 +415,7 @@ impl Target {
 
     pub fn to_atom(&self) -> Atom {
         let mut atom = Atom::node(self.to_nodebody());
-        atom.name = self.name.clone();
+        atom.name = self.local_name();
         atom
     }
 
