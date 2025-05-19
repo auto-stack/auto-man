@@ -21,4 +21,4 @@ pub use target::*;
 
 pub type AutoError = Box<dyn std::error::Error>;
 pub type AutoResult<T> = Result<T, AutoError>;
-pub const AUTOMAN_VERSION: &str = "v0.0.14";
+pub const AUTOMAN_VERSION: &str = "v0.0.15";

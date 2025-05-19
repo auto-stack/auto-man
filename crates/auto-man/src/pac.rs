@@ -69,7 +69,10 @@ impl Pac {
         let mut ports = config.root.get_nodes("port");
         if ports.is_empty() {
             let mut port = Node::new("port");
-            port.add_arg(Arg::Pos("cmake".into()));
+            port.add_arg(Arg::Pos("win32".into()));
+            port.set_prop("name", "win32");
+            port.set_prop("builder", "cmake");
+            port.set_prop("platform", "win11");
             ports.push(port);
         }
         let builder = None;
