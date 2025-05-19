@@ -20,4 +20,5 @@ dirs = { workspace = true }
 git2 = { workspace = true }
 colored = { workspace = true }
 glob-match = { workspace = true }
+reqwest = { workspace = true }
 # walkdir = { workspace = true }

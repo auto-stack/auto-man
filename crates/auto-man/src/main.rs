@@ -1,10 +1,13 @@
+use auto_lang::config::AutoConfig;
 use auto_man::*;
-use auto_val::AutoStr;
+use auto_val::{AutoPath, AutoStr};
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use dialoguer::Select;
 use log::*;
+use reqwest::blocking::get;
 use simplelog::*;
+use std::process::{Command, Stdio};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]
@@ -43,6 +46,8 @@ enum Commands {
     Info { target: Option<String> },
     #[command(about = "Show and select port")]
     Port,
+    #[command(about = "Upgrade auto-man itself")]
+    Upgrade,
 }
 
 fn init_logger() {
@@ -169,6 +174,35 @@ Hello, I'm Automan {}!
             let port = select_port(None, &am.list_port_names())?;
             am.set_port(port.clone())?;
             info!("port \"{}\" written to .am/state.at", port)
+        }
+        Some(Commands::Upgrade) => {
+            // download latest version of auto-up
+            let url =
+                "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/auto-up.at";
+
+            let page = get(url)?.text()?;
+            let config = AutoConfig::new(page)?;
+            let url = config.root.props.get_str_of("url");
+            let resp = reqwest::blocking::get(url.as_str()).expect("request failed");
+            let body = resp.bytes().expect("body invalid");
+            let zip_name = url.split('/').last().unwrap();
+            let zip_path = AutoPath::from(".").join(zip_name);
+            if zip_path.is_file() {
+                std::fs::remove_file(zip_path.path())?;
+            }
+            std::fs::write(zip_path.path(), &body)?;
+            println!("download auto-up success");
+
+            // // invoke auto-up command
+            // let mut sid = Command::new("./auto-up.exe")
+            //     .stdout(Stdio::inherit())
+            //     .stdin(Stdio::inherit())
+            //     .spawn()
+            //     .unwrap();
+
+            // std::process::abort();
+
+            // sid.wait().unwrap();
         }
         None => {
             Cli::command().print_help()?;
