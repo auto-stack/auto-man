@@ -239,7 +239,7 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
         let mut file = zip.by_index(i)?;
         let basename = file.name();
         let name = info.name.to_string();
-        let path = install_dir.join(name.clone() + "_" + info.version.as_str() + ".exe");
+        let versioned_path = install_dir.join(name.clone() + "_" + info.version.as_str() + ".exe");
         let simple_name = get_simple_name(&info.name);
         let link_path = install_dir.join(name.clone() + ".exe");
         let simple_link_path = install_dir.join(simple_name.to_string() + ".exe");
@@ -248,15 +248,18 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
         }
         println!("extracting {}", basename);
         if file.is_dir() {
-            std::fs::create_dir_all(&path)?;
+            std::fs::create_dir_all(&versioned_path)?;
         } else {
-            let mut out = File::create(&path)?;
+            let mut out = File::create(&versioned_path)?;
             std::io::copy(&mut file, &mut out)?;
-            println!("{}", format!("installed {}", path.display()).bright_blue());
+            println!(
+                "{}",
+                format!("installed {}", versioned_path.display()).bright_blue()
+            );
             if link_path.is_file() {
                 std::fs::remove_file(&link_path)?;
             }
-            std::fs::hard_link(&path, &link_path)?;
+            std::fs::hard_link(&versioned_path, &link_path)?;
             println!(
                 "{}",
                 format!("symlinked {}", link_path.display()).bright_blue()
@@ -264,7 +267,7 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
             if simple_link_path.is_file() {
                 std::fs::remove_file(&simple_link_path)?;
             }
-            std::fs::hard_link(&path, &simple_link_path)?;
+            std::fs::hard_link(&versioned_path, &simple_link_path)?;
             println!(
                 "{}",
                 format!("symlinked {}", simple_link_path.display()).bright_blue()

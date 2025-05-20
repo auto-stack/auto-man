@@ -89,6 +89,14 @@ fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoSt
     Ok(port)
 }
 
+fn do_upgrade() -> AutoResult<()> {
+    info!("Upgrading Automan");
+    // Implement upgrade logic here
+    use crate::up::*;
+    upgrade()?;
+    Ok(())
+}
+
 fn main() -> Result<(), AutoError> {
     init_logger();
     let logo = format!(
@@ -183,48 +191,7 @@ Hello, I'm Automan {}!
             info!("port \"{}\" written to .am/state.at", port)
         }
         Some(Commands::Upgrade) => {
-            // download latest version of auto-up
-            let url =
-                "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/auto-up.at";
-
-            println!("downloading: {}", url);
-
-            let page = get(url)?.text()?;
-
-            println!("got page: {}", page);
-            let config = AutoConfig::new(page)?;
-            let url = config.root.props.get_str_of("url");
-            let resp = reqwest::blocking::get(url.as_str()).expect("request failed");
-            let body = resp.bytes().expect("body invalid");
-            let zip_name = url.split('/').last().unwrap();
-            let zip_path = AutoPath::from(".").join(zip_name);
-            if zip_path.is_file() {
-                std::fs::remove_file(zip_path.path())?;
-            }
-            std::fs::write(zip_path.path(), &body)?;
-            println!("download auto-up success");
-
-            // unzip auto-up.zip
-            let mut zip = ZipArchive::new(std::fs::File::open(zip_path.path())?)?;
-            for i in 0..zip.len() {
-                let mut file = zip.by_index(i)?;
-                let mut out = std::fs::File::create(file.name())?;
-                std::io::copy(&mut file, &mut out)?;
-            }
-            std::fs::remove_file(zip_path.path())?;
-
-            // invoke auto-up command
-            Command::new("./auto-up.exe")
-                .stdout(Stdio::inherit())
-                .stdin(Stdio::inherit())
-                .spawn()
-                .unwrap();
-
-            // sleep for 300ms
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            std::process::exit(0);
-
-            // sid.wait().unwrap();
+            do_upgrade()?;
         }
         Some(Commands::Install) => {
             // Copy auto-man.exe to $HOME/.auto/auto-man/auto-man_master.exe

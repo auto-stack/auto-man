@@ -73,6 +73,8 @@ pub struct Target {
     pub props: Obj,
     pub deps: Vec<Target>,
     pub dep_names: Vec<AutoStr>,
+    pub all_links: Vec<Node>,
+    pub all_deps: Vec<Target>,
     pub rel: AutoStr,
     pub defines: Vec<AutoStr>,
     pub port: Port,
@@ -145,6 +147,8 @@ impl Target {
             props: Obj::new(),
             deps: Vec::new(),
             dep_names: Vec::new(),
+            all_links: Vec::new(),
+            all_deps: Vec::new(),
             rel: AutoStr::new(),
             defines: Vec::new(),
             port: Port::default(),
@@ -283,6 +287,8 @@ impl Target {
             props,
             deps,
             dep_names: Vec::new(),
+            all_links: Vec::new(),
+            all_deps: Vec::new(),
             rel: AutoStr::new(),
             defines: Vec::new(),
             port: Port::default(),
@@ -516,6 +522,14 @@ impl Target {
     pub fn downloaded(&self) -> bool {
         let loc = self.location();
         return loc.is_dir();
+    }
+
+    // TODO: only allow args to be overrided
+    pub fn merge_link(&mut self, link: &Node) {
+        // currently only support normal props override
+        for (k, v) in link.props.iter() {
+            self.props.set(k.clone(), v.clone());
+        }
     }
 
     pub fn merge(&mut self, other: &Target) {

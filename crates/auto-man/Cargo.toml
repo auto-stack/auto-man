@@ -22,5 +22,6 @@ colored = { workspace = true }
 glob-match = { workspace = true }
 reqwest = { workspace = true }
 zip = { workspace = true }
+version-compare = { workspace = true }
 
 # walkdir = { workspace = true }

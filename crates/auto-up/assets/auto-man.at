@@ -1,17 +1,5 @@
 release {
     name: "auto-man"
-    version: "0.0.8"
-    url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.8/auto-man_windows_x64_v0.0.8.zip"
-}
-
-release {
-    name: "auto-man"
-    version: "0.0.9"
-    url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.9/auto-man_windows_x64_v0.0.9.zip"
-}
-
-release {
-    name: "auto-man"
     version: "0.0.10"
     url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.10/auto-man_windows_x64_v0.0.10.zip"
 }
@@ -38,4 +26,10 @@ release {
     name: "auto-man"
     version: "0.0.14"
     url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.14/auto-man_windows_x64_v0.0.14.zip"
+}
+
+release {
+    name: "auto-man"
+    version: "0.0.15"
+    url: "https://gitee.com/auto-stack/auto-man/releases/download/v0.0.15/auto-man_windows_x64_v0.0.15.zip"
 }

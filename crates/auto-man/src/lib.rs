@@ -9,6 +9,7 @@ mod pac;
 mod port;
 pub mod pull;
 mod target;
+pub mod up;
 pub mod util;
 
 pub use automan::*;

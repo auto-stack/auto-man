@@ -278,8 +278,14 @@ impl Automan {
             .iter_mut()
             .filter(|t| t.kind == TargetKind::Dep || t.kind == TargetKind::Device)
         {
-            println!("Trying to clean target [{}] at {} ...", t.name, t.at);
-            t.clean()?
+            println!("target [{}] at {} ...", t.name, t.at);
+            match t.clean() {
+                Ok(_) => info!("Target [{}] at {} cleaned successfully", t.name, t.at),
+                Err(e) => {
+                    error!("Error: {}", e);
+                    continue;
+                }
+            }
         }
         // clean pac related files
         self.pac.clean()

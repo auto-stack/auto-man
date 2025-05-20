@@ -17,6 +17,7 @@ use log::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
+use std::process::id;
 use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
     Table,
@@ -209,6 +210,13 @@ impl Pac {
             .collect()
     }
 
+    pub fn libs(&self) -> Vec<&Target> {
+        self.targets
+            .iter()
+            .filter(|t| t.kind == TargetKind::Lib)
+            .collect()
+    }
+
     pub fn apps(&self) -> Vec<&Target> {
         self.targets
             .iter()
@@ -357,15 +365,19 @@ impl Pac {
 
     fn resolve_target_deps(targets_map: &mut HashMap<AutoStr, Target>) -> bool {
         let mut all_resolved = true;
-        let mut resolved: HashMap<AutoStr, Vec<AutoStr>> = HashMap::new();
+        // let mut resolved: HashMap<AutoStr, Vec<AutoStr>> = HashMap::new();
+        let mut resolved_links: HashMap<AutoStr, Vec<Node>> = HashMap::new();
         for t in targets_map.values() {
             if t.links.is_empty() {
-                resolved.insert(t.name.clone(), vec![]);
+                // resolved.insert(t.name.clone(), vec![]);
+                resolved_links.insert(t.name.clone(), vec![]);
             } else {
                 // try all links, if all links are resolved, copy their dependencies
                 let mut all_deps_resolved = true;
+                // let mut link_names = Vec::new();
                 let mut links = Vec::new();
-                links.extend(t.links.iter().map(|t| t.id()));
+                // link_names.extend(t.links.iter().map(|t| t.id()));
+                links.extend(t.links.iter().map(|t| t.clone()));
                 for l in &t.links {
                     let Some(dep) = targets_map.get(&l.id()) else {
                         continue;
@@ -374,31 +386,51 @@ impl Pac {
                         all_deps_resolved = false;
                         break;
                     } else {
-                        links.extend(dep.links.iter().map(|t| t.id()));
+                        // link_names.extend(dep.links.iter().map(|t| t.id()));
+                        links.extend(dep.links.iter().map(|t| t.clone()));
+                        // links.extend_from_slice(&dep.links);
                     }
                 }
                 if all_deps_resolved {
-                    resolved.insert(t.name.clone(), links);
+                    // resolved.insert(t.name.clone(), link_names);
+                    resolved_links.insert(t.name.clone(), links);
+                    // resolved.insert(t.name.clone(), links);
                 }
             }
             if t.is_resolved == false {
                 all_resolved = false;
             }
         }
+        // println!("link_names: [{}] {:?}", resolved.len(), resolved);
+        // println!("links: [{}]", resolved_links.len());
+        // for (k, links) in &resolved_links {
+        //     println!(
+        //         "{}:{}",
+        //         k,
+        //         links.iter().map(|l| l.id()).collect::<Vec<_>>().join(", ")
+        //     );
+        // }
         // println!(">>>>>>>>>>>>>>>>>>> resolved: {:?}", resolved);
-        for (k, r) in resolved {
+        for (k, links) in resolved_links {
             let mut deps = Vec::new();
-            for dep in r {
-                let Some(dep) = targets_map.get(&dep) else {
+            for l in &links {
+                let id = l.id();
+                // let id = l.clone();
+                let Some(dep) = targets_map.get(&id) else {
                     continue;
                 };
                 deps.push(dep.name.clone());
+                // let mut merge = dep.clone();
+                // merge.merge_link(&l);
+                // deps.push(merge);
             }
             let Some(t) = targets_map.get_mut(&k) else {
                 continue;
             };
             t.is_resolved = true;
             t.dep_names = deps;
+            t.all_links = links;
+            // t.all_deps = deps;
         }
         // for t in targets_map.values() {
         // println!("Target: {}", t.name);
@@ -512,12 +544,20 @@ impl Pac {
         for n in major_target_names {
             let mut deps = Vec::new();
             let t = targets_map.get(&n).unwrap();
-            for dep in &t.dep_names {
-                let Some(dep) = targets_map.get(dep) else {
+            for l in &t.all_links {
+                let Some(dep) = targets_map.get(&l.id()) else {
                     continue;
                 };
-                deps.push(dep.clone());
+                let mut merge = dep.clone();
+                merge.merge_link(l);
+                deps.push(merge);
             }
+            // for dep in &t.dep_names {
+            //     let Some(dep) = targets_map.get(dep) else {
+            //         continue;
+            //     };
+            //     deps.push(dep.clone());
+            // }
             let Some(t) = targets_map.get_mut(&n) else {
                 continue;
             };
@@ -640,12 +680,30 @@ impl Pac {
                     let mut pac = Pac::new(dep_config);
                     pac.index = self.index.clone();
                     pac.device_index = self.device_index.clone();
-                    // get the lib target
+                    // get the main target of the package
                     let dep_name = target.name.clone();
                     let lib_target = pac.get_target(dep_name);
                     if let Some(lib_target) = lib_target {
                         // merge the lib target into current dep target
                         target.merge(lib_target);
+                    }
+                    // get other lib targets
+                    for lib in pac.libs() {
+                        if lib.name == target.name {
+                            continue;
+                        }
+                        if !target_names.contains_key(&lib.name) {
+                            let mut lib = lib.clone();
+                            // check new root dir
+                            for (_, v) in lib.dirs.iter_mut() {
+                                let path = Path::new(target.at.as_str()).join(v.at.as_str());
+                                if path.is_dir() {
+                                    v.append_root(target.at.clone());
+                                }
+                            }
+
+                            new_deps.insert(lib.name.clone(), lib);
+                        }
                     }
 
                     // 4. recursively download dep's deps
