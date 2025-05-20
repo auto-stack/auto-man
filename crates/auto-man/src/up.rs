@@ -1,6 +1,6 @@
 use crate::AUTOMAN_VERSION;
 use auto_lang::config::AutoConfig;
-use auto_val::{AutoResult, AutoStr};
+use auto_val::{AutoPath, AutoResult, AutoStr};
 use colored::Colorize;
 use dialoguer::{console::Style, theme::ColorfulTheme, Input, Select};
 use reqwest::blocking::get;
@@ -121,20 +121,21 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
 }
 
 fn auto_up() -> AutoResult<()> {
-    println!(
-        "{}",
-        format!(
-            "Welcome to auto-up {}, a tool to upgrade auto-lang related tools",
-            AUTOUP_VERSION
-        )
-        .bright_yellow()
-        .bold()
-    );
-    println!();
-    let tool = select_tool()?;
-    println!("Selected tool: {}", tool);
-    println!();
+    // println!(
+    //     "{}",
+    //     format!(
+    //         "Welcome to auto-up {}, a tool to upgrade auto-lang related tools",
+    //         AUTOUP_VERSION
+    //     )
+    //     .bright_yellow()
+    //     .bold()
+    // );
+    // println!();
+    // let tool = select_tool()?;
+    // println!("Selected tool: {}", tool);
+    // println!();
     // 1. list all releases and let user select one
+    let tool = "auto-man".into();
     let info = list_releases(&tool)?;
     // check installation directory
     let install_dir = get_install_dir(&tool)?;
@@ -157,6 +158,7 @@ fn auto_up() -> AutoResult<()> {
         );
         std::fs::remove_file(zip_path.as_path())?;
     }
+    println!("Downloading {}...", info.url);
     let resp = reqwest::blocking::get(info.url.as_str()).expect("request failed");
     let body = resp.bytes().expect("body invalid");
     std::fs::write(zip_path.clone(), &body)?;
@@ -172,8 +174,16 @@ fn auto_up() -> AutoResult<()> {
     // write am.at
     write_am_at(&install_path, &info.name)?;
 
+    // clear index dirs
+    let index_dir = install_path.join("index");
+    if index_dir.is_dir() {
+        std::fs::remove_dir_all(&index_dir)?;
+    }
+    println!("Deleting index directory: {}", index_dir.display());
+
     // 2. download selected release
     // 3. install selected release
+    println!("OK");
     Ok(())
 }
 
@@ -241,8 +251,7 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
         let name = info.name.to_string();
         let versioned_path = install_dir.join(name.clone() + "_" + info.version.as_str() + ".exe");
         let simple_name = get_simple_name(&info.name);
-        let link_path = install_dir.join(name.clone() + ".exe");
-        let simple_link_path = install_dir.join(simple_name.to_string() + ".exe");
+        let link_path = install_dir.join(simple_name.to_string() + ".exe");
         if basename != name + ".exe" {
             continue;
         }
@@ -256,23 +265,36 @@ fn extract_zip(zip_path: &Path, info: &ReleaseInfo, install_dir: &Path) -> AutoR
                 "{}",
                 format!("installed {}", versioned_path.display()).bright_blue()
             );
-            if link_path.is_file() {
-                std::fs::remove_file(&link_path)?;
-            }
-            std::fs::hard_link(&versioned_path, &link_path)?;
+
+            let exe_path = AutoPath::from(versioned_path);
+            let link_path = AutoPath::from(link_path);
+            link_exe(&exe_path, &link_path)?;
             println!(
                 "{}",
-                format!("symlinked {}", link_path.display()).bright_blue()
-            );
-            if simple_link_path.is_file() {
-                std::fs::remove_file(&simple_link_path)?;
-            }
-            std::fs::hard_link(&versioned_path, &simple_link_path)?;
-            println!(
-                "{}",
-                format!("symlinked {}", simple_link_path.display()).bright_blue()
+                format!("linked {}", link_path.to_astr()).bright_blue()
             );
         }
+    }
+    Ok(())
+}
+
+pub fn link_exe(exe_path: &AutoPath, link_path: &AutoPath) -> AutoResult<()> {
+    let abs_link = link_path.abs();
+    println!("abs_link: {}", abs_link);
+    let link_exists = link_path.is_file();
+    // rename old link to backup
+    let back = format!("{}.bak", abs_link);
+    if link_exists {
+        std::fs::rename(link_path.path(), back.clone()).unwrap();
+    }
+
+    // create new link
+    println!("trying to link {} to {}", exe_path, link_path);
+    std::fs::hard_link(exe_path.path(), link_path.path()).unwrap();
+
+    if link_exists {
+        // delete backup
+        std::fs::remove_file(back).unwrap();
     }
     Ok(())
 }
