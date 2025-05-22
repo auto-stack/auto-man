@@ -55,6 +55,11 @@ impl Builder for CMakeBuilder {
         self.setup(pac)?;
         for t in &pac.targets {
             self.target(t)?;
+            if !t.deps.is_empty() {
+                for dep in t.deps.iter() {
+                    self.target(dep)?;
+                }
+            }
         }
         self.finish(pac)?;
         Ok(())
@@ -134,7 +139,9 @@ impl Builder for CMakeBuilder {
 
         if target.links.len() > 0 {
             for link in target.links.iter() {
-                out.write(format!("target_link_libraries({} {})\n", target.name, link).as_bytes())?;
+                out.write(
+                    format!("target_link_libraries({} {})\n", target.name, link.id()).as_bytes(),
+                )?;
             }
         }
 

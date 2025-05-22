@@ -39,8 +39,6 @@ enum Commands {
     Run,
     #[command(about = "Clean Project")]
     Clean { dir: Option<String> },
-    #[command(about = "Update Dependencies")]
-    Update,
     #[command(about = "Show Dependencies")]
     Deps,
     #[command(about = "Show Devices")]
@@ -55,6 +53,8 @@ enum Commands {
     Upgrade,
     #[command(about = "Install master version locally")]
     Install,
+    #[command(about = "Pull all dependencies")]
+    Pull,
 }
 
 fn init_logger() {
@@ -163,10 +163,6 @@ Hello, I'm Automan {}!
             let mut am = Automan::new(&dir, config)?;
             am.clean()?;
         }
-        Some(Commands::Update) => {
-            let mut am = Automan::new(".", config)?;
-            am.update_deps()?;
-        }
         Some(Commands::Deps) => {
             Automan::list_deps(&config)?;
         }
@@ -220,6 +216,10 @@ Hello, I'm Automan {}!
                 std::fs::remove_file(&link)?;
             }
             std::fs::hard_link(&dest, link)?;
+        }
+        Some(Commands::Pull) => {
+            let mut am = Automan::new(".", config)?;
+            am.pull()?;
         }
         None => {
             Cli::command().print_help()?;

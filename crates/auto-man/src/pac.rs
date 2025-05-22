@@ -1,9 +1,11 @@
 use crate::builder::new_builder;
 use crate::builder::Builder;
 use crate::builder::BuilderKind;
-use crate::group::Group;
+use crate::git::check_changes;
+use crate::git::check_detached;
+use crate::git::pull;
+use crate::git::switch_to_master;
 use crate::AutoResult;
-use crate::Dir;
 use crate::Port;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
@@ -17,7 +19,6 @@ use log::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
-use std::process::id;
 use tabled::{
     settings::{object::Rows, style::Style, themes::Colorization, Color},
     Table,
@@ -38,6 +39,7 @@ pub struct Pac {
     /// Whether to show header files in `srcs`
     pub show_headers: bool,
     pub defines: Vec<AutoStr>,
+    is_update: bool,
 }
 
 fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
@@ -122,6 +124,7 @@ impl Pac {
             build_location: "cmake".into(),
             show_headers: false,
             defines,
+            is_update: false,
         }
     }
 
@@ -176,6 +179,7 @@ impl Pac {
         has_prop
     }
 
+    /// Print atom files to local directory
     pub fn print_atom(&self) -> AutoResult<()> {
         let atom = self.to_atom();
         // info!("ATOM packed for pac: <{}>", self.name);
@@ -184,7 +188,7 @@ impl Pac {
         // info!("ATOM for pac: <{}>", self.name);
         // write prettified atom to file
         // write prettified atom to file
-        std::fs::write("pac.atom.at", atom_pretty.as_bytes())?;
+        std::fs::write(".am/pac.atom.at", atom_pretty.as_bytes())?;
 
         for app in self.build_targets() {
             let name = app.name.clone();
@@ -192,7 +196,7 @@ impl Pac {
             let app_atom = app.to_atom();
             let app_atom_pretty = pretty(app_atom.to_string().as_str(), 3);
 
-            std::fs::write(format!("{}.atom.at", name), app_atom_pretty.as_bytes())?;
+            std::fs::write(format!(".am/{}.atom.at", name), app_atom_pretty.as_bytes())?;
         }
 
         Ok(())
@@ -493,6 +497,20 @@ impl Pac {
         // }
     }
 
+    pub fn pull(&mut self) -> AutoResult<()> {
+        self.is_update = true;
+        self.download()?;
+        self.is_update = false;
+        Ok(())
+    }
+
+    pub fn download(&mut self) -> AutoResult<()> {
+        info!("Downloading deps");
+        self.download_deps(&AutoStr::new(), &AutoStr::new())?;
+        println!("download done!");
+        Ok(())
+    }
+
     pub fn resolve(&mut self) -> AutoResult<()> {
         // 0. check basic props
         if !self.props.has("defines") {
@@ -501,11 +519,9 @@ impl Pac {
             // defines.push("USE_KERNEL".into());
             self.props.set("defines", defines);
         }
-        // 1. resolve dependencies: download dep targets recursively if needed
-        info!("Downloading deps");
-        self.download_deps(&AutoStr::new(), &AutoStr::new())?;
 
-        println!("download done!");
+        // 1. download dependencies, recursively
+        self.download()?;
 
         let rel = self.relative_path();
         for t in &mut self.targets {
@@ -615,25 +631,25 @@ impl Pac {
     }
 
     fn update_repo(&self, path: &AutoPath) -> AutoResult<()> {
-        let mut cmd = std::process::Command::new("git");
-        cmd.arg("pull");
-        cmd.current_dir(path.to_string().as_str());
-        let output = cmd.output()?;
-        if output.status.success() {
-            info!("updated dependency {}", path);
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-        } else {
-            error!("failed to update dependency {}", path);
-            println!("{}", String::from_utf8_lossy(&output.stderr));
+        warn!("trying to update repo {}", path);
+
+        check_changes(path)?;
+        match check_detached(path) {
+            Ok(_) => {}
+            Err(_) => {
+                // switch to master
+                switch_to_master(path)?;
+            }
         }
-        Ok(())
+
+        pull(path)
     }
 
     pub fn contains(&self, name: &AutoStr) -> bool {
         self.targets.iter().any(|t| t.name == *name)
     }
 
-    pub fn download_deps(&mut self, parent: &AutoStr, version: &AutoStr) -> AutoResult<()> {
+    fn download_deps(&mut self, parent: &AutoStr, version: &AutoStr) -> AutoResult<()> {
         let mut targets = std::mem::take(&mut self.targets);
         let mut new_deps = HashMap::new();
         let mut target_names = HashMap::new();
@@ -651,8 +667,6 @@ impl Pac {
                 TargetKind::Dep | TargetKind::Device => {
                     // 1. update if exists
                     if target.exists() {
-                        // git update
-                        // self.update_repo(&loc)?;
                         continue;
                     }
 
@@ -680,6 +694,7 @@ impl Pac {
                     let mut pac = Pac::new(dep_config);
                     pac.index = self.index.clone();
                     pac.device_index = self.device_index.clone();
+                    pac.is_update = self.is_update;
                     // get the main target of the package
                     let dep_name = target.name.clone();
                     let lib_target = pac.get_target(dep_name);
@@ -687,7 +702,7 @@ impl Pac {
                         // merge the lib target into current dep target
                         target.merge(lib_target);
                     }
-                    // get other lib targets
+                    // get other lib targetsm
                     for lib in pac.libs() {
                         if lib.name == target.name {
                             continue;
@@ -769,6 +784,10 @@ impl Pac {
         let path = deps_dir;
         info!("- {}: ({})", path, info.repo);
         if Path::new(&path).exists() {
+            if self.is_update {
+                let p = AutoPath::new(path);
+                self.update_repo(&p)?;
+            }
             // TODO: update the repo if necessary
             // TODO: or provide a command to update dependencies
             // let output = std::process::Command::new("git")
@@ -877,30 +896,6 @@ impl Pac {
         // for t in self.downloaded() {
         // t.clean()?;
         // }
-        Ok(())
-    }
-
-    pub(crate) fn update_deps(&mut self) -> AutoResult<()> {
-        let mut targets = std::mem::take(&mut self.targets);
-        for target in targets.iter_mut() {
-            let loc = target.location();
-            match target.kind {
-                TargetKind::Dep | TargetKind::Device => {
-                    println!("updating target: {} at {}", target.name, loc);
-                    if target.downloaded() {
-                        println!("update downloaded");
-                        // git update
-                        self.update_repo(&loc)?;
-                        continue;
-                    }
-                    println!("not downloaded");
-                    self.download_dep(&target)?;
-                    // TODO: recursively update dependencies
-                }
-                _ => {}
-            }
-        }
-        self.targets = targets;
         Ok(())
     }
 }

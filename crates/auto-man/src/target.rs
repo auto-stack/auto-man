@@ -1,4 +1,5 @@
 use crate::dir::{check_incs, scan_specific_srcs};
+use crate::git::check_changes;
 use crate::group::Group;
 use crate::Dir;
 use crate::{AutoResult, Port};
@@ -164,6 +165,9 @@ impl Target {
             if node.args.args.len() > 1 {
                 version = node.args.args[1].to_astr();
             }
+        }
+        if version.is_empty() {
+            version = "latest".into();
         }
 
         // kind
@@ -675,35 +679,8 @@ impl Target {
             .into());
         }
         // check if dir is a git directory
-        let dir = AutoPath::new(self.at.clone());
-        if !dir.is_dir() {
-            return Err(format!("Target location {} is not a dir", self.at).into());
-        }
-        let gitdir = dir.join(".git");
-        if !gitdir.is_dir() {
-            return Err(format!("Target location {} is not a git dir", self.at).into());
-        }
-        // check if there is any modifications to this git repository
-        let cmd = std::process::Command::new("git")
-            .arg("status")
-            .arg("-s")
-            .current_dir(&dir.path())
-            .output()
-            .map_err(|e| format!("Failed to run git status: {}", e))?;
-        if !cmd.status.success() {
-            return Err(format!(
-                "Failed to run git status: {}",
-                String::from_utf8_lossy(&cmd.stderr)
-            )
-            .into());
-        }
-        if !cmd.stdout.is_empty() {
-            println!(
-                "\n--- git status ---\n\n{}",
-                String::from_utf8_lossy(&cmd.stdout)
-            );
-            return Err(format!("Target location {} has uncommitted changes", self.at).into());
-        }
+        let dir = AutoPath::new(&self.at);
+        check_changes(&dir)?;
         println!("target {} is ok to clean!", self.name);
         std::fs::remove_dir_all(&dir.path())?;
         Ok(())

@@ -49,10 +49,6 @@ impl Automan {
         Templates::copy(template, name)?;
         Ok(())
     }
-
-    pub fn update_deps(&mut self) -> AutoResult<()> {
-        self.pac.update_deps()
-    }
 }
 
 // API
@@ -178,8 +174,8 @@ impl Automan {
         Ok(Self { pac })
     }
 
-    pub fn pull(&self) -> AutoResult<()> {
-        Ok(())
+    pub fn pull(&mut self) -> AutoResult<()> {
+        self.pac.pull()
     }
 
     pub fn set_port(&mut self, port: AutoStr) -> AutoResult<()> {
@@ -271,7 +267,17 @@ impl Automan {
         }
 
         // clean downloaded deps with pac.atom.at
-        let history_config = AutoConfig::read(Path::new("pac.atom.at"))?;
+        let atom_file = AutoPath::new(".am/pac.atom.at");
+        if !atom_file.is_file() {
+            return Err(format!(
+                "{}\n{}\n{}",
+                "Build info file .am/pac.atom.at not found!",
+                "`am clean` depends on this info file to complete.",
+                "Please run `am b` first to generate build info file."
+            )
+            .into());
+        }
+        let history_config = AutoConfig::read(atom_file.path())?;
         let mut history_pac = Pac::new(history_config);
         for t in history_pac
             .targets
@@ -287,6 +293,9 @@ impl Automan {
                 }
             }
         }
+
+        // clean .am folder
+        std::fs::remove_dir_all(".am")?;
         // clean pac related files
         self.pac.clean()
     }
