@@ -9,6 +9,8 @@ use tabled::{
     Table, Tabled,
 };
 
+use crate::git::{check_changes, check_detached, pull};
+
 #[derive(Clone)]
 pub struct PacInfo {
     pub name: AutoStr,
@@ -139,6 +141,13 @@ impl IndexStore {
             .with(Style::modern_rounded())
             .with(Colorization::exact([Color::FG_BRIGHT_BLUE], Rows::first()));
         println!("{}", table);
+        Ok(())
+    }
+
+    pub fn pull(&self) -> AutoResult<()> {
+        check_changes(&self.path)?;
+        check_detached(&self.path)?;
+        pull(&self.path)?;
         Ok(())
     }
 }

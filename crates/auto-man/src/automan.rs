@@ -15,6 +15,7 @@ use std::path::Path;
 
 pub struct Automan {
     pac: Pac,
+    index_store: IndexStore,
 }
 
 // Static API
@@ -53,7 +54,7 @@ impl Automan {
 
 // API
 impl Automan {
-    pub fn parse_pac(path: &str, am_config: &AmConfig) -> AutoResult<Pac> {
+    pub fn parse_pac(path: &str, am_config: &AmConfig) -> AutoResult<Self> {
         // 1. Find pac.at
         let config_path = Path::new(path).join("pac.at");
         if !config_path.is_file() {
@@ -118,7 +119,8 @@ impl Automan {
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
         pac.set_port(port_name.clone())?;
         pac.save_port(port_name.clone())?;
-        Ok(pac)
+
+        Ok(Self { pac, index_store })
     }
 
     fn select_port(ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
@@ -170,11 +172,12 @@ impl Automan {
 
     pub fn new(path: &str, am: AmConfig) -> AutoResult<Self> {
         // Currently, only CMake builder is supported
-        let pac = Self::parse_pac(path, &am)?;
-        Ok(Self { pac })
+        let am = Self::parse_pac(path, &am)?;
+        Ok(am)
     }
 
     pub fn pull(&mut self) -> AutoResult<()> {
+        self.index_store.pull()?;
         self.pac.pull()
     }
 
