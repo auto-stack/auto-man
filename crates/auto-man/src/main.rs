@@ -55,6 +55,8 @@ enum Commands {
     Install,
     #[command(about = "Pull all dependencies")]
     Pull,
+    #[command(about = "Reset automan config and index")]
+    Reset,
 }
 
 fn init_logger() {
@@ -220,6 +222,9 @@ Hello, I'm Automan {}!
         Some(Commands::Pull) => {
             let mut am = Automan::new(".", config)?;
             am.pull()?;
+        }
+        Some(Commands::Reset) => {
+            Automan::reset_index()?;
         }
         None => {
             Cli::command().print_help()?;

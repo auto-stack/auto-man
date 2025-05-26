@@ -8,6 +8,7 @@ use auto_lang::Universe;
 use auto_val::shared;
 use auto_val::{AutoPath, AutoStr, Obj, Value};
 use log::*;
+use reqwest::blocking::get;
 use std::collections::HashMap;
 use std::env;
 use std::fmt::Display;
@@ -48,6 +49,24 @@ impl Automan {
         }
         // 2. Copy template to destination
         Templates::copy(template, name)?;
+        Ok(())
+    }
+
+    pub fn reset_index() -> AutoResult<()> {
+        // rewrite am.at
+        let home = dirs::home_dir().ok_or("Can't open home dir")?;
+        let auto_dir = home.join(".auto").join("auto-man");
+        let am_at_file = auto_dir.join("am.at");
+        let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/am.at";
+        let page = get(am_url)?.text()?;
+        std::fs::write(&am_at_file, page)?;
+        info!("updated {}", am_at_file.display());
+        // remove index dirs
+        let index_dir = auto_dir.join("index");
+        if index_dir.exists() {
+            std::fs::remove_dir_all(&index_dir)?;
+            info!("removed index dir {}", index_dir.display());
+        }
         Ok(())
     }
 }
