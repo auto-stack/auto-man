@@ -11,6 +11,177 @@ AutoMan（Auto Manager）是Auto/C语言的工程管理工具，功能包括：
 
 AutoMan的配置语言是`Auto`语言的`Config`格式。
 
+## 简介
+
+AutoMan主要有如下几类子命令：
+
+1. 新建工程：
+  - `am app`：新建Auto语言的可执行工程
+  - `am lib`：新建Auto语言的代码库工程
+  - `am capp`：新建C语言的可执行工程
+  - `am clib`：新建C语言的代码库工程
+2. 构建工程：
+  - `am scan`：扫描工程，获取依赖库。
+  - `am build`：构建工程，缩写是`am b`。`am b`会自动运行`am scan`
+  - `am run`：运行工程，缩写是`am r`
+  - `am open`：打开工程对应IDE，缩写是`am o`
+  - `am port`：切换当前的移植目标
+3. 依赖库相关：
+  - `am deps`：查看所有可用的依赖库
+  - `am devices`：查看所有可用的设备资源
+  - `am pull`：更新所有依赖库，包括依赖索引
+4. 辅助命令：
+  - `am help`：显示帮助信息
+  - `am upgrade`：更新AutoMan到最新版本
+
+
+## pac.at
+
+Automan的工程管理信息都存放在`pac.at`文件中，`pac`即`package`，`at`则是`auto`的缩写，表示这是一个Auto语言的代码文件。
+
+### AutoConfig结构
+
+`pac.at`的格式是`AutoConfig`，类似于JSON/XML。它的基本结构是这样的：
+
+```rust
+// 属性对
+key1: 15
+key2: false
+key3: ["a", "b", "c", "d"]
+key4: {
+    key5: value5
+    key6: []
+}
+
+// 节点
+app("hello") {
+    // 节点的属性
+    at: "apps/hello"
+    recurse: true
+
+    // 子节点
+    dir("motor") {
+        dir("bldc") {
+            // ....
+        }
+    }
+}
+```
+
+总体而言，AutoConfig的第一层由属性和多个节点组成，而节点内部又可以包含属性和多个子节点，依次递归，可以形成一个树状结构。
+
+除了静态的属性和节点，`pac.at`也支持Auto语言的脚本功能，包括：
+
+```rust
+// 变量声明
+var rh = "RH850"
+
+// 条件语句
+if port == rh {
+    device("Renesas-RH850") {}
+} else {
+    // ...
+}
+```
+
+未来还会添加其他有用的动态语言功能，如函数调用等。
+
+## Automan的内置节点
+
+与CMake类似，Automan将可以编译的对象称为`编译目标`（build target）。
+Automan支持如下几类编译目标：
+
+- 可执行文件：app
+- 静态库文件：lib
+- 动态库文件：dll (暂未实现)
+- 芯片资源包：device
+- 依赖库：dep
+- 单纯代码包：bag
+
+Automan提供了几个内置节点，用来声明工程中编译对象的属性。
+
+```rust
+app("hello") {
+    at: "source/app"
+    dir("motor") {
+        dir("bldc") {}
+    }
+    dir("can") {}
+    dir("diag") {}
+}
+```
+
+上面的节点是一个可执行目标，它最终会编译成为一个可执行文件，名称是`hello.exe`。
+
+默认情况下，Automan会到`$PROJECT_ROOT/apps/hello`目录下去寻找`hello`目标的代码，
+但我们也可以用`at`属性来指定目录。
+上面的例子中，`hello.exe`的源码放在`$PROJECT_ROOT/source/app`中。
+
+`dir`节点表示目标节点内部的子目录，例如上面的`dir("bldc"){}`，对应的就是`$PROJECT_ROOT/source/app/motor/bldc`。
+默认情况下，Automan会扫描目标或`dir`中的几个目录：
+
+- 当前目录
+- src目录
+- inc目录
+- include目录
+
+如果这些目录中发现有合法的源码文件，如`.c`，`.h`文件，Automan会收集相关信息，并用于生成最终的构建脚本。
+
+多个节点如果只需要提供名称，其他情况下都用默认值的话，也可以直接用数组：
+
+```rust
+app("hello") {
+  dirs: ["a", "b", "c"]
+}
+```
+
+相当于
+
+```rust
+app("hello") {
+    dir("a") {}
+    dir("b") {}
+    dir("c") {}
+}
+
+`lib`节点和`app`节点类似，都是独立的编译目标。区别是`app`会被编译成可执行文件，而`lib`会被编译成静态库。
+在IAR或GHS中，整个工程是一个统一的编译目标，此时app以及它对应的所有依赖的lib/dep/device都会被当做普通目录合并到一起。
+
+`dep`节点和普通的`lib`节点类似，都是编译库。区别在于`lib`是项目内部定义的库，而`dep`是从网络上下载的库。
+
+`dep`节点定义方式如下：
+
+```rust
+dep("log", version:"0.0.2") {
+    at: "source/lib/log"
+    // 其他参数
+}
+```
+
+这里如果不声明version字段，则会默认使用最新版，即git仓库中的master:HEAD。
+如果不指定`at`属性，则下载的`log`库会默认放在`$PROJECT_ROOT/deps/log`目录中。
+
+因此，最简单的依赖声明方式如下：
+
+```rust
+dep("log") {}
+```
+
+注意，`dep`目标只负责下载到本地，但是如果本地的`app`或`lib`需要使用它（即链接它）时，需要用`link`节点来指定：
+
+```rust
+
+app("hello") {
+    link("log") {}
+}
+```
+
+此时，`log`工程才会被认为是`hello`目标的链接库，一起编译。
+
+`device`和`dep`概念相似，唯一的区别是`device`用作拉取硬件相关的资源，考虑到架构差异，Automan是用不同的索引管理的。
+
+`bag`是一个特殊的代码包，本身并不是独立的编译目标，而是用来组织一些散落在目录结构中各处的代码。`app`和`lib`可以用`link`来依赖它们。有`bag`节点，我们可以更好地管理多个`app`公用的代码目录。
+
 ## 示例：新建工程
 
 新建工程有如下几个命令：
@@ -213,6 +384,7 @@ int main(void) {
 - `app`：可执行的应用程序
 - `lib`：代码库
 - `dep`：依赖库，它本身是一个`lib`代码包
+- `bag`：普通代码包，它并不是独立的构建单元，但是可以用来组织代码
 - `test`：测试库
 - `doc`：文档
 
