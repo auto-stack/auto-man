@@ -216,21 +216,24 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     };
 
     // write to am.at
-    let am_at_file = File::create(install_path.join("am.at"))?;
+    let am_at_file = install_path.join("am.at");
+    let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/am.at";
+    let page = get(am_url)?.text()?;
+    std::fs::write(&am_at_file, page)?;
 
-    let mut w = BufWriter::new(am_at_file);
-    writeln!(w, "// index bases")?;
-    writeln!(w, "index: {{")?;
-    for i in 0..index_bases.len() {
-        writeln!(w, "    {}: \"{}\"", index_bases[i], index_urls[i])?;
-    }
-    writeln!(w, "}}\n")?;
-    writeln!(w, "// default index")?;
-    writeln!(w, "default_index: \"{}\"\n", name)?;
-    writeln!(w, "// location to store automan related configurations")?;
-    let install_dir = install_path.to_str().unwrap();
-    writeln!(w, "am: \"{}\"", install_dir)?;
-    println!("am.at written to {}", install_dir);
+    // let mut w = BufWriter::new(am_at_file);
+    // writeln!(w, "// index bases")?;
+    // writeln!(w, "index: {{")?;
+    // for i in 0..index_bases.len() {
+    //     writeln!(w, "    {}: \"{}\"", index_bases[i], index_urls[i])?;
+    // }
+    // writeln!(w, "}}\n")?;
+    // writeln!(w, "// default index")?;
+    // writeln!(w, "default_index: \"{}\"\n", name)?;
+    // writeln!(w, "// location to store automan related configurations")?;
+    // let install_dir = install_path.to_str().unwrap();
+    // writeln!(w, "am: \"{}\"", install_dir)?;
+    println!("am.at written to {}", am_at_file.display());
     Ok(())
 }
 
