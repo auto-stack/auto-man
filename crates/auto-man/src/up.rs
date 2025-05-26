@@ -200,7 +200,7 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     let index_urls = vec![
         "git@gitee.com:auto-stack/auto-index.git",
         "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git",
-        "https://gitlab.boevxa.lan/ds/platform/boevxabafdemo/gitlabindex",
+        "ssh://git@gitlab.boevxa.lan:2424/ds/platform/boevxabafdemo/gitlabindex.git",
     ];
 
     // let url = if selection == 2 {
