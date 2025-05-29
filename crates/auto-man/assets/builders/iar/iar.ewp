@@ -660,7 +660,7 @@
                 <option>
                     <name>OOCOutputFormat</name>
                     <version>3</version>
-                    <state>0</state>
+                    <state>@{extout.format}</state>
                 </option>
                 <option>
                     <name>OCOutputOverride</name>
@@ -668,7 +668,7 @@
                 </option>
                 <option>
                     <name>OOCOutputFile</name>
-                    <state>amdemo.srec</state>
+                    <state>@{extout.name}</state>
                 </option>
                 <option>
                     <name>OOCCommandLineProducer</name>
@@ -676,7 +676,7 @@
                 </option>
                 <option>
                     <name>OOCObjCopyEnable</name>
-                    <state>0</state>
+                    <state>@{extout.enable}</state>
                 </option>
             </data>
         </settings>

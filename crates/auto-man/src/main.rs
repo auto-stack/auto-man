@@ -1,18 +1,10 @@
-use std::{
-    process::{Command, Stdio},
-    thread::sleep,
-};
-
-use auto_lang::config::AutoConfig;
 use auto_man::*;
-use auto_val::{AutoPath, AutoStr};
+use auto_val::AutoStr;
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use dialoguer::Select;
 use log::*;
-use reqwest::blocking::get;
 use simplelog::*;
-use zip::ZipArchive;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, subcommand_required = true)]

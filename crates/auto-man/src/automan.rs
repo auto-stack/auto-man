@@ -131,6 +131,9 @@ impl Automan {
                 .map(|t| t.to_astr())
                 .collect();
         }
+        if index_used.is_empty() {
+            index_used.push("default".into());
+        }
         let mut pac = Pac::new(config);
         let index_store = Self::index_store(am_config, index_used)?;
         info!("loading index store from {}", index_store.path.to_astr());

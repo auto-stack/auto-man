@@ -160,7 +160,9 @@ impl Target {
         // name
         let mut name = AutoStr::new();
         let mut version = AutoStr::new();
-        if !node.args.is_empty() {
+        if !node.id.is_empty() {
+            name = node.id.clone();
+        } else if !node.args.is_empty() {
             name = node.args.args[0].to_astr();
             if node.args.args.len() > 1 {
                 version = node.args.args[1].to_astr();
@@ -411,12 +413,58 @@ impl Target {
             nb.add_prop("libs", Value::empty_array());
         }
 
-        // groups for IAR
+        // For IAR
+        // TODO: move these into IAR module
         if self.is_major() && self.port.builder == "iar" {
             nb.add_prop("groups", self.groups().to_xml());
         }
         nb.add_prop("defines", Value::str_array(self.defines.clone()));
+
+        if self.port.builder == "iar" {
+            let mut xo = "none".into();
+            if self.props.has("extra_output") {
+                xo = self.props.get_str_or("extra_output", xo);
+            };
+            nb.add_prop("extout", self.get_extra_output(&xo));
+        }
         nb
+    }
+
+    fn get_extra_output(&self, extra_output: &str) -> Obj {
+        let mut o = Obj::new();
+        match extra_output {
+            "srec" => {
+                o.set("name", format!("{}.srec", self.local_name()));
+                o.set("format", 0);
+                o.set("enable", 1);
+            }
+            "hex" => {
+                o.set("name", format!("{}.hex", self.local_name()));
+                o.set("format", 1);
+                o.set("enable", 1);
+            }
+            "txt" => {
+                o.set("name", format!("{}.txt", self.local_name()));
+                o.set("format", 2);
+                o.set("enable", 1);
+            }
+            "bin" => {
+                o.set("name", format!("{}.bin", self.local_name()));
+                o.set("format", 3);
+                o.set("enable", 1);
+            }
+            "sim" => {
+                o.set("name", format!("{}.sim", self.local_name()));
+                o.set("format", 4);
+                o.set("enable", 1);
+            }
+            _ => {
+                o.set("name", format!("{}.srec", self.local_name()));
+                o.set("format", 0);
+                o.set("enable", 0);
+            }
+        };
+        o
     }
 
     pub fn is_major(&self) -> bool {
