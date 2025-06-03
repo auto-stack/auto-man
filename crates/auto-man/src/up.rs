@@ -221,7 +221,9 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     let page = get(am_url)?.text()?;
     let home_dir = dirs::home_dir().unwrap();
     let home_dir = home_dir.to_str().unwrap();
+    println!("page:{}", page);
     let page = page.replace("${HOME}", home_dir);
+    println!("page:{}", page);
     std::fs::write(&am_at_file, page)?;
 
     // let mut w = BufWriter::new(am_at_file);
