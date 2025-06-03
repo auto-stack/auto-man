@@ -6,4 +6,4 @@ index: {
 }
 
 // location to store automan related configurations
-am: "C:\Users\zhaop\.auto\auto-man"
+am: "${HOME}/.auto/auto-man"

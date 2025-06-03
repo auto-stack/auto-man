@@ -219,6 +219,9 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     let am_at_file = install_path.join("am.at");
     let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/am.at";
     let page = get(am_url)?.text()?;
+    let home_dir = dirs::home_dir().unwrap();
+    let home_dir = home_dir.to_str().unwrap();
+    let page = page.replace("${HOME}", home_dir);
     std::fs::write(&am_at_file, page)?;
 
     // let mut w = BufWriter::new(am_at_file);
