@@ -57,7 +57,8 @@ impl Automan {
         let home = dirs::home_dir().ok_or("Can't open home dir")?;
         let auto_dir = home.join(".auto").join("auto-man");
         let am_at_file = auto_dir.join("am.at");
-        let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/am.at";
+        let am_url =
+            "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-man/assets/am.at";
         let page = get(am_url)?.text()?;
         std::fs::write(&am_at_file, page)?;
         info!("updated {}", am_at_file.display());
@@ -184,7 +185,7 @@ impl Automan {
         let state_file = Self::get_state_file()?;
         let state = AutoConfig::read(&state_file.path())?;
 
-        let port_name = state.root.props.get_str_of("port");
+        let port_name = state.root.get_prop("port").to_astr();
         if !port_name.is_empty() {
             Ok(Some(port_name))
         } else {

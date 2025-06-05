@@ -177,28 +177,28 @@ impl Target {
 
         // is_scan
         let is_scan = if node.has_prop("scan") {
-            node.props.get_bool_of("scan")
+            node.get_prop("scan").to_bool()
         } else {
             true
         };
 
         // recurse
         let recurse = if node.has_prop("recurse") {
-            node.props.get_bool_of("recurse")
+            node.get_prop("recurse").to_bool()
         } else {
             false
         };
 
         // at
         let mut at = if node.has_prop("at") {
-            node.props.get_str_of("at")
+            node.get_prop("at").to_astr()
         } else {
             get_root_dir(&name, &kind, &pac)
         };
 
         // parent
         let parent = if node.has_prop("parent") {
-            node.props.get_str_of("parent")
+            node.get_prop("parent").to_astr()
         } else {
             AutoStr::default()
         };
@@ -214,17 +214,17 @@ impl Target {
         }
 
         // selects
-        let mut selects = node.props.get_array_of_str("selects").to_set();
+        let mut selects = node.get_prop("selects").to_str_vec().to_set();
         // defaults
-        let defaults = node.props.get_array_of_str("defaults").to_set();
+        let defaults = node.get_prop("defaults").to_str_vec().to_set();
         if !defaults.is_empty() {
             selects.extend(defaults);
         }
         // check for skips
-        let skips = node.props.get_array_of_str("skips").to_set();
+        let skips = node.get_prop("skips").to_str_vec().to_set();
 
         // dirs
-        let dirs = node.props.get_array_of_str("dirs");
+        let dirs = node.get_prop("dirs").to_str_vec();
         // dirs.push(".".into());
         let mut dirs: Vec<Dir> = dirs
             .into_iter()
@@ -251,13 +251,13 @@ impl Target {
             .collect::<HashMap<AutoStr, Dir>>();
 
         // check for srcs
-        let srcs = node.props.get_array_of_str("srcs").to_set();
+        let srcs = node.get_prop("srcs").to_str_vec().to_set();
         // check for incs
-        let incs = node.props.get_array_of_str("incs").to_set();
+        let incs = node.get_prop("incs").to_str_vec().to_set();
         // check for links
         let links = node.get_kids("link");
         // check for props (dep target only)
-        let props = node.props.clone();
+        let props = node.props_clone();
 
         let is_main = name == pac;
 
@@ -579,7 +579,7 @@ impl Target {
     // TODO: only allow args to be overrided
     pub fn merge_link(&mut self, link: &Node) {
         // currently only support normal props override
-        for (k, v) in link.props.iter() {
+        for (k, v) in link.props_iter() {
             self.props.set(k.clone(), v.clone());
         }
     }

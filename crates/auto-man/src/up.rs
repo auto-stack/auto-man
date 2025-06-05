@@ -33,7 +33,7 @@ pub struct ReleaseInfo {
 
 fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
     let url = format!(
-        "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/{}.at",
+        "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-man/assets/{}.at",
         name
     );
 
@@ -48,7 +48,7 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
     let mut versions = vec![];
     for r in releases.iter() {
         println!("Release: {}", r);
-        let v = r.props.get_str_or("version", "unknown");
+        let v = r.get_prop("version").to_astr_or("unknown");
         versions.push(v);
     }
     versions.sort_by(|a, b| match VersionCompare::compare(a, b) {
@@ -73,9 +73,9 @@ fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
 
     let mut url = AutoStr::new();
     for r in &releases {
-        let v = r.props.get_str_or("version", "unknown");
+        let v = r.get_prop("version").to_astr_or("unknown");
         if v == version {
-            url = r.props.get_str_or("url", "unknown").clone();
+            url = r.get_prop("url").to_astr_or("unknown").clone();
         }
     }
     if url == "unknown" || url.is_empty() {
@@ -98,7 +98,7 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
     if au_conf.is_file() {
         // look for installation dir
         let conf = AutoConfig::read(&au_conf)?;
-        let install_dir = conf.root.props.get_str_of("auto-man");
+        let install_dir = conf.root.get_prop_of("auto-man").to_astr();
         println!("Last installation directory for {}: {}", tool, install_dir);
         return Ok(install_dir);
     } else {
@@ -217,7 +217,7 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
 
     // write to am.at
     let am_at_file = install_path.join("am.at");
-    let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-up/assets/am.at";
+    let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-man/assets/am.at";
     let page = get(am_url)?.text()?;
     let home_dir = dirs::home_dir().unwrap();
     let home_dir = home_dir.to_str().unwrap();

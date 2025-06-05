@@ -66,7 +66,7 @@ impl Pac {
     pub fn new(config: AutoConfig) -> Self {
         let pac_name = config.name();
         let version = config.version();
-        let props = config.root.props.clone();
+        let props = config.root.props_clone();
 
         // ports
         let mut ports = config.root.get_nodes("port");
@@ -82,8 +82,8 @@ impl Pac {
 
         // defines
         let mut defines = vec![];
-        if config.root.props.has("defines") {
-            defines = config.root.props.get_array_of_str("defines");
+        if config.root.has_prop("defines") {
+            defines = config.root.get_prop("defines").to_str_vec();
         }
 
         // target related properties
@@ -269,7 +269,7 @@ impl Pac {
         let state_file = self.get_state_file()?;
         let state = AutoConfig::read(&state_file.path())?;
 
-        let port_name = state.root.props.get_str_of("port");
+        let port_name = state.root.get_prop("port").to_astr();
         if !port_name.is_empty() {
             self.set_port(port_name)?;
         } else {
@@ -285,7 +285,7 @@ impl Pac {
     pub fn save_port(&mut self, port: AutoStr) -> AutoResult<()> {
         let state_file = self.get_state_file()?;
         let mut state = AutoConfig::read(&state_file.path())?;
-        state.root.props.set("port", port.clone());
+        state.root.set_prop("port", port.clone());
         state.save(&state_file)?;
         Ok(())
     }
@@ -612,7 +612,7 @@ impl Pac {
         };
 
         // props
-        let props = port_node.props.clone();
+        let props = port_node.props_clone();
         self.props.merge(&props);
 
         // targets
@@ -623,9 +623,9 @@ impl Pac {
 
         let mut port = Port::default();
         port.name = port_node.main_arg().to_astr();
-        port.builder = port_node.props.get_str_of("builder");
-        port.platform = port_node.props.get_str_of("platform");
-        port.at = port_node.props.get_str_of("at");
+        port.builder = port_node.get_prop("builder").to_astr();
+        port.platform = port_node.get_prop("platform").to_astr();
+        port.at = port_node.get_prop("at").to_astr();
         self.port = port;
         Ok(())
     }

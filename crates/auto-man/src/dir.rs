@@ -61,7 +61,7 @@ impl Dir {
         let name = AutoStr::from(node.args.args[0].to_astr());
         let parent_path = Path::new(parent.as_str());
         let rel_path = if node.has_prop("at") {
-            node.props.get_str_of("at")
+            node.get_prop("at").to_astr()
         } else {
             name.clone()
         };
@@ -70,27 +70,27 @@ impl Dir {
 
         // info!("making Dir {}::{} with root: {}", parent, name, root);
         let scan = if node.has_prop("scan") {
-            node.props.get_bool_of("scan")
+            node.get_prop("scan").to_bool()
         } else {
             true
         };
 
         let recurse = if node.has_prop("recurse") {
-            node.props.get_bool_of("recurse")
+            node.get_prop("recurse").to_bool()
         } else {
             false
         };
 
         let headers = if node.has_prop("headers") {
-            node.props.get_bool_of("headers")
+            node.get_prop("headers").to_bool()
         } else {
             false
         };
 
         // TODO read srcs, incs, skips from node
         let mut dirs = node
-            .props
-            .get_array_of_str("dirs")
+            .get_prop("dirs")
+            .to_str_vec()
             .into_iter()
             .map(|s| Dir::from_str(s, at.clone(), target_kind.clone()))
             .collect::<Vec<Dir>>();
@@ -101,13 +101,12 @@ impl Dir {
             dirs.push(dir);
         }
 
-        let srcs = node.props.get_array_of_str("srcs");
-        let incs = node.props.get_array_of_str("incs");
+        let srcs = node.get_prop("srcs").to_str_vec();
+        let incs = node.get_prop("incs").to_str_vec();
         let skips = node
-            .props
-            .get_array_of_str("skips")
+            .get_prop("skips")
+            .to_str_vec()
             .into_iter()
-            .map(|s| AutoStr::from(s))
             .collect::<HashSet<AutoStr>>();
         // info!("dir contents: {}", name);
         // info!("root: {}", root);
@@ -184,20 +183,20 @@ impl Dir {
     pub fn to_node(&self) -> Node {
         let mut node = Node::new("dir");
         node.args.add_pos(self.name.clone());
-        node.props.set("root", self.at.clone());
-        node.props.set("srcs", self.srcs.clone());
-        node.props.set("incs", self.incs.clone());
-        node.props.set("lpath", self.lpath.clone());
+        node.set_prop("root", self.at.clone());
+        node.set_prop("srcs", self.srcs.clone());
+        node.set_prop("incs", self.incs.clone());
+        node.set_prop("lpath", self.lpath.clone());
         // relative path
-        node.props.set("rpath", self.rpath.clone());
-        node.props.set(
+        node.set_prop("rpath", self.rpath.clone());
+        node.set_prop(
             "skips",
             self.skips.clone().into_iter().collect::<Vec<AutoStr>>(),
         );
 
         // add sub dirs
         if self.dirs.is_empty() {
-            node.props.set("dirs", Array::new());
+            node.set_prop("dirs", Array::new());
         }
         for dir in &self.dirs {
             let n = dir.to_node();
