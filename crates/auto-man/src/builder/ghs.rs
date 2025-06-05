@@ -207,7 +207,7 @@ impl Builder for GHSBuilder {
     }
 
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
-        self.gen.gen();
+        self.gen.gen_all();
         for app in &self.apps {
             app.gen()?;
         }

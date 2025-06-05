@@ -24,7 +24,7 @@ impl IARBuilder {
     }
 
     fn new_gen(path: &AutoPath) -> AutoGen {
-        AutoGen::new().out(path.clone()).note('@').is_rename(true)
+        AutoGen::new().out(path.clone()).note('@').rename(true)
     }
 
     fn check_devices(&self, pac: &mut Pac) -> AutoResult<()> {
@@ -105,9 +105,9 @@ impl Builder for IARBuilder {
     }
 
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
-        self.gen.gen();
+        self.gen.gen_all();
         for g in &self.app_gens {
-            g.gen();
+            g.gen_all();
         }
         Ok(())
     }

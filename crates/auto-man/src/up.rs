@@ -1,29 +1,16 @@
-use crate::AUTOMAN_VERSION;
 use auto_lang::config::AutoConfig;
 use auto_val::{AutoPath, AutoResult, AutoStr};
 use colored::Colorize;
 use dialoguer::{console::Style, theme::ColorfulTheme, Input, Select};
 use reqwest::blocking::get;
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::OnceLock;
 use std::{cmp::Ordering, env};
 use version_compare::{CompOp, VersionCompare};
 use zip::ZipArchive;
 
-const AUTOUP_VERSION: &str = AUTOMAN_VERSION;
 static MY_THEME: OnceLock<ColorfulTheme> = OnceLock::new();
-fn select_tool() -> AutoResult<AutoStr> {
-    // Implement logic to select a tool
-    let tools = vec!["auto-man"]; //, "auto-lang", "auto-ui"];
-    let selection = Select::with_theme(MY_THEME.get().unwrap())
-        .with_prompt("Which tool do you want to install?")
-        .default(0)
-        .items(&tools)
-        .interact()?;
-    Ok(tools[selection].into())
-}
 
 pub struct ReleaseInfo {
     pub name: AutoStr,
