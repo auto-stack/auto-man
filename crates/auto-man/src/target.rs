@@ -473,7 +473,7 @@ impl Target {
 
     pub fn to_atom(&self) -> Atom {
         let mut atom = Atom::node(self.to_nodebody());
-        atom.name = self.local_name();
+        atom.name = self.name.clone();
         atom
     }
 
@@ -487,6 +487,7 @@ impl Target {
         };
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
+        node.id = self.name.clone();
         node.body = self.to_nodebody();
         // node.props.set("name", self.local_name().clone());
         // node.props.set("id", self.local_name().clone());

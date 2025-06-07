@@ -929,6 +929,7 @@ impl Pac {
     pub fn to_nodebody(&self) -> NodeBody {
         let mut nb = NodeBody::new();
         // name prop is the first positional arg
+        nb.add_prop("id", self.name.clone());
         nb.add_prop("name", self.name.clone());
         nb.add_prop("version", self.version.clone());
         let mut all_incs = self.all_incs();

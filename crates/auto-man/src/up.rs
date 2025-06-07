@@ -20,7 +20,7 @@ pub struct ReleaseInfo {
 
 fn list_releases(name: &AutoStr) -> AutoResult<ReleaseInfo> {
     let url = format!(
-        "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-man/assets/{}.at",
+        "https://gitee.com/auto-stack/auto-man/raw/master/config/{}.at",
         name
     );
 
@@ -204,7 +204,7 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
 
     // write to am.at
     let am_at_file = install_path.join("am.at");
-    let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/crates/auto-man/assets/am.at";
+    let am_url = "https://gitee.com/auto-stack/auto-man/raw/master/config/am.at";
     let page = get(am_url)?.text()?;
     let home_dir = dirs::home_dir().unwrap();
     let home_dir = home_dir.to_str().unwrap();

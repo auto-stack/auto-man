@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/auto-man"]
 resolver = "2"
 default-run = "auto-man"
 
