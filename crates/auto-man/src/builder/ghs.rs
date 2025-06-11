@@ -63,7 +63,7 @@ impl GHSBuilder {
         let rel_depth = self.path.depth() + dir.logical_depths() - 1;
         let rel = "../".repeat(rel_depth);
         dir_node.add_prop("rel", rel.clone());
-        let atom = Atom::node(dir_node);
+        let atom = Atom::node_body(dir_node);
         let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
         self.subprojects.push(lib_gen);
 
@@ -161,7 +161,7 @@ impl Builder for GHSBuilder {
             // app_node.add_prop("incs", all_incs.clone());
             app_node.add_prop("device_inc", device_inc.clone());
             // app_node.add_prop("defines", defines.clone());
-            let atom = Atom::node(app_node);
+            let atom = Atom::node_body(app_node);
             let app_gen = OneGen::new(app_mold, atom).out(AutoPath::new(ghs_loc.clone()));
             self.apps.push(app_gen);
 
@@ -192,7 +192,7 @@ impl Builder for GHSBuilder {
                 lib_node.add_prop("device_dir", device_dir.clone());
                 lib_node.add_prop("incs", all_incs.clone());
                 lib_node.add_prop("device_inc", device_inc.clone());
-                let atom = Atom::node(lib_node);
+                let atom = Atom::node_body(lib_node);
                 let lib_gen = OneGen::new(lib_mold, atom).out(AutoPath::new(ghs_loc.clone()));
                 self.apps.push(lib_gen);
 

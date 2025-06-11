@@ -1099,7 +1099,7 @@ impl Pac {
     }
 
     pub fn to_atom(&self) -> Atom {
-        let mut atom = Atom::node(self.to_nodebody());
+        let mut atom = Atom::node_body(self.to_nodebody());
         atom.name = self.name.clone();
         atom
     }
