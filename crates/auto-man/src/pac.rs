@@ -105,7 +105,8 @@ impl Pac {
                     }
                 }
 
-                let target = Target::from(n, pac_name.clone());
+                let mut target = Target::from(n, pac_name.clone());
+                target.set_defines(defines.clone());
                 targets.push(target);
             }
         }

@@ -21,6 +21,7 @@ pub use pac::*;
 pub use port::*;
 pub use target::*;
 
-pub type AutoError = Box<dyn std::error::Error>;
-pub type AutoResult<T> = Result<T, AutoError>;
+pub use auto_val::AutoError;
+pub use auto_val::AutoResult;
+
 pub const AUTOMAN_VERSION: &str = "v0.0.21";

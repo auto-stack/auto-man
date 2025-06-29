@@ -319,7 +319,7 @@ impl Dir {
             // info!("scanning sub dir: {}", dir.root);
             dir.scan()?;
             all_incs.extend(dir.incs.clone());
-            // all_srcs.extend(dir.srcs.clone());
+            all_srcs.extend(dir.srcs.clone());
         }
 
         self.srcs = all_srcs.into_iter().collect();

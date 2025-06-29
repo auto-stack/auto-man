@@ -34,6 +34,22 @@ impl CMakeBuilder {
     }
 }
 
+fn print_vec(list: &Vec<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
+    // sort the list
+    let mut sorted_list = list.clone();
+    sorted_list.sort();
+
+    if sorted_list.len() == 1 {
+        out.write(format!("{}", sorted_list[0].as_str()).as_bytes())?;
+    } else {
+        out.write(b"\n")?;
+        for item in sorted_list.iter() {
+            out.write(format!("    {}\n", item.as_str()).as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
 fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
     // sort the list
     let mut sorted_list = list.iter().collect::<Vec<_>>();
@@ -134,6 +150,18 @@ impl Builder for CMakeBuilder {
             };
             out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
             print_list(&target.incs, out)?;
+            out.write(b")\n")?;
+        }
+
+        // defines
+        if !target.defines.is_empty() {
+            let attr = if is_header_only {
+                "INTERFACE"
+            } else {
+                "PUBLIC"
+            };
+            out.write(format!("target_compile_definitions({} {} ", target.name, attr).as_bytes())?;
+            print_vec(&target.defines, out)?;
             out.write(b")\n")?;
         }
 

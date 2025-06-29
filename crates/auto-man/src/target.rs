@@ -699,7 +699,7 @@ impl Target {
             // info!("scanning dir: {}", dir.to_string());
             dir.show_headers = self.show_headers;
             dir.scan()?;
-            // succ_srcs.extend(dir.srcs.clone());
+            succ_srcs.extend(dir.srcs.clone());
             succ_incs.extend(dir.incs.clone());
         }
         self.dirs = dirs;
