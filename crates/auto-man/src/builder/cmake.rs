@@ -82,6 +82,10 @@ impl Builder for CMakeBuilder {
     }
 
     fn setup(&mut self, pac: &mut Pac) -> AutoResult<()> {
+        // load srcs in sub dirs into targets
+        pac.collect_srcs()?;
+
+        // setup cmake file header
         self.clear_cmake_file()?;
         self.out.write(b"cmake_minimum_required(VERSION 3.22)\n")?;
         self.out
@@ -127,6 +131,7 @@ impl Builder for CMakeBuilder {
         };
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
+        // warn!("Target [{}] srcs: {:?}", target.name, target.srcs);
 
         out.write(format!("{}({} ", cmd, target.name).as_bytes())?;
         if is_header_only {

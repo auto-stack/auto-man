@@ -899,6 +899,13 @@ impl Pac {
         // }
         Ok(())
     }
+
+    pub(crate) fn collect_srcs(&mut self) -> AutoResult<()> {
+        for t in self.targets.iter_mut() {
+            t.collect_srcs()?;
+        }
+        Ok(())
+    }
 }
 
 fn path_depth(path: &AutoStr) -> u32 {

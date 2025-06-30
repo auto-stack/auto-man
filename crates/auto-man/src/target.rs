@@ -699,7 +699,8 @@ impl Target {
             // info!("scanning dir: {}", dir.to_string());
             dir.show_headers = self.show_headers;
             dir.scan()?;
-            succ_srcs.extend(dir.srcs.clone());
+            // NOTE: srcs in dirs should be included into the target in needed builder
+            // succ_srcs.extend(dir.srcs.clone());
             succ_incs.extend(dir.incs.clone());
         }
         self.dirs = dirs;
@@ -792,6 +793,24 @@ impl Target {
             self.group_target(g, t);
         }
         group
+    }
+
+    pub(crate) fn collect_srcs(&mut self) -> AutoResult<()> {
+        // warn!("Colelecting srcs: [{}]", self.name);
+        let mut sub_srcs = HashSet::new();
+        for d in self.dirs.values() {
+            let dir_srcs = d.collect_srcs()?;
+            // warn!("collected from [{}]: {:?}", d.name, dir_srcs);
+            sub_srcs.extend(dir_srcs);
+        }
+        self.srcs.extend(sub_srcs);
+
+        if !self.deps.is_empty() {
+            for dep in self.deps.iter_mut() {
+                dep.collect_srcs()?;
+            }
+        }
+        Ok(())
     }
 }
 

@@ -319,12 +319,25 @@ impl Dir {
             // info!("scanning sub dir: {}", dir.root);
             dir.scan()?;
             all_incs.extend(dir.incs.clone());
-            all_srcs.extend(dir.srcs.clone());
+            // all_srcs.extend(dir.srcs.clone());
         }
 
         self.srcs = all_srcs.into_iter().collect();
         self.incs = all_incs.into_iter().collect();
         Ok(())
+    }
+
+    pub fn collect_srcs(&self) -> AutoResult<Vec<AutoStr>> {
+        let mut all_srcs = Vec::new();
+
+        all_srcs.extend(self.srcs.clone());
+
+        for dir in self.dirs.iter() {
+            // info!("scanning sub dir: {}", dir.root);
+            all_srcs.extend(dir.collect_srcs()?)
+        }
+
+        Ok(all_srcs)
     }
 
     pub fn append_root(&mut self, root: AutoStr) {
