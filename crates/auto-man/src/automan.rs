@@ -210,7 +210,7 @@ impl Automan {
     }
 
     pub fn open_ide(&mut self) -> AutoResult<()> {
-        println!("builder: {}", self.pac.build_location);
+        println!("build dir: {}", self.pac.build_location);
         println!("port: {}", self.pac.port.name);
         match self.pac.port.builder.as_str() {
             "iar" => {
@@ -234,7 +234,20 @@ impl Automan {
                     .arg(ghs_path.as_str())
                     .output()?;
             }
+            "cmake" => {
+                // in windows, there should be a .sln project in build dir
+                let sln_path = AutoPath::new(self.pac.build_location.as_str())
+                    .join("build")
+                    .join(self.pac.name.to_string() + ".sln")
+                    .to_astr()
+                    .replace("/", "\\");
+                println!("sln: {}", sln_path.clone());
+                std::process::Command::new("explorer.exe")
+                    .arg(sln_path.as_str())
+                    .output()?;
+            }
             _ => {
+                println!("port builder: {}", self.pac.port.builder);
                 todo!()
             }
         }
