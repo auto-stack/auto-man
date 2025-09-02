@@ -61,45 +61,66 @@ app demo {
 Schema | 类型声明 | 函数声明
 Node（节点实例） | 对象（类型实例化） | 返回值（函数调用）
 
-Schema的例子：
+例如，我们要用`dir`和`file`两个节点类型来描述文件系统，可以这么定义
 
 ```rust
-node src (path str) {}
-
-node dir (id sym) {
-    at str
+// dir节点有一个path属性
+node dir(path str) {
+    // lib节点的子节点可以是dir（子文件夹）和file（文件）类型
+    []dir
+    []file
 }
 
-// 声明一个tag名称为lib的节点类型
-node lib (id sym) {
-    // 属性声明
-    at str
-
-    // 子节点声明
-    kids: [src, dir]
+// file节点也有path属性
+node file(path str) {
+    // file节点没有子节点
 }
 ```
 
 节点实例化的例子：
 
 ```rust
-lib my_math {
-    at: "lib/my_math"
-
-    dir("src") {}
-
-    dirs: ["include", "source"]
+dir ("~/code/hello") {
+    dir ("src") {
+        file {"main.c"}
+        file {"test.c"}
+    }
+    dir ("inc") {
+        file {"hello.h"}
+    }
+    file {"pac.at"}
 }
 ```
 
-注意，这里的`dir`节点和`dirs`数组都会转化为`my_math`的子目录节点。
+对于Automan中用到的几种节点，如lib和app，定义如下：
+
+```rust
+node lib(id, at str) {
+    []dir
+    []src
+    []inc
+    []link
+}
+
+node app(id, at str) {
+    []dir
+    []src
+    []inc
+    []link
+}
+
+node src(path str) {}
+node inc(path str) {}
+node link(id) {}
+```
+
 
 ### 半实例化
 
 由于某些节点需要多个实例，但每个实例又有公共的内容，因此我们需要半实例化的节点，先把公共部分数据准备好，再在需要的地方进一步完成实例化。
 
 ```rust
-lib my_math? (use_float: true) {
+fn my_math (use_float: true) {
     at: "lib/my_math"
     dirs: ["include", "source"]
     if use_float {
