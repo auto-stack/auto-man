@@ -717,6 +717,30 @@ impl Target {
             dep.scan()?;
         }
 
+
+        self.scan_auto()?;
+
+        Ok(())
+    }
+
+    fn scan_auto(&mut self) -> AutoResult<()> {
+        let mut auto_files = Vec::new();
+        // 1. check target's root folder for auto files
+        let root = Path::new(self.at.as_str());
+        for entry in root.read_dir()? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() && path.extension() == Some(std::ffi::OsStr::new("at")) {
+                // exclude pac.at
+                if path.file_name() == Some(std::ffi::OsStr::new("pac.at")) {
+                    continue;
+                }
+                auto_files.push(path.unified());
+            }
+        }
+
+        self.autos.extend(auto_files);
+
         Ok(())
     }
 
