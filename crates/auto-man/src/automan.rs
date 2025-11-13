@@ -464,37 +464,6 @@ mod tests {
         use std::env;
         println!("home: {}", env::var("HOME").unwrap());
     }
-
-    #[test]
-    fn test_git() {
-        use git2::Cred;
-        use git2::RemoteCallbacks;
-        // Prepare callbacks.
-        // let rsa_path = dirs::home_dir().unwrap().join(".ssh/id_rsa");
-        let rsa_path = AutoPath::new("D://.am/id_rsa").normalized();
-        // format!("{}/.ssh/id_rsa", env::var("HOME").unwrap());
-        println!("rsa_path: {}", rsa_path);
-        // read the rsa file
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            println!("username_from_url: {}", username_from_url.unwrap());
-            Cred::ssh_key(username_from_url.unwrap(), None, rsa_path.path(), None)
-        });
-
-        // Prepare fetch options.
-        let mut fo = git2::FetchOptions::new();
-        fo.remote_callbacks(callbacks);
-
-        // Prepare builder.
-        let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fo);
-
-        // Clone the project.
-        // match builder.clone(INDEX_REPO, Path::new("D://test_git")) {
-        // Ok(_) => println!("Repository cloned successfully"),
-        // Err(e) => println!("Failed to clone repository: {}", e),
-        // }
-    }
 }
 
 pub struct AmConfig {

@@ -1,11 +1,11 @@
 mod cmake;
 pub use cmake::*;
-
 mod iar;
 pub use iar::*;
-
 mod ghs;
 pub use ghs::*;
+mod ninja;
+pub use ninja::*;
 
 use crate::AutoResult;
 use crate::{Pac, Target};
