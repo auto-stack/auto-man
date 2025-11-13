@@ -731,8 +731,11 @@ impl Target {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() && path.extension() == Some(std::ffi::OsStr::new("at")) {
-                // exclude pac.at
-                if path.file_name() == Some(std::ffi::OsStr::new("pac.at")) {
+                // exclude pac.at/device.at
+                if path.file_name() == Some(std::ffi::OsStr::new("pac.at")) 
+                    || path.file_name() == Some(std::ffi::OsStr::new("device.at"))
+                    || path.file_name() == Some(std::ffi::OsStr::new("os.at"))
+                {
                     continue;
                 }
                 auto_files.push(path.unified());
