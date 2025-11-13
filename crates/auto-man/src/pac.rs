@@ -326,6 +326,11 @@ impl Pac {
                 self.builder = Some(new_builder(BuilderKind::GHS(build_path)));
                 self.set_show_headers();
             }
+            "ninja" => {
+                let path = build_path.join("build/build.ninja");
+                self.builder = Some(new_builder(BuilderKind::Ninja(build_path.join(path))));
+                self.set_show_headers();
+            }
             _ => {
                 panic!(
                     "Invalid port builder name: {}:{}",

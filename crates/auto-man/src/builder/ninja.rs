@@ -1,5 +1,6 @@
 use super::Builder;
-use auto_val::AutoStr;
+use auto_gen::AutoGen;
+use auto_val::{AutoPath, AutoStr};
 use log::*;
 use std::collections::HashSet;
 use std::fs::File;
@@ -7,63 +8,42 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::AutoResult;
-use crate::{Pac, Target, TargetKind};
+use crate::{Pac, Target};
 
 pub struct NinjaBuilder {
-    pub ninja_path: String,
+    pub gen: AutoGen,
+    pub path: AutoPath,
     pub out: Box<dyn Write>,
 }
 
 impl NinjaBuilder {
-    pub fn new(path: &str) -> Self {
+    pub fn new(path: AutoPath) -> Self {
+        let gen = Self::new_gen(&path);
         Self {
-            ninja_path: path.to_string(),
+            gen,
+            path,
             out: Box::new(std::io::sink()),
         }
     }
 
-    fn clear_ninja_file(&mut self) -> AutoResult<()> {
+    fn new_gen(path: &AutoPath) -> AutoGen {
+        AutoGen::new().out(path.clone()).note('$').rename(true)
+    }
+
+    fn reset_ninja_file(&mut self) -> AutoResult<()> {
         // check if path exists
-        if Path::new(&self.ninja_path).is_file() {
+        if Path::new(self.path.path()).is_file() {
             // remove file
-            std::fs::remove_file(&self.ninja_path)?;
+            std::fs::remove_file(self.path.path())?;
         }
-        let out = File::create(&self.ninja_path)?;
+        let parent = self.path.parent();
+        if !parent.is_dir() {
+            std::fs::create_dir_all(parent.path())?;
+        }
+        let out = File::create(self.path.path())?;
         self.out = Box::new(out);
         Ok(())
     }
-}
-
-fn print_vec(list: &Vec<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
-    // sort the list
-    let mut sorted_list = list.clone();
-    sorted_list.sort();
-
-    if sorted_list.len() == 1 {
-        out.write(format!("{}", sorted_list[0].as_str()).as_bytes())?;
-    } else {
-        out.write(b"\n")?;
-        for item in sorted_list.iter() {
-            out.write(format!("    {}\n", item.as_str()).as_bytes())?;
-        }
-    }
-    Ok(())
-}
-
-fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
-    // sort the list
-    let mut sorted_list = list.iter().collect::<Vec<_>>();
-    sorted_list.sort();
-
-    if sorted_list.len() == 1 {
-        out.write(format!("{}", sorted_list[0].as_str()).as_bytes())?;
-    } else {
-        out.write(b"\n")?;
-        for item in sorted_list.iter() {
-            out.write(format!("    {}\n", item.as_str()).as_bytes())?;
-        }
-    }
-    Ok(())
 }
 
 impl Builder for NinjaBuilder {
@@ -86,60 +66,43 @@ impl Builder for NinjaBuilder {
         pac.collect_srcs()?;
 
         // setup Ninja file header
-        self.clear_ninja_file()?;
-        self.out.write(b"Ninja_minimum_required(VERSION 3.22)\n")?;
-        self.out
-            .write(format!("project({} LANGUAGES C CXX ASM)\n", pac.name).as_bytes())?;
-        self.out.write(b"\n")?;
-        Ok(())
-    }
+        self.reset_ninja_file()?;
 
-    fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
-        let out = self.out.as_mut();
-        out.flush()?;
-        self.out = Box::new(std::io::sink());
+        // write header rules
+        self.out.write(
+            r#"# ninja build file
+rule cc
+    command = clang -c $in -o $out
+    description = Compiling $in
 
-        // run Ninja build to generate the win32 project
-        let mut cmd = std::process::Command::new("Ninja");
-        cmd.arg("-A win32").arg("-B build");
-        let status = cmd.status()?;
-        if !status.success() {
-            return Err(format!("Failed to run Ninja").into());
-        }
-        // run Ninja build to generate the executable
-        let status = std::process::Command::new("Ninja")
-            .arg("--build")
-            .arg("build")
-            .status()?;
-        if !status.success() {
-            return Err(format!("Failed to run Ninja").into());
-        }
-        println!("End of build");
+rule link
+    command = clang $in -o $out
+    description = Linking $out
+
+"#
+            .as_bytes(),
+        )?;
+
         Ok(())
     }
 
     fn target(&mut self, target: &Target) -> AutoResult<()> {
-        println!("building target {}", target.name);
+        println!("[ninja] building target {}", target.name);
         let out = self.out.as_mut();
 
-        let cmd = match target.kind {
-            TargetKind::App => "add_executable",
-            TargetKind::Bag => "add_library",
-            TargetKind::Lib => "add_library",
-            TargetKind::Dep => "add_library",
-            TargetKind::Device => "add_library",
-        };
+        out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
+        out.write(format!("build {}: link {}.o\n", target.name, target.name).as_bytes())?;
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
         // warn!("Target [{}] srcs: {:?}", target.name, target.srcs);
 
-        out.write(format!("{}({} ", cmd, target.name).as_bytes())?;
+        // out.write(format!("{}({} ", cmd, target.name).as_bytes())?;
         if is_header_only {
-            out.write(b"INTERFACE")?;
+            // out.write(b"INTERFACE")?;
         } else {
-            print_list(&target.srcs, out)?;
+            // print_list(&target.srcs, out)?;
         }
-        out.write(b")\n\n")?;
+        // out.write(b")\n\n")?;
 
         let incs = target
             .incs
@@ -153,9 +116,9 @@ impl Builder for NinjaBuilder {
             } else {
                 "PUBLIC"
             };
-            out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
-            print_list(&target.incs, out)?;
-            out.write(b")\n")?;
+            // out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
+            // print_list(&target.incs, out)?;
+            // out.write(b")\n")?;
         }
 
         // defines
@@ -165,27 +128,48 @@ impl Builder for NinjaBuilder {
             } else {
                 "PUBLIC"
             };
-            out.write(format!("target_compile_definitions({} {} ", target.name, attr).as_bytes())?;
-            print_vec(&target.defines, out)?;
-            out.write(b")\n")?;
+            // out.write(format!("target_compile_definitions({} {} ", target.name, attr).as_bytes())?;
+            // print_vec(&target.defines, out)?;
+            // out.write(b")\n")?;
         }
 
         if target.links.len() > 0 {
             for link in target.links.iter() {
-                out.write(
-                    format!("target_link_libraries({} {})\n", target.name, link.id()).as_bytes(),
-                )?;
+                // out.write(
+                // format!("target_link_libraries({} {})\n", target.name, link.id()).as_bytes(),
+                // )?;
             }
         }
 
-        out.write(b"\n")?;
+        // out.write(b"\n")?;
 
+        Ok(())
+    }
+
+    fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
+        let out = self.out.as_mut();
+        out.write(b"\n")?;
+        out.flush()?;
+        // self.out = Box::new(std::io::sink());
+        //
+        let build_path = self.path.parent();
+
+        println!("[ninja] calling ninja to build executable");
+
+        // run ninja to build
+        let mut cmd = std::process::Command::new("ninja");
+        cmd.current_dir(build_path.path());
+        let status = cmd.status()?;
+        if !status.success() {
+            return Err(format!("Failed to run Ninja").into());
+        }
+        println!("End of build");
         Ok(())
     }
 
     fn clean(&mut self) -> AutoResult<()> {
         // remove NinjaLists.txt
-        std::fs::remove_file(&self.ninja_path)?;
+        std::fs::remove_file(&self.path.path())?;
         // remove build directory
         std::fs::remove_dir_all("build")?;
 
@@ -203,8 +187,9 @@ impl Builder for NinjaBuilder {
 
     fn run(&mut self, pac: &Pac) -> AutoResult<()> {
         // run target
-        let target = pac.exe_path();
-        let status = std::process::Command::new(target).status()?;
+        let target = self.path.parent().join(&pac.name);
+        println!("[ninja] running exe: {}", target);
+        let status = std::process::Command::new(target.to_string()).status()?;
         if !status.success() {
             return Err(format!("Failed to run Ninja").into());
         }

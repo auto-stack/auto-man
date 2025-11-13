@@ -21,9 +21,10 @@ pub trait Builder {
 }
 
 pub enum BuilderKind {
-    CMake(String), // Cmake with path to CMakeLists.txt
-    IAR(AutoPath), // IAR with path to project folder
-    GHS(AutoPath), // GHS with path to project folder
+    CMake(String),   // Cmake with path to CMakeLists.txt
+    IAR(AutoPath),   // IAR with path to project folder
+    GHS(AutoPath),   // GHS with path to project folder
+    Ninja(AutoPath), // Ninja with path to build folder
 }
 
 pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
@@ -31,5 +32,6 @@ pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
         BuilderKind::CMake(path) => Box::new(CMakeBuilder::new(&path)),
         BuilderKind::IAR(path) => Box::new(IARBuilder::new(path)),
         BuilderKind::GHS(path) => Box::new(GHSBuilder::new(path)),
+        BuilderKind::Ninja(path) => Box::new(NinjaBuilder::new(path)),
     }
 }
