@@ -37,6 +37,13 @@ impl TargetKind {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum TargetOrigin {
+    Local,
+    Git,
+    Index,
+}
+
 impl fmt::Display for TargetKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -54,7 +61,9 @@ pub struct Target {
     pub name: AutoStr,
     pub version: AutoStr,
     pub kind: TargetKind,
-    pub at: AutoStr, // root dir of the target, including its name
+    pub origin: TargetOrigin,
+    pub from: AutoStr, // where the target is downloaded from
+    pub at: AutoStr,   // root dir of the target, including its name
     pub rename: AutoStr,
     pub is_scan: bool,
     pub recurse: bool,
@@ -131,6 +140,8 @@ impl Target {
             name: name.into(),
             version: AutoStr::new(),
             kind,
+            origin: TargetOrigin::Index,
+            from: AutoStr::new(),
             at: AutoStr::new(),
             rename: AutoStr::default(),
             is_scan: true,
@@ -174,6 +185,27 @@ impl Target {
 
         // kind
         let kind = TargetKind::from_str(&node.name);
+
+        // mode
+        let mut origin = TargetOrigin::Index;
+        if let Some(arg) = &node.args.get_arg(&"kind".into()) {
+            let mode = arg.get_val().to_astr();
+            match mode.as_str() {
+                "local" => {
+                    origin = TargetOrigin::Local;
+                }
+                "git" => {
+                    origin = TargetOrigin::Git;
+                }
+                _ => {}
+            };
+        }
+        // from
+        let from = if node.has_prop("from") {
+            node.get_prop("from").to_astr()
+        } else {
+            AutoStr::default()
+        };
 
         // is_scan
         let is_scan = if node.has_prop("scan") {
@@ -276,6 +308,8 @@ impl Target {
             name,
             version,
             kind,
+            origin,
+            from,
             at,
             rename,
             is_scan,
@@ -547,15 +581,23 @@ impl Target {
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
-            let c_code = transpile_c(&self.name, &content)?;
+            let mut c_code = transpile_c(&self.name, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
-            std::fs::write(Path::new(c_path.as_str()), c_code.source)?;
+            std::fs::write(Path::new(c_path.as_str()), c_code.done())?;
             // write the header file
             let h_path = path.as_str().replace(".at", ".h");
             std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
             // add the file to the srcs
             self.srcs.insert(AutoStr::from(c_path));
+        }
+        // recurse
+        println!("DEPS: [{}]", self.deps.len());
+        println!("Links: [{}]", self.links.len());
+        println!("ALL Deps: [{}]", self.all_deps.len());
+        println!("ALL Links: [{}]", self.all_links.len());
+        for dep in self.deps.iter_mut() {
+            dep.transpile_auto()?;
         }
         Ok(())
     }
@@ -717,7 +759,6 @@ impl Target {
             dep.scan()?;
         }
 
-
         self.scan_auto()?;
 
         Ok(())
@@ -732,7 +773,7 @@ impl Target {
             let path = entry.path();
             if path.is_file() && path.extension() == Some(std::ffi::OsStr::new("at")) {
                 // exclude pac.at/device.at
-                if path.file_name() == Some(std::ffi::OsStr::new("pac.at")) 
+                if path.file_name() == Some(std::ffi::OsStr::new("pac.at"))
                     || path.file_name() == Some(std::ffi::OsStr::new("device.at"))
                     || path.file_name() == Some(std::ffi::OsStr::new("os.at"))
                 {

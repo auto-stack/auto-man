@@ -70,7 +70,9 @@ impl Builder for NinjaBuilder {
 
         // write header rules
         self.out.write(
-            r#"# ninja build file
+            format!(
+                r#"# ninja build file
+{}
 rule cc
     command = clang -c $in -o $out
     description = Compiling $in
@@ -79,7 +81,9 @@ rule link
     command = clang $in -o $out
     description = Linking $out
 
-"#
+"#,
+                includes
+            )
             .as_bytes(),
         )?;
 
@@ -90,8 +94,16 @@ rule link
         println!("[ninja] building target {}", target.name);
         let out = self.out.as_mut();
 
-        out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
-        out.write(format!("build {}: link {}.o\n", target.name, target.name).as_bytes())?;
+        out.write(format!("# build objects for target {}\n", target.name).as_bytes())?;
+
+        for src in target.srcs.iter() {
+            if src.ends_with(".c") {
+                out.write(format!("build {}.o: cc ../{}\n", src, src).as_bytes())?;
+            }
+        }
+
+        // out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
+        // out.write(format!("build {}: link {}.o\n", target.name, target.name).as_bytes())?;
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
         // warn!("Target [{}] srcs: {:?}", target.name, target.srcs);

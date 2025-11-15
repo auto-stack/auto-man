@@ -5,8 +5,10 @@ use crate::git::check_changes;
 use crate::git::check_detached;
 use crate::git::pull;
 use crate::git::switch_to_master;
+use crate::target;
 use crate::AutoResult;
 use crate::Port;
+use crate::TargetOrigin;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
@@ -679,8 +681,18 @@ impl Pac {
                     if version == "latest" {
                         target.version = "latest".into();
                     }
-                    // 2. download the dep target
-                    self.download_dep(&target)?;
+                    // 2. download or copy the dep target
+                    match target.origin {
+                        TargetOrigin::Index => {
+                            self.download_dep(&target)?;
+                        }
+                        TargetOrigin::Git => {
+                            self.download_git(&target)?;
+                        }
+                        TargetOrigin::Local => {
+                            self.copy_local(&target)?;
+                        }
+                    }
 
                     // 3. read pac.at from dep
                     // get args from dep node props
@@ -747,6 +759,34 @@ impl Pac {
                 self.targets.push(dep);
             }
         }
+        Ok(())
+    }
+
+    pub fn download_git(&mut self, dep: &Target) -> AutoResult<()> {
+        let info = PacInfo {
+            name: dep.name.clone(),
+            version: dep.version.clone(),
+            repo: dep.from.clone(),
+        };
+        self.download_repo(&info, &dep.kind, &dep.at)
+    }
+
+    pub fn copy_local(&mut self, dep: &Target) -> AutoResult<()> {
+        println!("copy for dep {}", dep.name);
+        let from = dep.from.clone();
+        let from_path = AutoPath::new(from.clone());
+        // check if from dir exists
+        if !from_path.is_dir() {
+            return Err(format!("Local dep dir {} does not exist", from).into());
+        }
+        // copy files from from to target
+        let target = dep.at.clone();
+        let target_path = AutoPath::new(target);
+        if !target_path.exists() {
+            std::fs::create_dir_all(target_path.path())?;
+        }
+        // copy recursively
+        crate::fs::copy_dir_all(from_path.path(), target_path.path())?;
         Ok(())
     }
 

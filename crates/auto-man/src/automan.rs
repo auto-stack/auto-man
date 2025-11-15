@@ -281,6 +281,7 @@ impl Automan {
 
     pub fn build(&mut self) -> AutoResult<()> {
         // 1. Transpile auto code to c code
+        println!("Transpiling auto code to c code");
         self.transpile_auto()?;
         // 2. Build the project with a specific builder
         self.pac.build()
