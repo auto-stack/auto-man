@@ -68,6 +68,8 @@ impl Builder for NinjaBuilder {
         // setup Ninja file header
         self.reset_ninja_file()?;
 
+        let includes = "includes = \"\"";
+
         // write header rules
         self.out.write(
             format!(
