@@ -12,9 +12,9 @@ impl Default for Port {
     fn default() -> Self {
         Self {
             name: "win32".into(),
-            builder: "cmake".into(),
+            builder: "ninja".into(),
             platform: "win11".into(),
-            at: "cmake".into(),
+            at: "build".into(),
         }
     }
 }

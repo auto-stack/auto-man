@@ -5,7 +5,7 @@ use crate::git::check_changes;
 use crate::git::check_detached;
 use crate::git::pull;
 use crate::git::switch_to_master;
-use crate::target;
+use crate::make_builder;
 use crate::AutoResult;
 use crate::Port;
 use crate::TargetOrigin;
@@ -71,15 +71,7 @@ impl Pac {
         let props = config.root.props_clone();
 
         // ports
-        let mut ports = config.root.get_nodes("port");
-        if ports.is_empty() {
-            let mut port = Node::new("port");
-            port.add_arg(Arg::Pos("win32".into()));
-            port.set_prop("name", "win32");
-            port.set_prop("builder", "cmake");
-            port.set_prop("platform", "win11");
-            ports.push(port);
-        }
+        let ports = config.root.get_nodes("port");
         let builder = None;
 
         // defines
@@ -294,51 +286,24 @@ impl Pac {
     }
 
     pub fn set_port(&mut self, port_name: AutoStr) -> AutoResult<()> {
+        self.merge_port(port_name.clone())?;
+
         // 0. check port
-        let port_node = self
-            .ports
-            .iter()
-            .find(|p| p.main_arg().to_astr() == port_name);
-        let Some(port_node) = port_node else {
-            return Err(format!("Port {} not found", port_name).into());
-        };
-        let mut at = if port_node.has_prop("at") {
-            port_node.get_prop_of("at").to_astr()
-        } else {
-            ".".into()
-        };
+        let mut at = self.port.at.clone();
         if at.ends_with("/") {
             at = at[0..at.len() - 1].into()
         }
         self.build_at = at.clone();
         self.build_location = AutoPath::new(at.clone()).to_astr();
-        // merge configs within the port into the pac
-        self.merge_port(port_name.clone())?;
         // set builder
         let build_path = AutoPath::new(self.build_location.clone());
-        match self.port.builder.as_str() {
-            "cmake" => {
-                let path = build_path.join("CMakeLists.txt");
-                self.builder = Some(new_builder(BuilderKind::CMake(path.to_string())));
-            }
-            "iar" => {
-                self.builder = Some(new_builder(BuilderKind::IAR(build_path)));
-            }
-            "ghs" => {
-                self.builder = Some(new_builder(BuilderKind::GHS(build_path)));
-                self.set_show_headers();
-            }
-            "ninja" => {
-                let path = build_path.join("build/build.ninja");
-                self.builder = Some(new_builder(BuilderKind::Ninja(build_path.join(path))));
-                self.set_show_headers();
-            }
-            _ => {
-                panic!(
-                    "Invalid port builder name: {}:{}",
-                    self.port.name, self.port.builder
-                );
-            }
+        println!(
+            "setting port builder: {} {}, at {}",
+            port_name, self.port.builder, build_path
+        );
+        self.builder = make_builder(&self.port.builder, build_path);
+        if self.port.builder == "ghs" || self.port.builder == "ninja" {
+            self.set_show_headers();
         }
         Ok(())
     }

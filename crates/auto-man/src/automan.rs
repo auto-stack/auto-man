@@ -115,7 +115,7 @@ impl Automan {
             }
         };
 
-        println!("PORT NAME: {}", port_name);
+        println!("port NAME: {}", port_name);
 
         // use this port to reload config and make a pac
         let mut env = Universe::new();
@@ -186,6 +186,7 @@ impl Automan {
         let state = AutoConfig::read(&state_file.path())?;
 
         let port_name = state.root.get_prop("port").to_astr();
+        println!("Loaded port: {}", port_name);
         if !port_name.is_empty() {
             Ok(Some(port_name))
         } else {

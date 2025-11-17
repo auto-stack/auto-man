@@ -9,7 +9,7 @@ pub use ninja::*;
 
 use crate::AutoResult;
 use crate::{Pac, Target};
-use auto_val::AutoPath;
+use auto_val::{AutoPath, AutoStr};
 
 pub trait Builder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()>;
@@ -33,5 +33,23 @@ pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
         BuilderKind::IAR(path) => Box::new(IARBuilder::new(path)),
         BuilderKind::GHS(path) => Box::new(GHSBuilder::new(path)),
         BuilderKind::Ninja(path) => Box::new(NinjaBuilder::new(path)),
+    }
+}
+
+pub fn make_builder(builder: &AutoStr, path: AutoPath) -> Option<Box<dyn Builder>> {
+    match builder.as_str() {
+        "cmake" => {
+            let path = path.join("CMakeLists.txt");
+            Some(new_builder(BuilderKind::CMake(path.to_string())))
+        }
+        "iar" => Some(new_builder(BuilderKind::IAR(path))),
+        "ghs" => Some(new_builder(BuilderKind::GHS(path))),
+        "ninja" => {
+            let path = path.join("build.ninja");
+            Some(new_builder(BuilderKind::Ninja(path)))
+        }
+        _ => {
+            panic!("Invalid port builder name: {}", builder);
+        }
     }
 }
