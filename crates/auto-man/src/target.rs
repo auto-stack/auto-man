@@ -581,7 +581,7 @@ impl Target {
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
-            let mut c_code = transpile_c(&self.name, &content)?;
+            let (mut c_code, mut uni) = transpile_c(&self.name, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
             std::fs::write(Path::new(c_path.as_str()), c_code.done())?;
@@ -590,12 +590,27 @@ impl Target {
             std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
             // add the file to the srcs
             self.srcs.insert(AutoStr::from(c_path));
+            if let Some(d) = Path::new(h_path.as_str()).parent() {
+                let d: AutoStr = d.to_str().unwrap().into();
+                if !d.is_empty() {
+                    self.incs.insert(d);
+                }
+            }
+            // add code paks
+            for (sid, pak) in uni.borrow().code_paks.iter() {
+                let inc = AutoPath::new(pak.header.clone()).parent().parent();
+                if inc.is_dir() {
+                    self.incs.insert(inc.to_astr());
+                }
+                self.srcs.insert(pak.cfile.clone());
+            }
         }
         // recurse
         println!("DEPS: [{}]", self.deps.len());
         println!("Links: [{}]", self.links.len());
         println!("ALL Deps: [{}]", self.all_deps.len());
         println!("ALL Links: [{}]", self.all_links.len());
+        println!("ALL srcs: [{:?}]", self.srcs);
         for dep in self.deps.iter_mut() {
             dep.transpile_auto()?;
         }

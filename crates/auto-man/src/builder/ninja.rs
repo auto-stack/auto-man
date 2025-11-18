@@ -68,15 +68,24 @@ impl Builder for NinjaBuilder {
         // setup Ninja file header
         self.reset_ninja_file()?;
 
-        let includes = "includes = \"\"";
+        println!("Got includes: {:?}", pac.all_incs());
+
+        let mut includes = String::from("includes =");
+        for inc in pac.all_incs() {
+            includes.push_str(&format!(" -I{}", inc));
+        }
 
         // write header rules
         self.out.write(
             format!(
                 r#"# ninja build file
+
+# includes
 {}
+
+# rules
 rule cc
-    command = clang -c $in -o $out
+    command = clang -c $in -o $out $includes
     description = Compiling $in
 
 rule link
@@ -98,14 +107,26 @@ rule link
 
         out.write(format!("# build objects for target {}\n", target.name).as_bytes())?;
 
+        let mut objs = Vec::new();
+
         for src in target.srcs.iter() {
             if src.ends_with(".c") {
-                out.write(format!("build {}.o: cc ../{}\n", src, src).as_bytes())?;
+                let ofile = AutoPath::new(src).filename().replace(".c", ".o");
+                let path = if src.starts_with("/") {
+                    src
+                } else {
+                    &format!("../{}", src).into()
+                };
+                out.write(format!("build {}: cc {}\n", ofile, path).as_bytes())?;
+                objs.push(ofile);
             }
         }
 
+        out.write(b"# target executable\n")?;
+        out.write(format!("build {}: link {}\n", target.name, objs.join(" ")).as_bytes())?;
+        out.write(b"\n")?;
+
         // out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
-        // out.write(format!("build {}: link {}.o\n", target.name, target.name).as_bytes())?;
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
         // warn!("Target [{}] srcs: {:?}", target.name, target.srcs);
