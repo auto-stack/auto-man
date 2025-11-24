@@ -233,7 +233,7 @@ impl Builder for GHSBuilder {
         Ok(())
     }
 
-    fn run(&mut self, _pac: &Pac) -> AutoResult<()> {
+    fn run(&mut self, _pac: &Pac, _args: Vec<String>) -> AutoResult<()> {
         Ok(())
     }
 }

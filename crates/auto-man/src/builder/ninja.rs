@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::AutoResult;
 use crate::{Pac, Target};
+use encoding_rs::GBK;
 
 pub struct NinjaBuilder {
     pub gen: AutoGen,
@@ -77,7 +78,7 @@ impl Builder for NinjaBuilder {
         let port = &pac.port;
 
         let (cc, link) = match port.platform.as_str() {
-            "win32" => ("cl.exe /c $in /Fo:$out", "link.exe /OUT:$out $in"),
+            "windows" => ("cl.exe /c $in /Fo:$out", "link.exe /OUT:$out $in"),
             "linux" => ("clang -c $in -o $out", "clang -o $out $in"),
             _ => ("clang", "clang"),
         };
@@ -117,7 +118,7 @@ rule link
         let mut objs = Vec::new();
 
         let obj_postfix = match target.port.platform.as_str() {
-            "win32" => ".obj",
+            "windows" => ".obj",
             "linux" => ".o",
             _ => ".o",
         };
@@ -136,7 +137,7 @@ rule link
         }
 
         let target_name = match target.port.platform.as_str() {
-            "win32" => format!("{}.exe", target.name).into(),
+            "windows" => format!("{}.exe", target.name).into(),
             "linux" => target.name.clone(),
             _ => target.name.clone(),
         };
@@ -207,8 +208,18 @@ rule link
         if out.status.success() {
             println!("Build successful");
         } else {
-            println!("Build failed");
-            println!("{}", String::from_utf8(out.stderr).unwrap());
+            println!("Build failed:");
+            println!("=============== Ninja Output: Start ==================");
+            if std::env::consts::OS == "windows" {
+                let mut decoder = GBK.new_decoder();
+                let mut buffer_bytes = [0u8; 2048];
+                let mut buffer: &mut str = std::str::from_utf8_mut(&mut buffer_bytes).unwrap();
+                _ = decoder.decode_to_str(&out.stdout, &mut buffer, false);
+                println!("{}", buffer);
+            } else {
+                println!("{}", String::from_utf8_lossy(&out.stdout));
+            }
+            println!("=============== Ninja Output: End ===================");
         }
         println!("End of build");
         Ok(())
@@ -232,11 +243,13 @@ rule link
         Ok(())
     }
 
-    fn run(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()> {
         // run target
         let target = self.path.parent().join(&pac.name);
         println!("[ninja] running exe: {}", target);
-        let status = std::process::Command::new(target.to_string()).status()?;
+        let status = std::process::Command::new(target.to_string())
+            .args(args)
+            .status()?;
         if !status.success() {
             return Err(format!("Failed to run Ninja").into());
         }

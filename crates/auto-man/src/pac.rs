@@ -881,14 +881,14 @@ impl Pac {
         Ok(())
     }
 
-    pub fn run(&mut self) -> AutoResult<()> {
+    pub fn run(&mut self, args: Vec<String>) -> AutoResult<()> {
         let builder = std::mem::take(&mut self.builder);
         if let Some(mut builder) = builder {
-            builder.run(self)?;
+            builder.run(self, args)?;
             self.builder = Some(builder);
         } else {
             let mut builder = new_builder(BuilderKind::CMake("CMakeLists.txt".to_string()));
-            builder.run(self)?;
+            builder.run(self, args)?;
         }
         Ok(())
     }

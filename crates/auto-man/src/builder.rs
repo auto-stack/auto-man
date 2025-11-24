@@ -17,7 +17,7 @@ pub trait Builder {
     fn finish(&mut self, pac: &Pac) -> AutoResult<()>;
     fn target(&mut self, target: &Target) -> AutoResult<()>;
     fn clean(&mut self) -> AutoResult<()>;
-    fn run(&mut self, pac: &Pac) -> AutoResult<()>;
+    fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()>;
 }
 
 pub enum BuilderKind {

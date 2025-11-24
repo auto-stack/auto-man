@@ -28,7 +28,7 @@ enum Commands {
     #[command(about = "Build Project", alias = "b")]
     Build { dir: Option<String> },
     #[command(about = "Run Executable", alias = "r")]
-    Run,
+    Run { args: Vec<String> },
     #[command(about = "Clean Project")]
     Clean { dir: Option<String> },
     #[command(about = "Show Dependencies")]
@@ -139,13 +139,13 @@ Hello, I'm Automan {}!
             am.scan()?;
             am.build()?;
         }
-        Some(Commands::Run) => {
+        Some(Commands::Run { args }) => {
             let mut am = Automan::new(".", config)?;
             // TODO: add build process before running when user specified a '-b' flag
             info!("Running app ...");
             println!();
             println!("------------ output ------------");
-            am.run()?;
+            am.run(args)?;
             println!("------------- end --------------");
         }
         Some(Commands::Clean { dir }) => {

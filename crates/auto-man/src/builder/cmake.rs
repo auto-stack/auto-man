@@ -201,10 +201,10 @@ impl Builder for CMakeBuilder {
         Ok(())
     }
 
-    fn run(&mut self, pac: &Pac) -> AutoResult<()> {
+    fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()> {
         // run target
         let target = pac.exe_path();
-        let status = std::process::Command::new(target).status()?;
+        let status = std::process::Command::new(target).args(args).status()?;
         if !status.success() {
             return Err(format!("Failed to run cmake").into());
         }

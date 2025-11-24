@@ -294,8 +294,8 @@ impl Automan {
         Ok(())
     }
 
-    pub fn run(&mut self) -> AutoResult<()> {
-        self.pac.run()
+    pub fn run(&mut self, args: Vec<String>) -> AutoResult<()> {
+        self.pac.run(args)
     }
 
     pub fn clean(&mut self) -> AutoResult<()> {

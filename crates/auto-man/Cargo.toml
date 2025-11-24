@@ -22,5 +22,6 @@ glob-match = { workspace = true }
 reqwest = { workspace = true }
 zip = { workspace = true }
 version-compare = { workspace = true }
+encoding_rs = { workspace = true }
 
 # walkdir = { workspace = true }
