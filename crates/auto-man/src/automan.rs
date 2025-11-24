@@ -1,6 +1,7 @@
 use crate::asset::Templates;
 use crate::AutoResult;
 use crate::Pac;
+use crate::Port;
 use crate::TargetKind;
 use crate::{Index, IndexStore};
 use auto_lang::config::AutoConfig;
@@ -93,20 +94,20 @@ impl Automan {
             port_names.push(port.main_arg().to_astr());
         }
 
-        let win32: AutoStr = "win32".into();
+        let dft_port: Port = Port::default();
         let port_name = match port {
             None => {
-                if !port_names.contains(&win32) {
+                if !port_names.contains(&dft_port.name) {
                     // default port is win32
-                    port_names.push(win32);
+                    port_names.push(dft_port.name);
                 }
                 Self::select_port(&port_names)?
             }
             Some(port) => {
                 if !port_names.contains(&port) {
-                    if !port_names.contains(&win32) {
+                    if !port_names.contains(&dft_port.name) {
                         // default port is win32
-                        port_names.push(win32);
+                        port_names.push(dft_port.name);
                     }
                     Self::select_port(&port_names)?
                 } else {
