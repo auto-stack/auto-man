@@ -294,7 +294,7 @@ impl Target {
         let is_main = name == pac;
 
         // deps
-        let mut deps = Vec::new();
+        let deps = Vec::new();
         // devices
         node.nodes
             .iter()
@@ -581,7 +581,7 @@ impl Target {
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
-            let (mut c_code, mut uni) = transpile_c(&self.name, &content)?;
+            let (mut c_code, uni) = transpile_c(&self.name, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
             std::fs::write(Path::new(c_path.as_str()), c_code.done())?;
@@ -597,7 +597,7 @@ impl Target {
                 }
             }
             // add code paks
-            for (sid, pak) in uni.borrow().code_paks.iter() {
+            for (_sid, pak) in uni.borrow().code_paks.iter() {
                 let inc = AutoPath::new(pak.header.clone()).parent().parent();
                 if inc.is_dir() {
                     self.incs.insert(inc.to_astr());
@@ -680,7 +680,7 @@ impl Target {
         Ok(links)
     }
 
-    pub fn apply_link(&mut self, link: &Node) {}
+    pub fn apply_link(&mut self, _link: &Node) {}
 
     // fn check_root(&mut self) -> AutoResult<()> {
     //     let root = self.get_root_dir();

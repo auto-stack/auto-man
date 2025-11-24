@@ -1,8 +1,7 @@
 use super::Builder;
 use auto_gen::AutoGen;
-use auto_val::{AutoPath, AutoStr};
+use auto_val::AutoPath;
 use log::*;
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -75,6 +74,14 @@ impl Builder for NinjaBuilder {
             includes.push_str(&format!(" -I{}", inc));
         }
 
+        let port = &pac.port;
+
+        let (cc, link) = match port.platform.as_str() {
+            "win32" => ("cl.exe /c $in /Fo:$out", "link.exe /OUT:$out $in"),
+            "linux" => ("clang -c $in -o $out", "clang -o $out $in"),
+            _ => ("clang", "clang"),
+        };
+
         // write header rules
         self.out.write(
             format!(
@@ -85,15 +92,15 @@ impl Builder for NinjaBuilder {
 
 # rules
 rule cc
-    command = clang -c $in -o $out $includes
+    command = {} $includes
     description = Compiling $in
 
 rule link
-    command = clang $in -o $out
+    command = {}
     description = Linking $out
 
 "#,
-                includes
+                includes, cc, link
             )
             .as_bytes(),
         )?;
@@ -109,21 +116,33 @@ rule link
 
         let mut objs = Vec::new();
 
+        let obj_postfix = match target.port.platform.as_str() {
+            "win32" => ".obj",
+            "linux" => ".o",
+            _ => ".o",
+        };
+
         for src in target.srcs.iter() {
             if src.ends_with(".c") {
-                let ofile = AutoPath::new(src).filename().replace(".c", ".o");
+                let ofile = AutoPath::new(src).filename().replace(".c", obj_postfix);
                 let path = if src.starts_with("/") {
                     src
                 } else {
-                    &format!("../{}", src).into()
+                    &format!("{}", src).into()
                 };
-                out.write(format!("build {}: cc {}\n", ofile, path).as_bytes())?;
+                out.write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
                 objs.push(ofile);
             }
         }
 
+        let target_name = match target.port.platform.as_str() {
+            "win32" => format!("{}.exe", target.name).into(),
+            "linux" => target.name.clone(),
+            _ => target.name.clone(),
+        };
+
         out.write(b"# target executable\n")?;
-        out.write(format!("build {}: link {}\n", target.name, objs.join(" ")).as_bytes())?;
+        out.write(format!("build {}: link {}\n", target_name, objs.join(" ")).as_bytes())?;
         out.write(b"\n")?;
 
         // out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
@@ -146,11 +165,6 @@ rule link
             .collect::<Vec<_>>()
             .join(" ");
         if !incs.is_empty() {
-            let attr = if is_header_only {
-                "INTERFACE"
-            } else {
-                "PUBLIC"
-            };
             // out.write(format!("target_include_directories({} {} ", target.name, attr).as_bytes())?;
             // print_list(&target.incs, out)?;
             // out.write(b")\n")?;
@@ -158,23 +172,12 @@ rule link
 
         // defines
         if !target.defines.is_empty() {
-            let attr = if is_header_only {
-                "INTERFACE"
-            } else {
-                "PUBLIC"
-            };
             // out.write(format!("target_compile_definitions({} {} ", target.name, attr).as_bytes())?;
             // print_vec(&target.defines, out)?;
             // out.write(b")\n")?;
         }
 
-        if target.links.len() > 0 {
-            for link in target.links.iter() {
-                // out.write(
-                // format!("target_link_libraries({} {})\n", target.name, link.id()).as_bytes(),
-                // )?;
-            }
-        }
+        if target.links.len() > 0 {}
 
         // out.write(b"\n")?;
 
@@ -185,18 +188,27 @@ rule link
         let out = self.out.as_mut();
         out.write(b"\n")?;
         out.flush()?;
+        // let out be finished and close the file
+        self.out = Box::new(std::io::sink());
         // self.out = Box::new(std::io::sink());
         //
         let build_path = self.path.parent();
 
-        println!("[ninja] calling ninja to build executable");
+        println!(
+            "[ninja] calling ninja to build executable in {}",
+            build_path
+        );
 
         // run ninja to build
-        let mut cmd = std::process::Command::new("ninja");
-        cmd.current_dir(build_path.path());
-        let status = cmd.status()?;
-        if !status.success() {
-            return Err(format!("Failed to run Ninja").into());
+        let out = std::process::Command::new("ninja")
+            .args(["-C", build_path.to_astr().as_str()])
+            .output()?;
+        // cmd.current_dir(build_path.path());
+        if out.status.success() {
+            println!("Build successful");
+        } else {
+            println!("Build failed");
+            println!("{}", String::from_utf8(out.stderr).unwrap());
         }
         println!("End of build");
         Ok(())

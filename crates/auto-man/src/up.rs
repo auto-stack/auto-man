@@ -176,19 +176,19 @@ fn auto_up() -> AutoResult<()> {
 
 fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     // let user select which index base to use:
-    let index_bases = vec!["default", "soutek", "boe"];
+    // let index_bases = vec!["default", "soutek", "boe"];
     // let selection = Select::with_theme(MY_THEME.get().unwrap())
     //     .with_prompt("Which index base do you want to use?")
     //     .default(0)
     //     .items(&index_bases)
     //     .interact()?;
-    let selection = 0;
+    // let selection = 0;
 
-    let index_urls = vec![
-        "git@gitee.com:auto-stack/auto-index.git",
-        "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git",
-        "ssh://git@gitlab.boevxa.lan:2424/ds/platform/boevxabafdemo/gitlabindex.git",
-    ];
+    // let index_urls = vec![
+    // "git@gitee.com:auto-stack/auto-index.git",
+    // "git@codeup.aliyun.com:soutek/auto-stack/auto-index.git",
+    // "ssh://git@gitlab.boevxa.lan:2424/ds/platform/boevxabafdemo/gitlabindex.git",
+    // ];
 
     // let url = if selection == 2 {
     //     let input = Input::<String>::with_theme(MY_THEME.get().unwrap())
@@ -196,11 +196,11 @@ fn write_am_at(install_path: &Path, _name: &AutoStr) -> AutoResult<()> {
     //         .interact_text()?;
     //     input
     // } else if selection <= 1 {
-    let name = if selection <= 1 {
-        index_urls[selection].to_string()
-    } else {
-        panic!("Invalid selection");
-    };
+    // let name = if selection <= 1 {
+    // index_urls[selection].to_string()
+    // } else {
+    // panic!("Invalid selection");
+    // };
 
     // write to am.at
     let am_at_file = install_path.join("am.at");

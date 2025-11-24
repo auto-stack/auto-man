@@ -449,7 +449,6 @@ fn home_path() -> AutoPath {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_search_dirs() {

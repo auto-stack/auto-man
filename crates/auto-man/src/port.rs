@@ -11,9 +11,9 @@ pub struct Port {
 impl Default for Port {
     fn default() -> Self {
         Self {
-            name: "win32".into(),
+            name: "win32_ninja".into(),
             builder: "ninja".into(),
-            platform: "win11".into(),
+            platform: "win32".into(),
             at: "build".into(),
         }
     }
