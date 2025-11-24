@@ -1,3 +1,5 @@
+use std::env;
+
 use auto_val::AutoStr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -10,11 +12,19 @@ pub struct Port {
 
 impl Default for Port {
     fn default() -> Self {
-        Self {
-            name: "win32_ninja".into(),
-            builder: "ninja".into(),
-            platform: "win32".into(),
-            at: "build".into(),
+        match env::consts::OS {
+            "windows" => Self {
+                name: "windows_ninja".into(),
+                builder: "ninja".into(),
+                platform: "windows".into(),
+                at: "build".into(),
+            },
+            _ => Self {
+                name: "linux_ninja".into(),
+                builder: "ninja".into(),
+                platform: "linux".into(),
+                at: "build".into(),
+            },
         }
     }
 }
