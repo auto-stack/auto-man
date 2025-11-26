@@ -11,7 +11,7 @@ use tabled::{
 
 use crate::git::{check_changes, check_detached, pull};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PacInfo {
     pub name: AutoStr,
     pub version: AutoStr,
@@ -61,7 +61,15 @@ impl Index {
             .filter(|n| n.name == "pac" || n.name == "device")
             .for_each(|n| {
                 let name = n.id();
-                let version = n.get_prop("version").to_astr();
+                // let version = n.get_prop("version").to_astr();
+                let versions = n.get_prop("versions");
+                println!("versions: {:?}", versions);
+                let version = versions.as_array().iter().last();
+                let version = if let Some(v) = version {
+                    v.to_astr()
+                } else {
+                    "".into()
+                };
                 let repo = n.get_prop("repo").to_astr();
                 map.insert(
                     name.clone(),

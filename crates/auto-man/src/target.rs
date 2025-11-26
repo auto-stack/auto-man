@@ -180,7 +180,12 @@ impl Target {
             }
         }
         if version.is_empty() {
-            version = "latest".into();
+            // try prop "version"
+            if node.has_prop("version") {
+                version = node.get_prop("version").to_astr();
+            } else {
+                version = "latest".into();
+            }
         }
 
         // kind

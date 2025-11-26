@@ -769,8 +769,14 @@ impl Pac {
         match info {
             Some(info) => {
                 let mut info = info.clone();
+                println!("INFO: {}", info);
                 // TODO: check if dep version is in index
-                info.version = dep.version.clone();
+                if dep.version == "latest" {
+                    info.version = "master".into();
+                } else {
+                    info.version = dep.version.clone();
+                }
+                println!("dep version: {}", info.version);
                 self.download_repo(&info, &dep.kind, &at)?;
                 return Ok(());
             }
@@ -778,6 +784,10 @@ impl Pac {
                 return Err(format!("Dependency {} not found", name).into());
             }
         }
+    }
+
+    fn starts_with_digit(&self, s: &str) -> bool {
+        s.chars().next().map_or(false, |c| c.is_digit(10))
     }
 
     pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind, at: &AutoStr) -> AutoResult<()> {
@@ -836,8 +846,10 @@ impl Pac {
         if !version.is_empty() {
             if version == "latest" {
                 version = "master".into();
+            } else if version == "master" {
+                // no nothing
             } else {
-                if !version.starts_with("v") {
+                if self.starts_with_digit(version.as_str()) {
                     version = format!("v{}", version.as_str()).into();
                 }
             }
