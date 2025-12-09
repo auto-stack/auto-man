@@ -560,6 +560,7 @@ impl Pac {
                 t.kind == TargetKind::Device
                     || t.kind == TargetKind::App
                     || t.kind == TargetKind::Lib
+                    || t.kind == TargetKind::Test
             })
             .for_each(|t| major_targets.push(t.clone()));
 

@@ -23,5 +23,6 @@ reqwest = { workspace = true }
 zip = { workspace = true }
 version-compare = { workspace = true }
 encoding_rs = { workspace = true }
+is_executable = { workspace = true }
 
 # walkdir = { workspace = true }

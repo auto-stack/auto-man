@@ -43,8 +43,6 @@ enum Commands {
     Port,
     #[command(about = "Upgrade auto-man itself")]
     Upgrade,
-    #[command(about = "Install master version locally")]
-    Install,
     #[command(about = "Pull all dependencies")]
     Pull,
     #[command(about = "Reset automan config and index")]
@@ -182,34 +180,6 @@ Hello, I'm Automan {}!
         }
         Some(Commands::Upgrade) => {
             do_upgrade()?;
-        }
-        Some(Commands::Install) => {
-            // Copy auto-man.exe to $HOME/.auto/auto-man/auto-man_master.exe
-            let install_path = dirs::home_dir().unwrap().join(".auto/auto-man");
-            let file = "auto-man.master.exe";
-            let dest = install_path.join(file);
-            let exe = "target/debug/auto-man.exe";
-            if dest.exists() {
-                info!("dest file {} exists, deleting...", dest.display());
-                std::fs::remove_file(&dest)?;
-            }
-            // std::thread::sleep(std::time::Duration::from_millis(1000));
-            info!("copy {} to {}", exe, dest.display());
-            std::fs::copy(exe, &dest)?;
-
-            // Link am.exe and auto-man.exe
-            info!("linking {} to {}", exe, dest.display());
-            let link = install_path.join("am.exe");
-            if link.exists() {
-                std::fs::remove_file(&link)?;
-            }
-            std::fs::hard_link(&dest, link)?;
-
-            let link = install_path.join("auto-man.exe");
-            if link.exists() {
-                std::fs::remove_file(&link)?;
-            }
-            std::fs::hard_link(&dest, link)?;
         }
         Some(Commands::Pull) => {
             let mut am = Automan::new(".", config)?;

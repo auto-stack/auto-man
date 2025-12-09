@@ -353,7 +353,7 @@ impl Automan {
 
     pub fn index_store(config: &AmConfig, indexs: Vec<AutoStr>) -> AutoResult<IndexStore> {
         // try to get index location from amconfig
-        let am_path = AutoPath::new(&config.am);
+        let am_path = home_path().join(".auto/auto-man");
         if !am_path.is_dir() {
             info!("creating am dir: {}", am_path.to_astr());
             std::fs::create_dir_all(am_path.path())?;
@@ -471,7 +471,6 @@ mod tests {
 pub struct AmConfig {
     pub name: AutoStr,
     pub index: HashMap<AutoStr, AutoStr>,
-    pub am: AutoStr,
     pub is_default: bool,
 }
 
@@ -485,7 +484,6 @@ impl Default for AmConfig {
         Self {
             name: "default".into(),
             index: map,
-            am: home_path().join(".auto/auto-man").to_astr(),
             is_default: true,
         }
     }
@@ -500,7 +498,6 @@ impl Display for AmConfig {
             writeln!(f, "    {}: {}", k, v)?;
         }
         writeln!(f, "  }}")?;
-        writeln!(f, "  am: {}", self.am)?;
         writeln!(f, "}}\n")
     }
 }
@@ -543,9 +540,6 @@ pub fn load_am_config() -> Option<AmConfig> {
         if let Value::Obj(obj) = index_prop {
             am.index = obj.to_hashmap();
         }
-    }
-    if config.root.has_prop("am") {
-        am.am = config.root.get_prop_of("am").to_astr();
     }
     am.is_default = false;
     println!("Loading AmConfig from {:?}...", am_path.to_str());

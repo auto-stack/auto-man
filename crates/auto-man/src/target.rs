@@ -22,6 +22,7 @@ pub enum TargetKind {
     Bag,    // 普通代码包，作为拼图的一部分，而不少单独的编译目标
     Dep,    // 依赖库
     Device, // 设备资源
+    Test,   // 测试代码
 }
 
 impl TargetKind {
@@ -32,6 +33,7 @@ impl TargetKind {
             "bag" => TargetKind::Bag,
             "dep" => TargetKind::Dep,
             "device" => TargetKind::Device,
+            "test" => TargetKind::Test,
             _ => panic!("Invalid target kind: {}", s),
         }
     }
@@ -51,6 +53,7 @@ impl fmt::Display for TargetKind {
             TargetKind::Lib => write!(f, "Lib"),
             TargetKind::Dep => write!(f, "Dep"),
             TargetKind::Device => write!(f, "Device"),
+            TargetKind::Test => write!(f, "Test"),
             TargetKind::Bag => write!(f, "Bag"),
         }
     }
@@ -119,6 +122,7 @@ pub fn get_root_dir(name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> AutoStr
             TargetKind::Bag => "bags",
             TargetKind::Dep => "deps",
             TargetKind::Device => "devices",
+            TargetKind::Test => "tests",
         };
         AutoStr::from(format!("{}/{}", target_dir, name))
     }
@@ -384,6 +388,7 @@ impl Target {
             TargetKind::Bag => "bag",
             TargetKind::Dep => "dep",
             TargetKind::Device => "device",
+            TargetKind::Test => "test",
         };
         let mut nb = NodeBody::new();
         nb.add_prop("kind", node_type);
@@ -523,6 +528,7 @@ impl Target {
             TargetKind::Bag => "bag",
             TargetKind::Dep => "dep",
             TargetKind::Device => "device",
+            TargetKind::Test => "test",
         };
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
@@ -707,6 +713,10 @@ impl Target {
     }
 
     pub fn scan(&mut self) -> AutoResult<()> {
+        println!(
+            "scanning target: {}:{} at {}",
+            self.kind, self.name, self.at
+        );
         if !self.props.has("defines") {
             let defines = Vec::<AutoStr>::new();
             // defines.push("DEBUG".into());

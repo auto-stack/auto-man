@@ -108,19 +108,6 @@ fn get_install_dir(tool: &str) -> AutoResult<AutoStr> {
 }
 
 fn auto_up() -> AutoResult<()> {
-    // println!(
-    //     "{}",
-    //     format!(
-    //         "Welcome to auto-up {}, a tool to upgrade auto-lang related tools",
-    //         AUTOUP_VERSION
-    //     )
-    //     .bright_yellow()
-    //     .bold()
-    // );
-    // println!();
-    // let tool = select_tool()?;
-    // println!("Selected tool: {}", tool);
-    // println!();
     // 1. list all releases and let user select one
     let tool = "auto-man".into();
     let info = list_releases(&tool)?;

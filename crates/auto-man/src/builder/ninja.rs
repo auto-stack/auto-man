@@ -1,12 +1,13 @@
 use super::Builder;
 use auto_gen::AutoGen;
 use auto_val::AutoPath;
+use dialoguer::Select;
 use log::*;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::AutoResult;
+use crate::{AutoResult, TargetKind};
 use crate::{Pac, Target};
 use encoding_rs::GBK;
 
@@ -50,12 +51,12 @@ impl Builder for NinjaBuilder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
         self.setup(pac)?;
         for t in &pac.targets {
-            self.target(t)?;
             if !t.deps.is_empty() {
                 for dep in t.deps.iter() {
                     self.target(dep)?;
                 }
             }
+            self.target(t)?;
         }
         self.finish(pac)?;
         Ok(())
@@ -72,15 +73,23 @@ impl Builder for NinjaBuilder {
 
         let mut includes = String::from("includes =");
         for inc in pac.all_incs() {
-            includes.push_str(&format!(" -I{}", inc));
+            includes.push_str(&format!(" -I../{}", AutoPath::new(inc)));
         }
 
         let port = &pac.port;
 
-        let (cc, link) = match port.platform.as_str() {
-            "windows" => ("cl.exe /c $in /Fo:$out", "link.exe /OUT:$out $in"),
-            "linux" => ("clang -c $in -o $out", "clang -o $out $in"),
-            _ => ("clang", "clang"),
+        let (cc, link, lib) = match port.platform.as_str() {
+            "windows" => (
+                "cl.exe /c $in /Fo:$out",
+                "link.exe /OUT:$out $in",
+                "lib.exe /OUT:$out $in",
+            ),
+            "linux" => (
+                "clang -c $in -o $out",
+                "clang -o $out $in",
+                "ar rcs $out $in",
+            ),
+            _ => ("clang", "clang", "clang"),
         };
 
         // write header rules
@@ -100,8 +109,12 @@ rule link
     command = {}
     description = Linking $out
 
+rule lib
+    command = {}
+    description = Building library $out
+
 "#,
-                includes, cc, link
+                includes, cc, link, lib
             )
             .as_bytes(),
         )?;
@@ -136,16 +149,56 @@ rule link
             }
         }
 
-        let target_name = match target.port.platform.as_str() {
-            "windows" => format!("{}.exe", target.name).into(),
-            "linux" => target.name.clone(),
-            _ => target.name.clone(),
-        };
+        // deal with the main target of this project
+        match target.kind {
+            TargetKind::App | TargetKind::Test => {
+                let n = if target.name.is_empty() {
+                    match target.kind {
+                        TargetKind::App => "main".into(),
+                        TargetKind::Test => "test".into(),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    target.name.clone()
+                };
 
-        out.write(b"# target executable\n")?;
-        out.write(format!("build {}: link {}\n", target_name, objs.join(" ")).as_bytes())?;
-        out.write(b"\n")?;
+                let target_name = match target.port.platform.as_str() {
+                    "windows" => format!("{}.exe", n).into(),
+                    "linux" => n.clone(),
+                    _ => n.clone(),
+                };
 
+                out.write(b"# target executable\n")?;
+                out.write(format!("build {}: link {}", target_name, objs.join(" ")).as_bytes())?;
+
+                // add dependency libs
+                let deps = target
+                    .links
+                    .iter()
+                    .map(|d| format!("{}.lib", d.main_arg().repr()))
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                if !deps.is_empty() {
+                    out.write(b" ")?;
+                    out.write(deps.as_bytes())?;
+                }
+                out.write(b"\n")?;
+            }
+            TargetKind::Lib => {
+                let target_name = match target.port.platform.as_str() {
+                    "windows" => format!("{}.lib", target.name).into(),
+                    "linux" => format!("lib{}.a", target.name).into(),
+                    _ => target.name.clone(),
+                };
+
+                out.write(b"# target library\n")?;
+                out.write(format!("build {}: lib {}\n", target_name, objs.join(" ")).as_bytes())?;
+                out.write(b"\n")?;
+            }
+            _ => {
+                // do nothing
+            }
+        }
         // out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
 
         let is_header_only = target.srcs.is_empty() && !target.incs.is_empty();
@@ -244,14 +297,41 @@ rule link
     }
 
     fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()> {
-        // run target
-        let target = self.path.parent().join(&pac.name);
-        println!("[ninja] running exe: {}", target);
-        let status = std::process::Command::new(target.to_string())
-            .args(args)
-            .status()?;
-        if !status.success() {
-            return Err(format!("Failed to run Ninja").into());
+        // look for .exe in build directory
+        let mut exes = Vec::new();
+        for entry in std::fs::read_dir("build")? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                let n = entry.file_name().into_string().unwrap();
+                if is_executable::is_executable(&entry.path()) {
+                    exes.push(format!("build/{}", n));
+                }
+            }
+        }
+        // let user select one to run
+        if exes.is_empty() {
+            return Err("No executable found".into());
+        } else if exes.len() == 1 {
+            let target = exes[0].clone();
+            println!("[ninja] running exe: {}", target);
+            let status = std::process::Command::new(target).args(args).status()?;
+            if !status.success() {
+                return Err(format!("Failed to run Ninja").into());
+            }
+        } else {
+            // TODO: implement user selection
+            let selection = Select::new()
+                .with_prompt("Which executable do you want to run?")
+                .default(0)
+                .items(&exes)
+                .interact()?;
+
+            let target = exes[selection].clone();
+            println!("[ninja] running exe: {}", target);
+            let status = std::process::Command::new(target).args(args).status()?;
+            if !status.success() {
+                return Err(format!("Failed to run Ninja").into());
+            }
         }
         Ok(())
     }

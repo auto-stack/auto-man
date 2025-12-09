@@ -1,6 +1,6 @@
-#ifndef ${name.upper()}_H
-#define ${name.upper()}_H
+#ifndef _${name.upper()}_H
+#define _${name.upper()}_H
 
 int ${name}_add(int a, int b);
 
-#endif
+#endif // _${name.upper()}_H

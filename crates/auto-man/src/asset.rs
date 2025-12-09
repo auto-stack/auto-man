@@ -1,5 +1,7 @@
 use crate::util::{split_first, split_last};
 use crate::{AutoError, AutoResult};
+use auto_lang::ast::Store;
+use auto_lang::scope::Meta;
 use auto_lang::Universe;
 use auto_val::AutoStr;
 use auto_val::Value;
@@ -7,6 +9,7 @@ use rust_embed::*;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 #[derive(Embed)]
 #[folder = "assets/templates"]
 pub struct Templates;
@@ -39,6 +42,15 @@ impl Templates {
                 // 替换模板中的 ${name} 为 pac_name
                 let mut universe = Universe::new();
                 universe.set_global("name", Value::from(pac_name));
+                universe.define_global(
+                    "name",
+                    Rc::new(Meta::Store(Store {
+                        kind: auto_lang::ast::StoreKind::Var,
+                        name: "name".into(),
+                        ty: auto_lang::ast::Type::Str,
+                        expr: auto_lang::ast::Expr::Nil,
+                    })),
+                );
                 let auto_code = auto_lang::eval_template(&code, universe);
                 let result = auto_code.unwrap().result;
                 let code = result.repr();
