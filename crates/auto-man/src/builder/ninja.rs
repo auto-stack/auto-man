@@ -3,6 +3,7 @@ use auto_gen::AutoGen;
 use auto_val::AutoPath;
 use dialoguer::Select;
 use log::*;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -50,13 +51,24 @@ impl NinjaBuilder {
 impl Builder for NinjaBuilder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
         self.setup(pac)?;
+        let mut targets_done = HashSet::new();
         for t in &pac.targets {
             if !t.deps.is_empty() {
                 for dep in t.deps.iter() {
-                    self.target(dep)?;
+                    if targets_done.contains(&dep.rename) {
+                        continue;
+                    } else {
+                        self.target(dep)?;
+                        targets_done.insert(dep.rename.clone());
+                    }
                 }
             }
-            self.target(t)?;
+            if targets_done.contains(&t.rename) {
+                continue;
+            } else {
+                self.target(t)?;
+                targets_done.insert(t.rename.clone());
+            }
         }
         self.finish(pac)?;
         Ok(())

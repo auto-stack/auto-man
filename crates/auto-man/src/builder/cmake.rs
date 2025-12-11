@@ -69,11 +69,22 @@ fn print_list(list: &HashSet<AutoStr>, out: &mut dyn Write) -> AutoResult<()> {
 impl Builder for CMakeBuilder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()> {
         self.setup(pac)?;
+        let mut targets_done = HashSet::new();
         for t in &pac.targets {
-            self.target(t)?;
+            if targets_done.contains(&t.rename) {
+                continue;
+            } else {
+                self.target(t)?;
+                targets_done.insert(t.rename.clone());
+            }
             if !t.deps.is_empty() {
                 for dep in t.deps.iter() {
-                    self.target(dep)?;
+                    if targets_done.contains(&dep.rename) {
+                        continue;
+                    } else {
+                        self.target(dep)?;
+                        targets_done.insert(dep.rename.clone());
+                    }
                 }
             }
         }
