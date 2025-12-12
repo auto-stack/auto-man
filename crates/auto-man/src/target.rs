@@ -595,10 +595,16 @@ impl Target {
             let (mut c_code, uni) = transpile_c(&self.name, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
-            std::fs::write(Path::new(c_path.as_str()), c_code.done())?;
-            // write the header file
             let h_path = path.as_str().replace(".at", ".h");
-            std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
+
+            let c_content = c_code.done();
+            if !c_content.is_empty() {
+                std::fs::write(Path::new(c_path.as_str()), c_content)?;
+            }
+            // write the header file
+            if !c_code.header.is_empty() {
+                std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
+            }
             // add the file to the srcs
             self.srcs.insert(AutoStr::from(c_path));
             if let Some(d) = Path::new(h_path.as_str()).parent() {
