@@ -308,7 +308,7 @@ rule lib
         Ok(())
     }
 
-    fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()> {
+    fn run(&mut self, _pac: &Pac, args: Vec<String>) -> AutoResult<()> {
         // look for .exe in build directory
         let mut exes = Vec::new();
         for entry in std::fs::read_dir("build")? {

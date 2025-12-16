@@ -24,4 +24,4 @@ pub use target::*;
 pub use auto_val::AutoError;
 pub use auto_val::AutoResult;
 
-pub const AUTOMAN_VERSION: &str = "v0.1.0";
+pub const AUTOMAN_VERSION: &str = "v0.1.1";

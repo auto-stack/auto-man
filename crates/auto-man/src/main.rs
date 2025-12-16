@@ -1,5 +1,5 @@
 use auto_man::*;
-use auto_val::{AutoStr, Instance};
+use auto_val::AutoStr;
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use dialoguer::Select;
