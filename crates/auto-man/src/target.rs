@@ -597,7 +597,7 @@ impl Target {
             let c_path = path.as_str().replace(".at", ".c");
             let h_path = path.as_str().replace(".at", ".h");
 
-            let c_content = c_code.done();
+            let c_content = c_code.done()?;
             if !c_content.is_empty() {
                 std::fs::write(Path::new(c_path.as_str()), c_content)?;
             }

@@ -71,6 +71,20 @@ impl Automan {
         }
         Ok(())
     }
+
+    pub fn install_config(file: &str) -> AutoResult<()> {
+        let home = dirs::home_dir().ok_or("Can't open home dir")?;
+        let auto_dir = home.join(".auto").join("auto-man");
+        let am_at_file = auto_dir.join("am.at");
+        let path = Path::new(file);
+        if !path.exists() {
+            return Err(format!("am.at config file {} not found", file).into());
+        }
+        let content = std::fs::read_to_string(path)?;
+        std::fs::write(&am_at_file, content)?;
+        info!("updated {}", am_at_file.display());
+        Ok(())
+    }
 }
 
 // API
@@ -517,13 +531,26 @@ pub fn load_am_config() -> Option<AmConfig> {
             .join(".auto")
             .join("auto-man")
             .join("am.at");
+        if !user_home_config_path.is_dir() {
+            // create parent dir
+            let rs = std::fs::create_dir_all(user_home_config_path.parent().unwrap());
+            if rs.is_err() {
+                error!("Failed to create parent directory for am.at file");
+            }
+        }
         if user_home_config_path.is_file() {
+            am_path = Some(user_home_config_path);
+        } else {
+            info!("Automan Config file am.at not found in current or home directory, using the default one");
+            // write default config to am.at file
+            let default_config = AmConfig::default();
+            let default_config_str = default_config.to_string();
+            std::fs::write(user_home_config_path.clone(), default_config_str).unwrap();
             am_path = Some(user_home_config_path);
         }
     }
 
     let Some(am_path) = am_path else {
-        info!("Automan Config file am.at not found in current or home directory, using the default one");
         return None;
     };
     let code = std::fs::read_to_string(am_path.clone());

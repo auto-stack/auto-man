@@ -1,5 +1,5 @@
 use auto_man::*;
-use auto_val::AutoStr;
+use auto_val::{AutoStr, Instance};
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use dialoguer::Select;
@@ -47,6 +47,8 @@ enum Commands {
     Pull,
     #[command(about = "Reset automan config and index")]
     Reset,
+    #[command(about = "Install am.at config file")]
+    Install { file: String },
 }
 
 fn init_logger() {
@@ -187,6 +189,9 @@ Hello, I'm Automan {}!
         }
         Some(Commands::Reset) => {
             Automan::reset_index()?;
+        }
+        Some(Commands::Install { file }) => {
+            Automan::install_config(&file)?;
         }
         None => {
             Cli::command().print_help()?;
