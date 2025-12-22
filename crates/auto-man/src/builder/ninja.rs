@@ -90,18 +90,22 @@ impl Builder for NinjaBuilder {
 
         let port = &pac.port;
 
-        let (cc, link, lib) = match port.platform.as_str() {
-            "windows" => (
-                "cl.exe /c $in /Fo:$out",
-                "link.exe /OUT:$out $in",
-                "lib.exe /OUT:$out $in",
+        let (cc, link, lib) = match port.tool.name.as_str() {
+            "msvc" => (
+                format!("{} /c $in /Fo:$out", port.tool.compiler),
+                format!("{} /OUT:$out $in", port.tool.linker),
+                format!("{} /OUT:$out $in", port.tool.archiver),
             ),
-            "linux" => (
-                "clang -c $in -o $out",
-                "clang -o $out $in",
-                "ar rcs $out $in",
+            "clang" => (
+                format!("{} -c $in -o $out", port.tool.compiler),
+                format!("{} -o $out $in", port.tool.linker),
+                format!("{} -o $out $in", port.tool.archiver),
             ),
-            _ => ("clang", "clang", "clang"),
+            _ => (
+                "clang".to_string(),
+                "clang".to_string(),
+                "clang".to_string(),
+            ),
         };
 
         // write header rules
@@ -308,15 +312,21 @@ rule lib
         Ok(())
     }
 
-    fn run(&mut self, _pac: &Pac, args: Vec<String>) -> AutoResult<()> {
+    fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()> {
+        // find build directry
+        let build_dir = pac.port.at.clone();
+        if !AutoPath::new(&build_dir).exists() {
+            return Err("Build directory does not exist".into());
+        }
+
         // look for .exe in build directory
         let mut exes = Vec::new();
-        for entry in std::fs::read_dir("build")? {
+        for entry in std::fs::read_dir(build_dir.to_string())? {
             let entry = entry?;
             if entry.file_type()?.is_file() {
                 let n = entry.file_name().into_string().unwrap();
                 if is_executable::is_executable(&entry.path()) {
-                    exes.push(format!("build/{}", n));
+                    exes.push(format!("{}/{}", build_dir, n));
                 }
             }
         }
