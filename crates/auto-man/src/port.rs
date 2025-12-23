@@ -1,15 +1,7 @@
 use std::env;
 
+use crate::Tool;
 use auto_val::AutoStr;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Tool {
-    pub name: AutoStr,
-    pub compiler: AutoStr,
-    pub assembler: AutoStr,
-    pub linker: AutoStr,
-    pub archiver: AutoStr,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Port {
@@ -28,26 +20,14 @@ impl Default for Port {
                 builder: "ninja".into(),
                 platform: "windows".into(),
                 at: "build".into(),
-                tool: Tool {
-                    name: "msvc".into(),
-                    compiler: "cl.exe".into(),
-                    assembler: "ml64.exe".into(),
-                    linker: "link.exe".into(),
-                    archiver: "lib.exe".into(),
-                },
+                tool: Tool::from_kind("msvc".into(), crate::ToolKind::Msvc),
             },
             _ => Self {
                 name: "linux_ninja".into(),
                 builder: "ninja".into(),
                 platform: "linux".into(),
                 at: "build".into(),
-                tool: Tool {
-                    name: "gcc".into(),
-                    compiler: "gcc".into(),
-                    assembler: "as".into(),
-                    linker: "ld".into(),
-                    archiver: "ar".into(),
-                },
+                tool: Tool::from_kind("gcc".into(), crate::ToolKind::Gcc),
             },
         }
     }

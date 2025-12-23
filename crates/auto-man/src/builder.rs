@@ -6,6 +6,8 @@ mod ghs;
 pub use ghs::*;
 mod ninja;
 pub use ninja::*;
+mod tool;
+pub use tool::*;
 
 use crate::AutoResult;
 use crate::{Pac, Target};

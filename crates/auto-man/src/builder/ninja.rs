@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::{AutoResult, TargetKind};
+use crate::{AutoResult, TargetKind, ToolKind};
 use crate::{Pac, Target};
 use encoding_rs::GBK;
 
@@ -90,18 +90,27 @@ impl Builder for NinjaBuilder {
 
         let port = &pac.port;
 
-        let (cc, link, lib) = match port.tool.name.as_str() {
-            "msvc" => (
+        let (asm, cc, link, lib) = match port.tool.kind {
+            ToolKind::Msvc => (
+                format!("{} /c $in /Fo:$out", port.tool.assembler),
                 format!("{} /c $in /Fo:$out", port.tool.compiler),
                 format!("{} /OUT:$out $in", port.tool.linker),
                 format!("{} /OUT:$out $in", port.tool.archiver),
             ),
-            "clang" => (
+            ToolKind::Gcc => (
+                format!("{} -c $in -o $out", port.tool.assembler),
+                format!("{} -c $in -o $out", port.tool.compiler),
+                format!("{} -o $out $in", port.tool.linker),
+                format!("{} -o $out $in", port.tool.archiver),
+            ),
+            ToolKind::IarArm => (
+                format!("{} -c $in -o $out", port.tool.assembler),
                 format!("{} -c $in -o $out", port.tool.compiler),
                 format!("{} -o $out $in", port.tool.linker),
                 format!("{} -o $out $in", port.tool.archiver),
             ),
             _ => (
+                "clang".to_string(),
                 "clang".to_string(),
                 "clang".to_string(),
                 "clang".to_string(),
@@ -117,6 +126,10 @@ impl Builder for NinjaBuilder {
 {}
 
 # rules
+rule as
+    command = {} $includes
+    description = Assembling $in
+
 rule cc
     command = {} $includes
     description = Compiling $in
@@ -130,7 +143,7 @@ rule lib
     description = Building library $out
 
 "#,
-                includes, cc, link, lib
+                includes, asm, cc, link, lib
             )
             .as_bytes(),
         )?;
@@ -210,6 +223,9 @@ rule lib
                 out.write(b"# target library\n")?;
                 out.write(format!("build {}: lib {}\n", target_name, objs.join(" ")).as_bytes())?;
                 out.write(b"\n")?;
+            }
+            TargetKind::Bag => {
+                println!("DOING WITH BAG: {}", target.name);
             }
             _ => {
                 // do nothing

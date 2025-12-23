@@ -9,6 +9,7 @@ use crate::make_builder;
 use crate::AutoResult;
 use crate::Port;
 use crate::TargetOrigin;
+use crate::Tool;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
 use auto_atom::Atom;
@@ -305,6 +306,8 @@ impl Pac {
         if self.port.builder == "ghs" || self.port.builder == "ninja" {
             self.set_show_headers();
         }
+        // set tool
+
         Ok(())
     }
 
@@ -594,12 +597,22 @@ impl Pac {
             let target = Target::from(n, self.name.clone());
             self.targets.push(target);
         }
-
         let mut port = Port::default();
         port.name = port_node.main_arg().to_astr();
         port.builder = port_node.get_prop("builder").to_astr();
         port.platform = port_node.get_prop("platform").to_astr();
         port.at = port_node.get_prop("at").to_astr();
+
+        // tool
+        if port_node.has_prop("tool") {
+            let tool = port_node.get_prop("tool");
+            let kind = tool.as_obj().get_str_of("kind");
+            let loc = tool.as_obj().get_str_of("location");
+            let mut tool = Tool::from(kind.clone(), kind);
+            tool.set_path(loc.as_str());
+            port.tool = tool;
+        }
+
         self.port = port;
         Ok(())
     }
