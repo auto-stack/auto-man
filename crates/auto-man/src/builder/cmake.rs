@@ -74,7 +74,7 @@ impl Builder for CMakeBuilder {
             if targets_done.contains(&t.rename) {
                 continue;
             } else {
-                self.target(t)?;
+                self.target(t, pac)?;
                 targets_done.insert(t.rename.clone());
             }
             if !t.deps.is_empty() {
@@ -82,7 +82,7 @@ impl Builder for CMakeBuilder {
                     if targets_done.contains(&dep.rename) {
                         continue;
                     } else {
-                        self.target(dep)?;
+                        self.target(dep, pac)?;
                         targets_done.insert(dep.rename.clone());
                     }
                 }
@@ -129,7 +129,7 @@ impl Builder for CMakeBuilder {
         Ok(())
     }
 
-    fn target(&mut self, target: &Target) -> AutoResult<()> {
+    fn target(&mut self, target: &Target, _pac: &Pac) -> AutoResult<()> {
         println!("building target {}", target.name);
         let out = self.out.as_mut();
 

@@ -20,6 +20,7 @@ use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey
 use auto_val::{shared, Shared};
 use log::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 use tabled::{
@@ -570,7 +571,7 @@ impl Pac {
         self.targets = major_targets;
 
         // 3. scan targets for its local source files
-        info!("Scanning targets for srcs and incs");
+        info!("Scanning targets for srcs and incs, only major targets and their deps are scanned");
         let show_headers = self.show_headers;
         for target in &mut self.targets {
             target.show_headers = show_headers;
@@ -962,10 +963,11 @@ impl Pac {
     }
 
     pub fn all_incs(&self) -> Vec<AutoStr> {
-        let mut all_incs = vec![];
+        let mut all_incs = HashSet::new();
         for target in &self.targets {
-            all_incs.extend(target.incs.clone());
+            all_incs.extend(target.all_incs());
         }
+        let mut all_incs = all_incs.into_iter().collect::<Vec<AutoStr>>();
         all_incs.sort();
         all_incs
     }

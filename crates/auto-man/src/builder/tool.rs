@@ -1,7 +1,6 @@
 use auto_val::astr_empty;
 use auto_val::AutoPath;
 use auto_val::AutoStr;
-use auto_val::ASTR_EMPTY;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ToolLocation {
@@ -34,14 +33,14 @@ impl Tool {
         self.location = ToolLocation::Dir(AutoPath::from(path));
     }
 
-    fn exe(&self, exe: AutoStr) -> AutoStr {
+    pub fn exe(&self, exe: AutoStr) -> AutoStr {
         match self.location {
             ToolLocation::Env => exe,
             ToolLocation::Dir(ref dir) => dir.join(exe).into(),
         }
     }
 
-    fn cc(&self) -> AutoStr {
+    pub fn cc(&self) -> AutoStr {
         match self.kind {
             ToolKind::None => astr_empty(),
             ToolKind::Msvc => format!("{} /c ", self.exe(self.compiler.clone())).into(),
@@ -50,6 +49,19 @@ impl Tool {
             }
             ToolKind::IarArm => format!("{} -c ", self.exe(self.compiler.clone())).into(),
         }
+    }
+
+    pub fn defines(&self, defines: &Vec<AutoStr>) -> AutoStr {
+        let define_cmd = match self.kind {
+            ToolKind::Msvc => "/D",
+            _ => "-D",
+        };
+        defines
+            .iter()
+            .map(|d| format!("{}{}", define_cmd, d)) // TODO: use toolset specific defines
+            .collect::<Vec<String>>()
+            .join(" ")
+            .into()
     }
 }
 

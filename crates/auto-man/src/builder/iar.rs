@@ -112,7 +112,7 @@ impl Builder for IARBuilder {
         Ok(())
     }
 
-    fn target(&mut self, _t: &Target) -> AutoResult<()> {
+    fn target(&mut self, _t: &Target, _pac: &Pac) -> AutoResult<()> {
         Ok(())
     }
 

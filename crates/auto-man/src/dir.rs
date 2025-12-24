@@ -291,7 +291,7 @@ impl Dir {
             let inc_path = root_path.join("include");
             let (files, has_headers) =
                 scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
-            all_incs.extend(files);
+            all_srcs.extend(files);
             if has_headers {
                 all_incs.insert(inc_path.unified());
             }
@@ -300,7 +300,7 @@ impl Dir {
             let inc_path = root_path.join("inc");
             let (files, has_headers) =
                 scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
-            all_incs.extend(files);
+            all_srcs.extend(files);
             if has_headers {
                 all_incs.insert(inc_path.unified());
             }

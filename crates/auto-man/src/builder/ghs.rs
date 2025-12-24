@@ -218,7 +218,7 @@ impl Builder for GHSBuilder {
         Ok(())
     }
 
-    fn target(&mut self, _t: &Target) -> AutoResult<()> {
+    fn target(&mut self, _t: &Target, _pac: &Pac) -> AutoResult<()> {
         Ok(())
     }
 

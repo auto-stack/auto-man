@@ -1,14 +1,13 @@
 use super::Builder;
 use auto_gen::AutoGen;
-use auto_val::AutoPath;
+use auto_val::{AutoPath, AutoStr};
 use dialoguer::Select;
 use log::*;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
+use std::{fs::File, io::Write};
 
-use crate::{AutoResult, TargetKind, ToolKind};
+use crate::{AutoResult, Port, TargetKind, ToolKind};
 use crate::{Pac, Target};
 use encoding_rs::GBK;
 
@@ -46,6 +45,32 @@ impl NinjaBuilder {
         self.out = Box::new(out);
         Ok(())
     }
+
+    fn build_source(&mut self, target: &Target, objs: &mut Vec<AutoStr>) -> AutoResult<()> {
+        let obj_postfix = match target.port.platform.as_str() {
+            "windows" => ".obj",
+            "linux" => ".o",
+            _ => ".o",
+        };
+        // build rule for each source file
+        for src in target.srcs.iter() {
+            if src.ends_with(".c") {
+                let ofile = AutoPath::new(src).filename().replace(".c", obj_postfix);
+                let path = if src.starts_with("/") {
+                    src
+                } else {
+                    &format!("{}", src).into()
+                };
+                self.out
+                    .write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
+                // default cflags
+                // out.write(format!("   cflags = {}\n", default_cflags(&target.port)).as_bytes())?;
+                // defines
+                objs.push(ofile);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Builder for NinjaBuilder {
@@ -58,7 +83,7 @@ impl Builder for NinjaBuilder {
                     if targets_done.contains(&dep.rename) {
                         continue;
                     } else {
-                        self.target(dep)?;
+                        self.target(dep, pac)?;
                         targets_done.insert(dep.rename.clone());
                     }
                 }
@@ -66,7 +91,7 @@ impl Builder for NinjaBuilder {
             if targets_done.contains(&t.rename) {
                 continue;
             } else {
-                self.target(t)?;
+                self.target(t, pac)?;
                 targets_done.insert(t.rename.clone());
             }
         }
@@ -117,6 +142,14 @@ impl Builder for NinjaBuilder {
             ),
         };
 
+        // defines
+        let defines = port.tool.defines(&pac.defines);
+        let defines = format!("defines = {}\n", defines);
+
+        // cflags
+        let cflags = default_cflags(port);
+        let cflags = format!("cflags = {}\n", cflags);
+
         // write header rules
         self.out.write(
             format!(
@@ -125,17 +158,23 @@ impl Builder for NinjaBuilder {
 # includes
 {}
 
+# defines
+{}
+
+# cflags
+{}
+
 # rules
 rule as
-    command = {} $includes
+    command = {} $includes $aflags
     description = Assembling $in
 
 rule cc
-    command = {} $includes
+    command = {} $includes $defines $cflags
     description = Compiling $in
 
 rule link
-    command = {}
+    command = {} $ldflags
     description = Linking $out
 
 rule lib
@@ -143,7 +182,7 @@ rule lib
     description = Building library $out
 
 "#,
-                includes, asm, cc, link, lib
+                includes, defines, cflags, asm, cc, link, lib
             )
             .as_bytes(),
         )?;
@@ -151,33 +190,15 @@ rule lib
         Ok(())
     }
 
-    fn target(&mut self, target: &Target) -> AutoResult<()> {
+    fn target(&mut self, target: &Target, pac: &Pac) -> AutoResult<()> {
         println!("[ninja] building target {}", target.name);
+        self.out
+            .write(format!("# build objects for target {}\n", target.name).as_bytes())?;
+
+        let mut objs: Vec<AutoStr> = Vec::new();
+        self.build_source(target, &mut objs)?;
+
         let out = self.out.as_mut();
-
-        out.write(format!("# build objects for target {}\n", target.name).as_bytes())?;
-
-        let mut objs = Vec::new();
-
-        let obj_postfix = match target.port.platform.as_str() {
-            "windows" => ".obj",
-            "linux" => ".o",
-            _ => ".o",
-        };
-
-        for src in target.srcs.iter() {
-            if src.ends_with(".c") {
-                let ofile = AutoPath::new(src).filename().replace(".c", obj_postfix);
-                let path = if src.starts_with("/") {
-                    src
-                } else {
-                    &format!("{}", src).into()
-                };
-                out.write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
-                objs.push(ofile);
-            }
-        }
-
         // deal with the main target of this project
         match target.kind {
             TargetKind::App | TargetKind::Test => {
@@ -204,7 +225,15 @@ rule lib
                 let deps = target
                     .links
                     .iter()
-                    .map(|d| format!("{}.lib", d.main_arg().repr()))
+                    .map(|d| {
+                        let n = d.main_arg().repr();
+                        if let Some(t) = pac.get_target(&n) {
+                            t.libname().to_string()
+                        } else {
+                            "".to_string()
+                        }
+                    })
+                    .filter(|t| !t.is_empty())
                     .collect::<Vec<String>>()
                     .join(" ");
                 if !deps.is_empty() {
@@ -213,22 +242,17 @@ rule lib
                 }
                 out.write(b"\n")?;
             }
-            TargetKind::Lib => {
-                let target_name = match target.port.platform.as_str() {
-                    "windows" => format!("{}.lib", target.name).into(),
-                    "linux" => format!("lib{}.a", target.name).into(),
-                    _ => target.name.clone(),
-                };
-
-                out.write(b"# target library\n")?;
-                out.write(format!("build {}: lib {}\n", target_name, objs.join(" ")).as_bytes())?;
-                out.write(b"\n")?;
+            TargetKind::Lib | TargetKind::Dep | TargetKind::Device => {
+                let target_name: AutoStr = target.libname();
+                let objs = objs.join(" ");
+                if !objs.is_empty() {
+                    out.write(b"# target library\n")?;
+                    out.write(format!("build {}: lib {}\n", target_name, objs).as_bytes())?;
+                    out.write(b"\n")?;
+                }
             }
             TargetKind::Bag => {
                 println!("DOING WITH BAG: {}", target.name);
-            }
-            _ => {
-                // do nothing
             }
         }
         // out.write(format!("build {}.o: cc ../{}.c\n", target.name, target.name).as_bytes())?;
@@ -286,26 +310,30 @@ rule lib
         );
 
         // run ninja to build
-        let out = std::process::Command::new("ninja")
+        std::process::Command::new("ninja")
             .args(["-C", build_path.to_astr().as_str()])
-            .output()?;
-        // cmd.current_dir(build_path.path());
-        if out.status.success() {
-            println!("Build successful");
-        } else {
-            println!("Build failed:");
-            println!("=============== Ninja Output: Start ==================");
-            if std::env::consts::OS == "windows" {
-                let mut decoder = GBK.new_decoder();
-                let mut buffer_bytes = [0u8; 2048];
-                let mut buffer: &mut str = std::str::from_utf8_mut(&mut buffer_bytes).unwrap();
-                _ = decoder.decode_to_str(&out.stdout, &mut buffer, false);
-                println!("{}", buffer);
-            } else {
-                println!("{}", String::from_utf8_lossy(&out.stdout));
-            }
-            println!("=============== Ninja Output: End ===================");
-        }
+            .spawn()
+            .expect("Failed to spawn ninja process");
+        // let out = std::process::Command::new("ninja")
+        //     .args(["-C", build_path.to_astr().as_str()])
+        //     .output()?;
+        // // cmd.current_dir(build_path.path());
+        // if out.status.success() {
+        //     println!("Build successful");
+        // } else {
+        //     println!("Build failed:");
+        //     println!("=============== Ninja Output: Start ==================");
+        //     if std::env::consts::OS == "windows" {
+        //         let mut decoder = GBK.new_decoder();
+        //         let mut buffer_bytes = [0u8; 2048];
+        //         let mut buffer: &mut str = std::str::from_utf8_mut(&mut buffer_bytes).unwrap();
+        //         _ = decoder.decode_to_str(&out.stdout, &mut buffer, false);
+        //         println!("{}", buffer);
+        //     } else {
+        //         println!("{}", String::from_utf8_lossy(&out.stdout));
+        //     }
+        //     println!("=============== Ninja Output: End ===================");
+        // }
         println!("End of build");
         Ok(())
     }
@@ -372,5 +400,14 @@ rule lib
             }
         }
         Ok(())
+    }
+}
+
+fn default_cflags(port: &Port) -> AutoStr {
+    match port.tool.kind {
+        ToolKind::IarArm => {
+            "--no_cse --no_unroll --no_inline --no_code_motion --no_tbaa --no_clustering --no_scheduling --debug --endian=little --cpu=Cortex-M4 -e --fpu=VFPv4_sp --dlib_config D:/soft/IAR_EWARM_9.2/arm/inc/c/DLib_Config_Normal.h".into()
+        }
+        _ => "".into(),
     }
 }

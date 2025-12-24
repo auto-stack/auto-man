@@ -725,8 +725,6 @@ impl Target {
         );
         if !self.props.has("defines") {
             let defines = Vec::<AutoStr>::new();
-            // defines.push("DEBUG".into());
-            // defines.push("USE_KERNEL".into());
             self.props.set("defines", defines);
         }
 
@@ -768,6 +766,7 @@ impl Target {
             .iter()
             .map(|s| s.clone())
             .collect::<Vec<AutoStr>>();
+        println!("includes before scan: {:?}", incs);
         let scanned_incs = check_incs(&incs, &self.at)?;
         succ_incs.extend(scanned_incs);
 
@@ -785,6 +784,7 @@ impl Target {
 
         self.srcs = succ_srcs.into_iter().collect();
         self.incs = succ_incs.into_iter().collect();
+        println!("includes: {:?}", self.incs);
         // dirs are moved out and scanned, with all infomation merged into the target
         // so we don't need to store dirs anymore
         // self.dirs is empty now
@@ -897,6 +897,14 @@ impl Target {
             self.group_target(g, t);
         }
         group
+    }
+
+    pub fn libname(&self) -> AutoStr {
+        match self.port.platform.as_str() {
+            "windows" => format!("{}.lib", self.name).into(),
+            "linux" => format!("lib{}.a", self.name).into(),
+            _ => format!("lib{}.a", self.name).into(),
+        }
     }
 
     pub(crate) fn collect_srcs(&mut self) -> AutoResult<()> {

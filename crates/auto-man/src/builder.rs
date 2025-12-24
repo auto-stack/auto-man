@@ -17,7 +17,7 @@ pub trait Builder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()>;
     fn setup(&mut self, pac: &mut Pac) -> AutoResult<()>;
     fn finish(&mut self, pac: &Pac) -> AutoResult<()>;
-    fn target(&mut self, target: &Target) -> AutoResult<()>;
+    fn target(&mut self, target: &Target, pac: &Pac) -> AutoResult<()>;
     fn clean(&mut self) -> AutoResult<()>;
     fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()>;
 }
