@@ -9,7 +9,6 @@ use std::{fs::File, io::Write};
 
 use crate::{AutoResult, Port, TargetKind, ToolKind};
 use crate::{Pac, Target};
-use encoding_rs::GBK;
 
 pub struct NinjaBuilder {
     pub gen: AutoGen,
@@ -54,6 +53,7 @@ impl NinjaBuilder {
         };
         // build rule for each source file
         for src in target.srcs.iter() {
+            println!("Checking src: {}", src);
             if src.ends_with(".c") {
                 let ofile = AutoPath::new(src).filename().replace(".c", obj_postfix);
                 let path = if src.starts_with("/") {
@@ -61,6 +61,7 @@ impl NinjaBuilder {
                 } else {
                     &format!("{}", src).into()
                 };
+                println!("add build rule for {}", src);
                 self.out
                     .write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
                 // default cflags

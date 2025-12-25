@@ -600,17 +600,18 @@ impl Target {
             let c_content = c_code.done()?;
             if !c_content.is_empty() {
                 std::fs::write(Path::new(c_path.as_str()), c_content)?;
+                // add the file to the srcs
+                self.srcs.insert(AutoStr::from(c_path));
             }
             // write the header file
             if !c_code.header.is_empty() {
                 std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
-            }
-            // add the file to the srcs
-            self.srcs.insert(AutoStr::from(c_path));
-            if let Some(d) = Path::new(h_path.as_str()).parent() {
-                let d: AutoStr = d.to_str().unwrap().into();
-                if !d.is_empty() {
-                    self.incs.insert(d);
+
+                if let Some(d) = Path::new(h_path.as_str()).parent() {
+                    let d: AutoStr = d.to_str().unwrap().into();
+                    if !d.is_empty() {
+                        self.incs.insert(d);
+                    }
                 }
             }
             // add code paks
