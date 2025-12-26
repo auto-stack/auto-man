@@ -311,30 +311,15 @@ rule lib
         );
 
         // run ninja to build
-        std::process::Command::new("ninja")
+        let mut child = std::process::Command::new("ninja")
             .args(["-C", build_path.to_astr().as_str()])
             .spawn()
             .expect("Failed to spawn ninja process");
-        // let out = std::process::Command::new("ninja")
-        //     .args(["-C", build_path.to_astr().as_str()])
-        //     .output()?;
-        // // cmd.current_dir(build_path.path());
-        // if out.status.success() {
-        //     println!("Build successful");
-        // } else {
-        //     println!("Build failed:");
-        //     println!("=============== Ninja Output: Start ==================");
-        //     if std::env::consts::OS == "windows" {
-        //         let mut decoder = GBK.new_decoder();
-        //         let mut buffer_bytes = [0u8; 2048];
-        //         let mut buffer: &mut str = std::str::from_utf8_mut(&mut buffer_bytes).unwrap();
-        //         _ = decoder.decode_to_str(&out.stdout, &mut buffer, false);
-        //         println!("{}", buffer);
-        //     } else {
-        //         println!("{}", String::from_utf8_lossy(&out.stdout));
-        //     }
-        //     println!("=============== Ninja Output: End ===================");
-        // }
+
+        let status = child.wait().expect("Failed to wait for ninja process");
+
+        println!("ninja build finished with status: {}", status);
+
         println!("End of build");
         Ok(())
     }
