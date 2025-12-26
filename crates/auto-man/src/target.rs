@@ -589,15 +589,21 @@ impl Target {
     pub fn transpile_auto(&mut self) -> AutoResult<()> {
         for path in self.autos.iter() {
             info!("Transpiling {}", path.as_str());
+            let fname = AutoPath::new(path).basename();
+            println!("trans_C fname: {}", fname);
             // read the file
             let content = std::fs::read_to_string(path.as_str())?;
             // transpile the content to c code
-            let (mut c_code, uni) = transpile_c(&self.name, &content)?;
+            let (mut c_code, uni) = transpile_c(fname, &content)?;
             // write the c code to the file
             let c_path = path.as_str().replace(".at", ".c");
             let h_path = path.as_str().replace(".at", ".h");
 
             let c_content = c_code.done()?;
+            println!(
+                "CONTENT: [{}]",
+                String::from_utf8(c_content.clone()).unwrap()
+            );
             if !c_content.is_empty() {
                 std::fs::write(Path::new(c_path.as_str()), c_content)?;
                 // add the file to the srcs
