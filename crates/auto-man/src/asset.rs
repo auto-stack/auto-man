@@ -47,7 +47,7 @@ impl Templates {
                     Rc::new(Meta::Store(Store {
                         kind: auto_lang::ast::StoreKind::Var,
                         name: "name".into(),
-                        ty: auto_lang::ast::Type::Str,
+                        ty: auto_lang::ast::Type::Str("name".len()),
                         expr: auto_lang::ast::Expr::Nil,
                     })),
                 );
