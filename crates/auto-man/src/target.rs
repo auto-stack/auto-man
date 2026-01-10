@@ -6,7 +6,7 @@ use crate::{AutoResult, Port};
 use auto_atom::Atom;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
-use auto_val::{Array, NodeBody, Obj};
+use auto_val::{Array, Obj};
 use auto_val::{AutoPath, AutoStr, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
@@ -381,99 +381,6 @@ impl Target {
         all_incs
     }
 
-    pub fn to_nodebody(&self) -> NodeBody {
-        let node_type = match self.kind {
-            TargetKind::App => "app",
-            TargetKind::Lib => "lib",
-            TargetKind::Bag => "bag",
-            TargetKind::Dep => "dep",
-            TargetKind::Device => "device",
-            TargetKind::Test => "test",
-        };
-        let mut nb = NodeBody::new();
-        nb.add_prop("kind", node_type);
-        nb.add_prop("relative_path", self.rel.clone());
-        nb.add_prop("at", self.at.clone());
-        nb.add_prop("name", self.local_name().clone());
-        nb.add_prop("id", self.local_name().clone());
-        nb.add_prop("root", self.at.clone());
-        nb.add_prop("srcs", set_to_vec(self.srcs.clone()));
-        nb.add_prop("incs", set_to_vec(self.incs.clone()));
-        nb.add_prop("all_incs", self.all_incs());
-        nb.add_prop("skips", set_to_vec(self.skips.clone()));
-        for (p, v) in self.props.iter() {
-            match v {
-                Value::Str(s) => {
-                    nb.add_prop(p.clone(), s.clone());
-                }
-                Value::Node(n) => {
-                    if n.name == "file" {
-                        // for file node, add target's root to the file's path
-                        let path = n.main_arg();
-                        let path = Path::new(self.at.as_str()).join(path.as_str());
-                        nb.add_prop(p.clone(), path.unified());
-                    } else {
-                        nb.add_prop(p.clone(), n.to_astr());
-                    }
-                }
-                _ => {
-                    nb.add_prop(p.clone(), v.clone());
-                }
-            }
-        }
-        let mut dirs = Array::new();
-        for dir in self.dirs.values() {
-            // node.add_kid(dir.to_node());
-            let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
-            let mut obj = Obj::new();
-            obj.set("name", Value::Str(dir.name.clone()));
-            obj.set("srcs", array_val);
-            obj.set("lpath", dir.lpath.clone());
-            obj.set("rpath", dir.rpath.clone());
-            dirs.push(obj);
-        }
-        // array of objects
-        nb.add_prop("dirs", dirs);
-
-        // deps
-        for dep in &self.deps {
-            let n = dep.to_node();
-            nb.add_kid(n);
-        }
-
-        if !self.deps.iter().any(|t| t.kind == TargetKind::Device) {
-            nb.add_prop("devices", Value::empty_array());
-        }
-
-        if !self.deps.iter().any(|t| t.kind == TargetKind::Dep) {
-            nb.add_prop("deps", Value::empty_array());
-        }
-
-        if !self.deps.iter().any(|t| t.kind == TargetKind::Bag) {
-            nb.add_prop("bags", Value::empty_array());
-        }
-
-        if !self.deps.iter().any(|t| t.kind == TargetKind::Lib) {
-            nb.add_prop("libs", Value::empty_array());
-        }
-
-        // For IAR
-        // TODO: move these into IAR module
-        if self.is_major() && self.port.builder == "iar" {
-            nb.add_prop("groups", self.groups().to_xml());
-        }
-        nb.add_prop("defines", Value::str_array(self.defines.clone()));
-
-        if self.port.builder == "iar" {
-            let mut xo = "none".into();
-            if self.props.has("extra_output") {
-                xo = self.props.get_str_or("extra_output", xo);
-            };
-            nb.add_prop("extout", self.get_extra_output(&xo));
-        }
-        nb
-    }
-
     fn get_extra_output(&self, extra_output: &str) -> Obj {
         let mut o = Obj::new();
         match extra_output {
@@ -516,9 +423,7 @@ impl Target {
     }
 
     pub fn to_atom(&self) -> Atom {
-        let mut atom = Atom::node_body(self.to_nodebody());
-        atom.name = self.name.clone();
-        atom
+        Atom::node(self.to_node())
     }
 
     pub fn to_node(&self) -> Node {
@@ -533,47 +438,72 @@ impl Target {
         let mut node = Node::new(node_type);
         node.args.add_pos(self.name.clone());
         node.id = self.name.clone();
-        node.body = self.to_nodebody();
-        // node.props.set("name", self.local_name().clone());
-        // node.props.set("id", self.local_name().clone());
-        // node.props.set("root", self.at.clone());
-        // node.props.set("at", self.at.clone());
-        // node.props.set("srcs", set_to_vec(self.srcs.clone()));
-        // node.props.set("incs", set_to_vec(self.incs.clone()));
-        // node.props.set("skips", set_to_vec(self.skips.clone()));
-        // for (p, v) in self.props.iter() {
-        //     match v {
-        //         Value::Str(s) => {
-        //             node.props.set(p.clone(), s.clone());
-        //         }
-        //         Value::Node(n) => {
-        //             if n.name == "file" {
-        //                 // for file node, add target's root to the file's path
-        //                 let path = n.main_arg();
-        //                 let path = Path::new(self.at.as_str()).join(path.as_str());
-        //                 node.props.set(p.clone(), path.unified());
-        //             } else {
-        //                 node.props.set(p.clone(), n.to_astr());
-        //             }
-        //         }
-        //         _ => {
-        //             node.props.set(p.clone(), v.clone());
-        //         }
-        //     }
-        // }
-        // let mut dirs = Array::new();
-        // for dir in self.dirs.values() {
-        //     // node.add_kid(dir.to_node());
-        //     let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
-        //     let mut obj = Obj::new();
-        //     obj.set("name", Value::Str(dir.name.clone()));
-        //     obj.set("srcs", array_val);
-        //     obj.set("lpath", dir.lpath.clone());
-        //     obj.set("rpath", dir.rpath.clone());
-        //     dirs.push(obj);
-        // }
-        // // array of objects
-        // node.set_prop("dirs", dirs);
+
+        // Set properties directly on the node (replacing the deprecated body field)
+        node.set_prop("kind", node_type);
+        node.set_prop("relative_path", self.rel.clone());
+        node.set_prop("at", self.at.clone());
+        node.set_prop("name", self.local_name().clone());
+        node.set_prop("id", self.local_name().clone());
+        node.set_prop("root", self.at.clone());
+        node.set_prop("srcs", set_to_vec(self.srcs.clone()));
+        node.set_prop("incs", set_to_vec(self.incs.clone()));
+        node.set_prop("all_incs", self.all_incs());
+        node.set_prop("skips", set_to_vec(self.skips.clone()));
+
+        // Add custom properties
+        for (p, v) in self.props.iter() {
+            match v {
+                Value::Str(s) => {
+                    node.set_prop(p.clone(), s.clone());
+                }
+                Value::Node(n) => {
+                    if n.name == "file" {
+                        // for file node, add target's root to the file's path
+                        let path = n.main_arg();
+                        let path = Path::new(self.at.as_str()).join(path.as_str());
+                        node.set_prop(p.clone(), path.unified());
+                    } else {
+                        node.set_prop(p.clone(), n.to_astr());
+                    }
+                }
+                _ => {
+                    node.set_prop(p.clone(), v.clone());
+                }
+            }
+        }
+
+        // Add dirs as property
+        let mut dirs = Array::new();
+        for dir in self.dirs.values() {
+            let array_val: Vec<Value> = dir.srcs.iter().map(|s| Value::Str(s.clone())).collect();
+            let mut obj = Obj::new();
+            obj.set("name", Value::Str(dir.name.clone()));
+            obj.set("srcs", array_val);
+            obj.set("lpath", dir.lpath.clone());
+            obj.set("rpath", dir.rpath.clone());
+            dirs.push(obj);
+        }
+        node.set_prop("dirs", dirs);
+
+        // Add deps as kids
+        for dep in &self.deps {
+            let n = dep.to_node();
+            node.add_kid(n);
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Device) {
+            node.set_prop("devices", Value::empty_array());
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Dep) {
+            node.set_prop("deps", Value::empty_array());
+        }
+
+        if !self.deps.iter().any(|t| t.kind == TargetKind::Bag) {
+            node.set_prop("bags", Value::empty_array());
+        }
+
         node
     }
 

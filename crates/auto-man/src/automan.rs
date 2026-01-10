@@ -136,7 +136,7 @@ impl Automan {
         let mut env = Universe::new();
         env.set_global("port", port_name.clone().into());
 
-        let config = AutoConfig::from_file(config_path.as_path(), &Obj::EMPTY, env)?;
+        let config = AutoConfig::from_file(config_path.as_path(), &Obj::new(), env)?;
         let mut index_used: Vec<AutoStr> = Vec::new();
         if config.root.has_prop("index") {
             index_used = config
