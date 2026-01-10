@@ -3,8 +3,8 @@ use crate::asset::GHSTemplate;
 use crate::pac::Pac;
 use crate::target::{Target, TargetKind};
 use crate::{AutoResult, Dir};
-use auto_atom::Atom;
 use auto_gen::*;
+use auto_lang::Atom;
 use auto_val::{AutoPath, AutoStr};
 use log::*;
 

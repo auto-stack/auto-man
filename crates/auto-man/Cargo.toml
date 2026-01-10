@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 auto-lang = { workspace = true }
 auto-val = { workspace = true }
-auto-atom = { workspace = true }
 auto-gen = { workspace = true }
 clap = { workspace = true }
 rust-embed = { workspace = true }

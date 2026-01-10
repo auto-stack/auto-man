@@ -10,7 +10,6 @@ rust-embed = { version = "8.5.0", features = ["compression"] }
 # auto-lang = { git = "https://gitee.com/auto-stack/auto-lang"}
 auto-lang = { path = "../auto-lang/crates/auto-lang" }
 auto-val = { path = "../auto-lang/crates/auto-val" }
-auto-atom = { path = "../auto-lang/crates/auto-atom" }
 auto-gen = { path = "../auto-lang/crates/auto-gen" }
 auto-man = { path = "crates/auto-man" }
 # switch to this dynamic lib for debug mode

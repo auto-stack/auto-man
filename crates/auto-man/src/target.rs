@@ -3,11 +3,11 @@ use crate::git::check_changes;
 use crate::group::Group;
 use crate::Dir;
 use crate::{AutoResult, Port};
-use auto_atom::Atom;
 use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
+use auto_lang::Atom;
 use auto_val::{Array, Obj};
-use auto_val::{AutoPath, AutoStr, Node, Value};
+use auto_val::{AutoPath, AutoStr, Kid, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -305,9 +305,18 @@ impl Target {
         // deps
         let deps = Vec::new();
         // devices
-        node.nodes
-            .iter()
-            .filter(|n| n.name == "device")
+        node.kids_iter()
+            .filter_map(|(_, kid)| {
+                if let Kid::Node(n) = kid {
+                    if n.name == "device" {
+                        Some(n)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
             .for_each(|n| {
                 //deps.push(Dep::from_node(n, at.clone(), kind.clone()));
                 warn!("Got dep: {}", n.main_arg());

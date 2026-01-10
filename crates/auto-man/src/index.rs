@@ -1,5 +1,5 @@
 use auto_lang::config::AutoConfig;
-use auto_val::{AutoPath, AutoResult, AutoStr};
+use auto_val::{AutoPath, AutoResult, AutoStr, Kid};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -56,9 +56,18 @@ impl Index {
         let config = AutoConfig::new(&code)?;
         // config is a bunch of index nodes
         let root = config.root;
-        root.nodes
-            .iter()
-            .filter(|n| n.name == "pac" || n.name == "device")
+        root.kids_iter()
+            .filter_map(|(_, kid)| {
+                if let Kid::Node(n) = kid {
+                    if n.name == "pac" || n.name == "device" {
+                        Some(n)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
             .for_each(|n| {
                 let name = n.id();
                 // let version = n.get_prop("version").to_astr();

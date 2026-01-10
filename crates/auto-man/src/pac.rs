@@ -12,10 +12,10 @@ use crate::TargetOrigin;
 use crate::Tool;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
-use auto_atom::Atom;
 use auto_lang::config::AutoConfig;
+use auto_lang::Atom;
 use auto_lang::Universe;
-use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Node, Obj, Value, ValueKey};
+use auto_val::{pretty, Arg, Array, AutoPath, AutoStr, Kid, Node, Obj, Value, ValueKey};
 use auto_val::{shared, Shared};
 use log::*;
 use std::collections::HashMap;
@@ -86,23 +86,25 @@ impl Pac {
 
         // targets, NOTE: ports are not targets
         let mut targets = vec![];
-        for mut n in config.root.nodes.into_iter() {
-            if n.name != "port" {
-                // main target should receive target related args from the pac
-                if n.main_arg().to_astr() == pac_name && n.name == "device" {
-                    for p in &target_props {
-                        if config.args.has(*p) {
-                            let value = config.args.get(*p).unwrap();
-                            println!("Setting prop: {}: {}", *p, value.clone());
-                            // TODO: find a better way to transfer args to dependencies target
-                            n.set_prop(*p, value);
+        for (_, kid) in config.root.kids_iter() {
+            if let Kid::Node(mut n) = kid.clone() {
+                if n.name != "port" {
+                    // main target should receive target related args from the pac
+                    if n.main_arg().to_astr() == pac_name && n.name == "device" {
+                        for p in &target_props {
+                            if config.args.has(*p) {
+                                let value = config.args.get(*p).unwrap();
+                                println!("Setting prop: {}: {}", *p, value.clone());
+                                // TODO: find a better way to transfer args to dependencies target
+                                n.set_prop(*p, value);
+                            }
                         }
                     }
-                }
 
-                let mut target = Target::from(n, pac_name.clone());
-                target.set_defines(defines.clone());
-                targets.push(target);
+                    let mut target = Target::from(n, pac_name.clone());
+                    target.set_defines(defines.clone());
+                    targets.push(target);
+                }
             }
         }
 
@@ -593,9 +595,11 @@ impl Pac {
         self.props.merge(&props);
 
         // targets
-        for n in port_node.nodes.clone() {
-            let target = Target::from(n, self.name.clone());
-            self.targets.push(target);
+        for (_, kid) in port_node.kids_iter() {
+            if let Kid::Node(n) = kid {
+                let target = Target::from(n.clone(), self.name.clone());
+                self.targets.push(target);
+            }
         }
         let mut port = Port::default();
         port.name = port_node.main_arg().to_astr();

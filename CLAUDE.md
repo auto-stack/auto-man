@@ -162,7 +162,7 @@ Git-based dependency resolution:
 
 ## Important Notes
 
-- **Auto Language Integration**: This crate depends on the `auto-lang` workspace crates (`auto-val`, `auto-atom`, `auto-gen`) which are sibling projects in `../auto-lang/`
+- **Auto Language Integration**: This crate depends on the `auto-lang` workspace crates (`auto-val`, `auto-gen`) which are sibling projects in `../auto-lang/`. The `Atom` type is now exported directly from `auto-lang` (previously from `auto-atom` which has been merged into `auto-lang`).
 - **Logging**: Uses `simplelog` with Info level by default
 - **Error Handling**: All public functions return `AutoResult<T>` (alias for `Result<T, AutoError>`)
 - **Path Handling**: Uses `auto_val::AutoPath` and `auto_val::AutoStr` for cross-platform path operations
