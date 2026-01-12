@@ -7,7 +7,7 @@ use auto_lang::trans::c::transpile_c;
 use auto_lang::util::*;
 use auto_lang::Atom;
 use auto_val::{Array, Obj};
-use auto_val::{AutoPath, AutoStr, Kid, Node, Value};
+use auto_val::{AutoPath, AutoStr, Node, Value};
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -956,8 +956,9 @@ mod tests {
         }
         "#;
         let config = AutoConfig::new(code).unwrap();
-        let app_node = config.root.nodes[0].clone();
-        let target = Target::from(app_node, "main".into());
+        let nodes = config.root.nodes("app");
+        let app_node = nodes.first().unwrap();
+        let target = Target::from((*app_node).clone(), "main".into());
         let at = target.at.clone();
         assert_eq!(at, ".");
 
@@ -1001,8 +1002,9 @@ mod tests {
         app("main") {}
         "#;
         let config = AutoConfig::new(code).unwrap();
-        let node = config.root.nodes[0].clone();
-        let target = Target::from(node, "main".into());
+        let nodes = config.root.nodes("app");
+        let node = nodes.first().unwrap();
+        let target = Target::from((*node).clone(), "main".into());
         let root_dir = target.at.clone();
         assert_eq!(root_dir, ".");
         assert_eq!(target.name, "main");
@@ -1034,5 +1036,111 @@ mod tests {
 
         let name = "b".into();
         assert_eq!(dir_filter(&name, &selects, &skips), false);
+    }
+
+    // Tests for refactored target creation functions
+
+    #[test]
+    fn test_extract_name_and_version_with_id() {
+        use auto_val::AutoStr;
+
+        // Create a simple node with id
+        let code = r#"name: "test"; app("myapp") {}"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let (name, version) = Target::extract_name_and_version(&node);
+
+        assert_eq!(name, AutoStr::from("myapp"));
+        assert_eq!(version, AutoStr::from("latest"));
+    }
+
+    #[test]
+    fn test_extract_name_and_version_with_args() {
+        use auto_val::AutoStr;
+
+        let code = r#"name: "test"; dep("mylib", "1.0.0") {}"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("dep").first().unwrap().clone();
+
+        let (name, version) = Target::extract_name_and_version(&node);
+
+        assert_eq!(name, AutoStr::from("mylib"));
+        assert_eq!(version, AutoStr::from("1.0.0"));
+    }
+
+    #[test]
+    fn test_extract_kind() {
+        let code = r#"name: "test"; app("test") {}"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let kind = Target::extract_kind(&node);
+
+        assert_eq!(kind, TargetKind::App);
+    }
+
+    #[test]
+    fn test_extract_origin_local() {
+        let code = r#"name: "test"; app("test", kind: "local") {}"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let origin = Target::extract_origin(&node);
+
+        assert_eq!(origin, TargetOrigin::Local);
+    }
+
+    #[test]
+    fn test_extract_scan_flag() {
+        // Test with scan flag set to false
+        let code = r#"name: "test"; app("test") { scan: false }"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let is_scan = Target::extract_scan_flag(&node);
+
+        assert_eq!(is_scan, false);
+    }
+
+    #[test]
+    fn test_extract_scan_flag_default() {
+        // Test without scan flag (should default to true)
+        let code = r#"name: "test"; app("test") {}"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let is_scan = Target::extract_scan_flag(&node);
+
+        assert_eq!(is_scan, true);
+    }
+
+    #[test]
+    fn test_extract_recurse_flag() {
+        // Test with recurse flag set to true
+        let code = r#"name: "test"; app("test") { recurse: true }"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let recurse = Target::extract_recurse_flag(&node);
+
+        assert_eq!(recurse, true);
+    }
+
+    #[test]
+    fn test_extract_sources_and_includes() {
+        use auto_val::AutoStr;
+
+        let code = r#"name: "test"; app("test") { srcs: ["main.c", "utils.c"], incs: ["header.h"] }"#;
+        let config = auto_lang::config::AutoConfig::new(code).unwrap();
+        let node = config.root.nodes("app").first().unwrap().clone();
+
+        let (srcs, incs) = Target::extract_sources_and_includes(&node);
+
+        assert_eq!(srcs.len(), 2);
+        assert!(srcs.contains(&AutoStr::from("main.c")));
+        assert!(srcs.contains(&AutoStr::from("utils.c")));
+        assert_eq!(incs.len(), 1);
+        assert!(incs.contains(&AutoStr::from("header.h")));
     }
 }

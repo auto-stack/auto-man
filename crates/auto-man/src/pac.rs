@@ -1159,4 +1159,66 @@ mod tests {
         group.print_kids();
         assert_eq!(group.name, "root");
     }
+
+    // Tests for refactored dependency resolution functions
+
+    #[test]
+    fn test_check_all_resolved() {
+        use crate::target::{Target, TargetKind};
+        use std::collections::HashMap;
+
+        let mut targets = HashMap::new();
+
+        // Create two targets, both resolved
+        let mut target1: Target = Target::new("app1", TargetKind::App);
+        target1.is_resolved = true;
+        let mut target2: Target = Target::new("lib1", TargetKind::Lib);
+        target2.is_resolved = true;
+
+        targets.insert(target1.name.clone(), target1);
+        targets.insert(target2.name.clone(), target2);
+
+        // All targets should be resolved
+        assert!(Pac::check_all_resolved(&targets));
+    }
+
+    #[test]
+    fn test_check_all_resolved_unresolved() {
+        use crate::target::{Target, TargetKind};
+        use std::collections::HashMap;
+
+        let mut targets = HashMap::new();
+
+        // Create one resolved, one unresolved
+        let mut target1: Target = Target::new("app1", TargetKind::App);
+        target1.is_resolved = true;
+        let mut target2: Target = Target::new("lib1", TargetKind::Lib);
+        target2.is_resolved = false;
+
+        targets.insert(target1.name.clone(), target1);
+        targets.insert(target2.name.clone(), target2);
+
+        // Not all targets should be resolved
+        assert!(!Pac::check_all_resolved(&targets));
+    }
+
+    #[test]
+    fn test_build_resolved_links_no_links() {
+        use crate::target::{Target, TargetKind};
+        use std::collections::HashMap;
+
+        let mut targets = HashMap::new();
+
+        // Create target with no links
+        let target: Target = Target::new("app1", TargetKind::App);
+        targets.insert(target.name.clone(), target);
+
+        let resolved_links = Pac::build_resolved_links(&targets);
+
+        // Should have one entry with empty links
+        assert_eq!(resolved_links.len(), 1);
+        let key = auto_val::AutoStr::from("app1");
+        assert!(resolved_links.contains_key(&key));
+        assert!(resolved_links.get(&key).unwrap().is_empty());
+    }
 }
