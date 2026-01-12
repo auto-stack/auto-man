@@ -329,134 +329,114 @@ impl Pac {
         build_names
     }
 
+    /// Resolve target dependencies by building transitive closure of links
+    ///
+    /// This function iteratively resolves dependencies until all targets have
+    /// their complete dependency tree calculated. Returns true if all targets
+    /// are resolved, false if some targets still have unresolved dependencies.
     fn resolve_target_deps(targets_map: &mut HashMap<AutoStr, Target>) -> bool {
-        let mut all_resolved = true;
-        // let mut resolved: HashMap<AutoStr, Vec<AutoStr>> = HashMap::new();
+        let all_resolved = Self::check_all_resolved(targets_map);
+
+        // Build resolved links map for targets whose dependencies are all resolved
+        let resolved_links = Self::build_resolved_links(targets_map);
+
+        // Apply the resolved links to update target dependency information
+        Self::apply_resolved_links(targets_map, resolved_links);
+
+        all_resolved
+    }
+
+    /// Check if all targets are marked as resolved
+    fn check_all_resolved(targets_map: &HashMap<AutoStr, Target>) -> bool {
+        targets_map.values().all(|t| t.is_resolved)
+    }
+
+    /// Build a map of resolved links for targets whose dependencies are all resolved
+    ///
+    /// For each target, if all its direct and transitive dependencies are resolved,
+    /// collect the complete set of links (transitive closure).
+    fn build_resolved_links(
+        targets_map: &HashMap<AutoStr, Target>,
+    ) -> HashMap<AutoStr, Vec<Node>> {
         let mut resolved_links: HashMap<AutoStr, Vec<Node>> = HashMap::new();
-        for t in targets_map.values() {
-            if t.links.is_empty() {
-                // resolved.insert(t.name.clone(), vec![]);
-                resolved_links.insert(t.name.clone(), vec![]);
-            } else {
-                // try all links, if all links are resolved, copy their dependencies
-                let mut all_deps_resolved = true;
-                // let mut link_names = Vec::new();
-                let mut links = Vec::new();
-                // link_names.extend(t.links.iter().map(|t| t.id()));
-                links.extend(t.links.iter().map(|t| t.clone()));
-                for l in &t.links {
-                    let Some(dep) = targets_map.get(&l.id()) else {
-                        continue;
-                    };
-                    if !dep.is_resolved {
-                        all_deps_resolved = false;
-                        break;
-                    } else {
-                        // link_names.extend(dep.links.iter().map(|t| t.id()));
-                        links.extend(dep.links.iter().map(|t| t.clone()));
-                        // links.extend_from_slice(&dep.links);
-                    }
-                }
-                if all_deps_resolved {
-                    // resolved.insert(t.name.clone(), link_names);
-                    resolved_links.insert(t.name.clone(), links);
-                    // resolved.insert(t.name.clone(), links);
-                }
+
+        for target in targets_map.values() {
+            if target.links.is_empty() {
+                // Target with no dependencies is trivially resolved
+                resolved_links.insert(target.name.clone(), vec![]);
+                continue;
             }
-            if t.is_resolved == false {
-                all_resolved = false;
+
+            // Check if we can resolve this target's dependencies
+            if let Some(links) = Self::try_resolve_target_links(target, targets_map) {
+                resolved_links.insert(target.name.clone(), links);
             }
         }
-        // println!("link_names: [{}] {:?}", resolved.len(), resolved);
-        // println!("links: [{}]", resolved_links.len());
-        // for (k, links) in &resolved_links {
-        //     println!(
-        //         "{}:{}",
-        //         k,
-        //         links.iter().map(|l| l.id()).collect::<Vec<_>>().join(", ")
-        //     );
-        // }
-        // println!(">>>>>>>>>>>>>>>>>>> resolved: {:?}", resolved);
-        for (k, links) in resolved_links {
-            let mut deps = Vec::new();
-            for l in &links {
-                let id = l.id();
-                // let id = l.clone();
-                let Some(dep) = targets_map.get(&id) else {
-                    continue;
-                };
-                deps.push(dep.name.clone());
-                // let mut merge = dep.clone();
-                // merge.merge_link(&l);
-                // deps.push(merge);
-            }
-            let Some(t) = targets_map.get_mut(&k) else {
+
+        resolved_links
+    }
+
+    /// Try to resolve all links for a target
+    ///
+    /// Returns Some(links) if all dependencies are resolved, None otherwise.
+    /// When successful, returns the transitive closure of all links.
+    fn try_resolve_target_links(
+        target: &Target,
+        targets_map: &HashMap<AutoStr, Target>,
+    ) -> Option<Vec<Node>> {
+        let mut all_deps_resolved = true;
+        let mut links = Vec::new();
+
+        // Start with direct links
+        links.extend(target.links.iter().cloned());
+
+        // Transitively collect links from dependencies
+        for link in &target.links {
+            let Some(dep) = targets_map.get(&link.id()) else {
                 continue;
             };
-            t.is_resolved = true;
-            t.dep_names = deps;
-            t.all_links = links;
-            // t.all_deps = deps;
+
+            if !dep.is_resolved {
+                all_deps_resolved = false;
+                break;
+            }
+
+            // Add transitive links from this dependency
+            links.extend(dep.links.iter().cloned());
         }
-        // for t in targets_map.values() {
-        // println!("Target: {}", t.name);
-        // println!(
-        //     "deps: {}",
-        //     t.deps
-        //         .iter()
-        //         .map(|t| t.name.clone())
-        //         .collect::<Vec<AutoStr>>()
-        //         .join(", ")
-        // );
-        // }
-        all_resolved
 
-        // let build_names = Self::get_build_names(&targets_map);
+        if all_deps_resolved {
+            Some(links)
+        } else {
+            None
+        }
+    }
 
-        // for n in build_names {
-        //     let Some(mut target) = targets_map.remove(&n) else {
-        //         continue;
-        //     };
-        //     for link in &target.links {
-        //         let id = link.id();
-        //         let Some(dep) = targets_map.get(&id) else {
-        //             continue;
-        //         };
-        //         target.deps.push(dep.clone());
-        //     }
+    /// Apply resolved links to update targets in the map
+    ///
+    /// For each target in resolved_links, mark it as resolved and update
+    /// its dependency information (dep_names and all_links).
+    fn apply_resolved_links(
+        targets_map: &mut HashMap<AutoStr, Target>,
+        resolved_links: HashMap<AutoStr, Vec<Node>>,
+    ) {
+        for (target_name, links) in resolved_links {
+            // Extract dependency names from the links
+            let dep_names: Vec<AutoStr> = links
+                .iter()
+                .filter_map(|link| {
+                    let id = link.id();
+                    targets_map.get(&id).map(|dep| dep.name.clone())
+                })
+                .collect();
 
-        //     targets_map.insert(target.name.clone(), target.clone());
-        // }
-
-        // for n in build_names {
-        //     // take out the targett from targets_map
-        //     let mut target = targets_map.remove(&n);
-        //     let Some(mut target) = target else {
-        //         error!("Target {} not found", n);
-        //         continue;
-        //     };
-
-        //     let links = target.links;
-        //     let mut link_targets = Vec::new();
-        //     // check if a link is missing
-        //     for link in &links {
-        //         let id = link.id();
-        //         let dep = targets_map.get(&id);
-        //         match dep {
-        //             Some(dep) => {
-        //                 let mut dep = dep.clone();
-        //                 dep.apply_link(&link);
-        //                 link_targets.push(dep.clone());
-        //             }
-        //             None => {
-        //                 error!("Target {} not found", id);
-        //             }
-        //         }
-        //     }
-        //     target.links = links;
-        //     target.deps = link_targets;
-        //     targets_map.insert(target.name.clone(), target.clone());
-        // }
+            // Update the target with resolved information
+            if let Some(target) = targets_map.get_mut(&target_name) {
+                target.is_resolved = true;
+                target.dep_names = dep_names;
+                target.all_links = links;
+            }
+        }
     }
 
     pub fn pull(&mut self) -> AutoResult<()> {

@@ -172,157 +172,32 @@ impl Target {
     }
 
     pub fn from(node: Node, pac: AutoStr) -> Self {
-        // name
-        let mut name = AutoStr::new();
-        let mut version = AutoStr::new();
-        if !node.id.is_empty() {
-            name = node.id.clone();
-        } else if !node.args.is_empty() {
-            name = node.args.args[0].to_astr();
-            if node.args.args.len() > 1 {
-                version = node.args.args[1].to_astr();
-            }
-        }
-        if version.is_empty() {
-            // try prop "version"
-            if node.has_prop("version") {
-                version = node.get_prop("version").to_astr();
-            } else {
-                version = "latest".into();
-            }
-        }
+        // Extract basic information
+        let (name, version) = Self::extract_name_and_version(&node);
+        let kind = Self::extract_kind(&node);
+        let origin = Self::extract_origin(&node);
+        let from = Self::extract_from_property(&node);
 
-        // kind
-        let kind = TargetKind::from_str(&node.name).unwrap_or_else(|e| {
-            panic!("Failed to parse target kind in node '{}': {}", node.name, e)
-        });
+        // Extract flags
+        let is_scan = Self::extract_scan_flag(&node);
+        let recurse = Self::extract_recurse_flag(&node);
 
-        // mode
-        let mut origin = TargetOrigin::Index;
-        if let Some(arg) = &node.args.get_arg(&"kind".into()) {
-            let mode = arg.get_val().to_astr();
-            match mode.as_str() {
-                "local" => {
-                    origin = TargetOrigin::Local;
-                }
-                "git" => {
-                    origin = TargetOrigin::Git;
-                }
-                _ => {}
-            };
-        }
-        // from
-        let from = if node.has_prop("from") {
-            node.get_prop("from").to_astr()
-        } else {
-            AutoStr::default()
-        };
+        // Calculate location
+        let (at, rename) = Self::calculate_location(&node, &name, &kind, &pac);
 
-        // is_scan
-        let is_scan = if node.has_prop("scan") {
-            node.get_prop("scan").to_bool()
-        } else {
-            true
-        };
+        // Extract directory information
+        let dirs = Self::extract_directories(&node, &at, &rename, &kind);
 
-        // recurse
-        let recurse = if node.has_prop("recurse") {
-            node.get_prop("recurse").to_bool()
-        } else {
-            false
-        };
+        // Extract source files and includes
+        let (srcs, incs) = Self::extract_sources_and_includes(&node);
 
-        // at
-        let mut at = if node.has_prop("at") {
-            node.get_prop("at").to_astr()
-        } else {
-            get_root_dir(&name, &kind, &pac)
-        };
-
-        // parent
-        let parent = if node.has_prop("parent") {
-            node.get_prop("parent").to_astr()
-        } else {
-            AutoStr::default()
-        };
-
-        if !parent.is_empty() {
-            at = AutoPath::new(parent.clone()).join(name.clone()).to_astr();
-        }
-
-        // rename
-        let mut rename = AutoPath::new(at.clone()).filename();
-        if rename.is_empty() {
-            rename = name.clone();
-        }
-
-        // selects
-        let mut selects = node.get_prop("selects").to_str_vec().to_set();
-        // defaults
-        let defaults = node.get_prop("defaults").to_str_vec().to_set();
-        if !defaults.is_empty() {
-            selects.extend(defaults);
-        }
-        // check for skips
+        // Extract links and other properties
+        let links = node.get_kids("link");
+        let props = node.props_clone();
+        let selects = Self::extract_selects(&node);
         let skips = node.get_prop("skips").to_str_vec().to_set();
 
-        // dirs
-        let dirs = node.get_prop("dirs").to_str_vec();
-        // dirs.push(".".into());
-        let mut dirs: Vec<Dir> = dirs
-            .into_iter()
-            .filter(|d| dir_filter(d, &selects, &skips))
-            .map(|d| Dir::from_str(d, at.clone(), kind.clone()))
-            .collect();
-
-        // check for dir nodes
-        let dir_nodes = node.nodes(&"dir");
-        let dirs_from_nodes: Vec<Dir> = dir_nodes
-            .into_iter()
-            .filter(|d| dir_filter(&d.main_arg().to_astr(), &selects, &skips))
-            .map(|n| Dir::from_node(n, at.clone(), kind.clone()))
-            .collect();
-        dirs.extend(dirs_from_nodes);
-
-        for d in &mut dirs {
-            d.set_lpath(rename.clone());
-        }
-        // convert vec to hashmap
-        let dirs = dirs
-            .into_iter()
-            .map(|d| (d.name.clone(), d))
-            .collect::<HashMap<AutoStr, Dir>>();
-
-        // check for srcs
-        let srcs = node.get_prop("srcs").to_str_vec().to_set();
-        // check for incs
-        let incs = node.get_prop("incs").to_str_vec().to_set();
-        // check for links
-        let links = node.get_kids("link");
-        // check for props (dep target only)
-        let props = node.props_clone();
-
         let is_main = name == pac;
-
-        // deps
-        let deps = Vec::new();
-        // devices
-        node.kids_iter()
-            .filter_map(|(_, kid)| {
-                if let Kid::Node(n) = kid {
-                    if n.name == "device" {
-                        Some(n)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .for_each(|n| {
-                //deps.push(Dep::from_node(n, at.clone(), kind.clone()));
-                warn!("Got dep: {}", n.main_arg());
-            });
 
         Self {
             name,
@@ -345,7 +220,7 @@ impl Target {
             is_resolved: false,
             is_main,
             props,
-            deps,
+            deps: Vec::new(),
             dep_names: Vec::new(),
             all_links: Vec::new(),
             all_deps: Vec::new(),
@@ -353,6 +228,163 @@ impl Target {
             defines: Vec::new(),
             port: Port::default(),
         }
+    }
+
+    /// Extract name and version from node
+    fn extract_name_and_version(node: &Node) -> (AutoStr, AutoStr) {
+        let mut name = AutoStr::new();
+        let mut version = AutoStr::new();
+
+        if !node.id.is_empty() {
+            name = node.id.clone();
+        } else if !node.args.is_empty() {
+            name = node.args.args[0].to_astr();
+            if node.args.args.len() > 1 {
+                version = node.args.args[1].to_astr();
+            }
+        }
+
+        if version.is_empty() {
+            version = if node.has_prop("version") {
+                node.get_prop("version").to_astr()
+            } else {
+                "latest".into()
+            };
+        }
+
+        (name, version)
+    }
+
+    /// Extract target kind from node name
+    fn extract_kind(node: &Node) -> TargetKind {
+        TargetKind::from_str(&node.name).unwrap_or_else(|e| {
+            panic!("Failed to parse target kind in node '{}': {}", node.name, e)
+        })
+    }
+
+    /// Extract origin (local/git/index) from node
+    fn extract_origin(node: &Node) -> TargetOrigin {
+        let mut origin = TargetOrigin::Index;
+
+        if let Some(arg) = &node.args.get_arg(&"kind".into()) {
+            let mode = arg.get_val().to_astr();
+            match mode.as_str() {
+                "local" => origin = TargetOrigin::Local,
+                "git" => origin = TargetOrigin::Git,
+                _ => {}
+            }
+        }
+
+        origin
+    }
+
+    /// Extract 'from' property from node
+    fn extract_from_property(node: &Node) -> AutoStr {
+        if node.has_prop("from") {
+            node.get_prop("from").to_astr()
+        } else {
+            AutoStr::default()
+        }
+    }
+
+    /// Extract 'scan' flag from node
+    fn extract_scan_flag(node: &Node) -> bool {
+        if node.has_prop("scan") {
+            node.get_prop("scan").to_bool()
+        } else {
+            true
+        }
+    }
+
+    /// Extract 'recurse' flag from node
+    fn extract_recurse_flag(node: &Node) -> bool {
+        if node.has_prop("recurse") {
+            node.get_prop("recurse").to_bool()
+        } else {
+            false
+        }
+    }
+
+    /// Calculate the target location and rename
+    fn calculate_location(node: &Node, name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> (AutoStr, AutoStr) {
+        // Get parent property if exists
+        let parent = if node.has_prop("parent") {
+            node.get_prop("parent").to_astr()
+        } else {
+            AutoStr::default()
+        };
+
+        // Get at property or calculate default
+        let mut at = if node.has_prop("at") {
+            node.get_prop("at").to_astr()
+        } else {
+            get_root_dir(name, kind, pac)
+        };
+
+        // Apply parent if specified
+        if !parent.is_empty() {
+            at = AutoPath::new(parent.clone()).join(name.clone()).to_astr();
+        }
+
+        // Calculate rename from filename
+        let mut rename = AutoPath::new(at.clone()).filename();
+        if rename.is_empty() {
+            rename = name.clone();
+        }
+
+        (at, rename)
+    }
+
+    /// Extract and process directory information from node
+    fn extract_directories(node: &Node, at: &AutoStr, rename: &AutoStr, kind: &TargetKind) -> HashMap<AutoStr, Dir> {
+        let selects = Self::extract_selects(node);
+        let skips = node.get_prop("skips").to_str_vec().to_set();
+
+        // Process dirs property (array of directory names)
+        let dirs_prop = node.get_prop("dirs").to_str_vec();
+        let mut dirs: Vec<Dir> = dirs_prop
+            .into_iter()
+            .filter(|d| dir_filter(d, &selects, &skips))
+            .map(|d| Dir::from_str(d, at.clone(), kind.clone()))
+            .collect();
+
+        // Process dir nodes
+        let dir_nodes = node.nodes(&"dir");
+        let dirs_from_nodes: Vec<Dir> = dir_nodes
+            .into_iter()
+            .filter(|d| dir_filter(&d.main_arg().to_astr(), &selects, &skips))
+            .map(|n| Dir::from_node(n, at.clone(), kind.clone()))
+            .collect();
+        dirs.extend(dirs_from_nodes);
+
+        // Set logical path for all directories
+        for d in &mut dirs {
+            d.set_lpath(rename.clone());
+        }
+
+        // Convert to hashmap
+        dirs.into_iter()
+            .map(|d| (d.name.clone(), d))
+            .collect()
+    }
+
+    /// Extract selects and defaults from node
+    fn extract_selects(node: &Node) -> HashSet<AutoStr> {
+        let mut selects = node.get_prop("selects").to_str_vec().to_set();
+        let defaults = node.get_prop("defaults").to_str_vec().to_set();
+
+        if !defaults.is_empty() {
+            selects.extend(defaults);
+        }
+
+        selects
+    }
+
+    /// Extract source files and includes from node
+    fn extract_sources_and_includes(node: &Node) -> (HashSet<AutoStr>, HashSet<AutoStr>) {
+        let srcs = node.get_prop("srcs").to_str_vec().to_set();
+        let incs = node.get_prop("incs").to_str_vec().to_set();
+        (srcs, incs)
     }
 
     pub fn location(&self) -> AutoPath {
