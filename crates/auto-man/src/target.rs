@@ -560,7 +560,24 @@ impl Target {
     }
 
     pub fn transpile_auto(&mut self) -> AutoResult<()> {
+        use indicatif::{ProgressBar, ProgressStyle};
+
+        if self.autos.is_empty() {
+            return Ok(());
+        }
+
+        // Create progress bar for transpilation
+        let pb = ProgressBar::new(self.autos.len() as u64);
+        pb.set_message("Transpiling Auto files");
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner} {msg} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+
         for path in self.autos.iter() {
+            pb.set_message(format!("Transpiling {}", path.as_str()));
             info!("Transpiling {}", path.as_str());
 
             // Read the Auto source file
@@ -607,7 +624,12 @@ impl Target {
                 }
                 self.srcs.insert(pak.cfile.clone());
             }
+
+            pb.inc(1);
         }
+
+        pb.finish_with_message("Transpilation complete");
+
 
         // Recursively transpile dependencies
         for dep in self.deps.iter_mut() {

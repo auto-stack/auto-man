@@ -773,6 +773,8 @@ impl Pac {
     }
 
     pub fn download_repo(&self, info: &PacInfo, kind: &TargetKind, at: &AutoStr) -> AutoResult<()> {
+        use indicatif::{ProgressBar, ProgressStyle};
+
         // 1. make deps folder if not exists
         let mut deps_dir = match kind {
             TargetKind::Dep => "deps",
@@ -786,41 +788,40 @@ impl Pac {
         let url = format!("{}", info.repo);
         let path = deps_dir;
         info!("- {}: ({})", path, info.repo);
+
         if Path::new(&path).exists() {
             if self.is_update {
                 let p = AutoPath::new(path);
                 self.update_repo(&p)?;
             }
-            // TODO: update the repo if necessary
-            // TODO: or provide a command to update dependencies
-            // let output = std::process::Command::new("git")
-            //     .arg("-C")
-            //     .arg(path.clone())
-            //     .arg("pull")
-            //     .arg("origin") // TODO: remote and branch, how to config?
-            //     .arg("master")
-            //     .arg("--tags")
-            //     .output()?;
-            // if output.status.success() {
-            //     println!("Updated dependency {} from {}", info.name, info.repo);
-            // } else {
-            //     println!("Failed to update dependency {} from {}", info.name, info.repo);
-            //     println!("{}", String::from_utf8_lossy(&output.stderr));
-            // }
         } else {
+            // Create progress bar for download
+            let pb = ProgressBar::new_spinner();
+            pb.set_message(format!("Cloning {} from {}", info.name, info.repo));
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner} {msg}")
+                    .unwrap(),
+            );
+
             let output = std::process::Command::new("git")
                 .arg("clone")
                 .arg(url)
                 .arg(path)
                 .output()?;
+
             if output.status.success() {
-                println!("Downloaded dependency {} from {}", info.name, info.repo);
+                pb.finish_with_message(format!("Downloaded {}", info.name));
+                info!("Downloaded dependency {} from {}", info.name, info.repo);
             } else {
-                println!(
-                    "Failed to download dependency {} from {}",
-                    info.name, info.repo
-                );
-                println!("{}", String::from_utf8_lossy(&output.stderr));
+                pb.abandon_with_message(format!("Failed to download {}", info.name));
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "Failed to download dependency {} from {}: {}",
+                    info.name, info.repo, stderr
+                )
+                .into());
             }
         }
         // 3. checkout wanted version
