@@ -2,7 +2,6 @@ use auto_man::*;
 use auto_val::AutoStr;
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
-use dialoguer::Select;
 use log::*;
 use simplelog::*;
 
@@ -65,22 +64,7 @@ fn init_logger() {
 }
 
 fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
-    let port = if let Some(input) = input {
-        input.into()
-    } else {
-        if ports.len() == 1 {
-            ports[0].clone()
-        } else {
-            let selection = Select::new()
-                .with_prompt("Which port do you want to build?")
-                .default(0)
-                .items(&ports)
-                .interact()?;
-
-            ports[selection].clone()
-        }
-    };
-    Ok(port)
+    crate::util::select_or_default_port(input, ports, "Which port do you want to build?")
 }
 
 fn do_upgrade() -> AutoResult<()> {

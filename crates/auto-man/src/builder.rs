@@ -29,29 +29,42 @@ pub enum BuilderKind {
     Ninja(AutoPath), // Ninja with path to build folder
 }
 
-pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
-    match kind {
-        BuilderKind::CMake(path) => Box::new(CMakeBuilder::new(&path)),
-        BuilderKind::IAR(path) => Box::new(IARBuilder::new(path)),
-        BuilderKind::GHS(path) => Box::new(GHSBuilder::new(path)),
-        BuilderKind::Ninja(path) => Box::new(NinjaBuilder::new(path)),
+impl BuilderKind {
+    /// Create a BuilderKind from a string identifier
+    pub fn from_str(builder_name: &str, path: AutoPath) -> Option<Self> {
+        match builder_name {
+            "cmake" => {
+                let path = path.join("CMakeLists.txt");
+                Some(BuilderKind::CMake(path.to_string()))
+            }
+            "iar" => Some(BuilderKind::IAR(path)),
+            "ghs" => Some(BuilderKind::GHS(path)),
+            "ninja" => {
+                let path = path.join("build.ninja");
+                Some(BuilderKind::Ninja(path))
+            }
+            _ => None,
+        }
+    }
+
+    /// Create a builder instance from this BuilderKind
+    pub fn create_builder(&self) -> Box<dyn Builder> {
+        match self {
+            BuilderKind::CMake(path) => Box::new(CMakeBuilder::new(path)),
+            BuilderKind::IAR(path) => Box::new(IARBuilder::new(path.clone())),
+            BuilderKind::GHS(path) => Box::new(GHSBuilder::new(path.clone())),
+            BuilderKind::Ninja(path) => Box::new(NinjaBuilder::new(path.clone())),
+        }
     }
 }
 
+pub fn new_builder(kind: BuilderKind) -> Box<dyn Builder> {
+    kind.create_builder()
+}
+
+/// Create a builder from a string builder type and path
+///
+/// Returns None if the builder type is unknown
 pub fn make_builder(builder: &AutoStr, path: AutoPath) -> Option<Box<dyn Builder>> {
-    match builder.as_str() {
-        "cmake" => {
-            let path = path.join("CMakeLists.txt");
-            Some(new_builder(BuilderKind::CMake(path.to_string())))
-        }
-        "iar" => Some(new_builder(BuilderKind::IAR(path))),
-        "ghs" => Some(new_builder(BuilderKind::GHS(path))),
-        "ninja" => {
-            let path = path.join("build.ninja");
-            Some(new_builder(BuilderKind::Ninja(path)))
-        }
-        _ => {
-            panic!("Invalid port builder name: {}", builder);
-        }
-    }
+    BuilderKind::from_str(builder.as_str(), path).map(|kind| kind.create_builder())
 }

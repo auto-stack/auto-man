@@ -162,19 +162,7 @@ impl Automan {
     }
 
     fn select_port(ports: &Vec<AutoStr>) -> AutoResult<AutoStr> {
-        use dialoguer::Select;
-        let port = if ports.len() == 1 {
-            ports[0].clone()
-        } else {
-            let selection = Select::new()
-                .with_prompt("Which port do you want to build?")
-                .default(0)
-                .items(&ports)
-                .interact()?;
-
-            ports[selection].clone()
-        };
-        Ok(port)
+        crate::util::select_or_default_port(None, ports, "Which port do you want to build?")
     }
 
     pub fn get_state_file() -> AutoResult<AutoPath> {

@@ -26,15 +26,15 @@ pub enum TargetKind {
 }
 
 impl TargetKind {
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
-            "app" => TargetKind::App,
-            "lib" => TargetKind::Lib,
-            "bag" => TargetKind::Bag,
-            "dep" => TargetKind::Dep,
-            "device" => TargetKind::Device,
-            "test" => TargetKind::Test,
-            _ => panic!("Invalid target kind: {}", s),
+            "app" => Ok(TargetKind::App),
+            "lib" => Ok(TargetKind::Lib),
+            "bag" => Ok(TargetKind::Bag),
+            "dep" => Ok(TargetKind::Dep),
+            "device" => Ok(TargetKind::Device),
+            "test" => Ok(TargetKind::Test),
+            _ => Err(format!("Invalid target kind: {}. Valid options are: app, lib, bag, dep, device, test", s)),
         }
     }
 }
@@ -193,7 +193,9 @@ impl Target {
         }
 
         // kind
-        let kind = TargetKind::from_str(&node.name);
+        let kind = TargetKind::from_str(&node.name).unwrap_or_else(|e| {
+            panic!("Failed to parse target kind in node '{}': {}", node.name, e)
+        });
 
         // mode
         let mut origin = TargetOrigin::Index;
