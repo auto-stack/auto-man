@@ -1,5 +1,6 @@
 pub mod asset;
 mod automan;
+mod cache;
 mod builder;
 mod dir;
 pub mod error;
@@ -18,6 +19,7 @@ pub mod version;
 
 pub use automan::*;
 pub use builder::*;
+pub use cache::*;
 pub use dir::*;
 pub use error::*;
 pub use index::*;
