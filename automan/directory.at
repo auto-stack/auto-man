@@ -1,0 +1,71 @@
+/// Directory configuration for source scanning
+///
+/// Defines how to scan a directory for source files (.c, .at, etc.)
+
+/// Directory configuration
+///
+/// Specifies a directory to scan for source files and how to filter
+/// its contents.
+///
+/// # Example
+/// ```auto
+/// dir("src") {
+///     selects: ["core", "utils"]
+///     skips: ["tests", "docs"]
+/// }
+/// ```
+///
+/// # Filtering Behavior
+/// - If `selects` is specified, only those subdirectories are scanned
+/// - If `skips` is specified, those subdirectories are excluded
+/// - `defaults` specifies directories scanned by default (can be overridden)
+type dir {
+    /// Directory name (positional argument, required)
+    ///
+    /// The name of the directory to scan. This is relative to the target's
+    /// location or the project root.
+    ///
+    /// # Example
+    /// - "src" scans the src/ directory
+    /// - "lib/utils" scans lib/utils/
+    name str
+
+    /// Subdirectories to explicitly include (optional)
+    ///
+    /// If specified, only these subdirectories will be scanned.
+    /// All other subdirectories will be ignored.
+    ///
+    /// # Example
+    /// ```auto
+    /// dir("src") {
+    ///     selects: ["core", "platform"]  // Only scan src/core and src/platform
+    /// }
+    /// ```
+    selects: []str
+
+    /// Subdirectories to skip (optional)
+    ///
+    /// These subdirectories will not be scanned.
+    /// Useful for excluding tests, docs, or examples.
+    ///
+    /// # Example
+    /// ```auto
+    /// dir("src") {
+    ///     skips: ["tests", "docs", "examples"]
+    /// }
+    /// ```
+    skips: []str
+
+    /// Default subdirectories (optional)
+    ///
+    /// Directories that are scanned by default.
+    /// Can be overridden by other configuration.
+    ///
+    /// # Example
+    /// ```auto
+    /// dir("src") {
+    ///     defaults: ["lib", "platform"]
+    /// }
+    /// ```
+    defaults: []str
+}

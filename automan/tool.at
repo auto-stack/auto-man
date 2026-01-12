@@ -1,0 +1,60 @@
+/// Tool configuration for build systems
+///
+/// Defines compiler or toolchain information for port configurations.
+
+/// Tool configuration
+///
+/// Specifies compiler or toolchain information for a port.
+///
+/// # Example
+/// ```auto
+/// port("windows_ninja") {
+///     platform: "windows"
+///     builder: "ninja"
+///     tool {
+///         kind: "msvc"
+///         location: "C:/Program Files/Microsoft Visual Studio"
+///     }
+/// }
+/// ```
+type tool {
+    /// Tool kind (required)
+    ///
+    /// Specifies the compiler or toolchain type.
+    ///
+    /// # Common Values
+    /// - "msvc" - Microsoft Visual C++ (Windows)
+    /// - "gcc" - GNU Compiler Collection (Linux)
+    /// - "clang" - LLVM Clang (Cross-platform)
+    /// - "armcc" - ARM Compiler (Embedded)
+    /// - "iar" - IAR Compiler (Embedded)
+    /// - "ghs" - Green Hills Compiler (Embedded)
+    kind str
+
+    /// Installation path (optional)
+    ///
+    /// File system path to the tool installation.
+    /// If not specified, the tool must be in the system PATH.
+    ///
+    /// # Example
+    /// ```auto
+    /// tool {
+    ///     kind: "msvc"
+    ///     location: "C:/Program Files/Microsoft Visual Studio/2022/Community"
+    /// }
+    /// ```
+    location Path
+
+    /// Additional tool-specific options (optional)
+    ///
+    /// Extra command-line options or flags for the tool.
+    ///
+    /// # Example
+    /// ```auto
+    /// tool {
+    ///     kind: "gcc"
+    ///     options: ["-std=c11", "-fPIC"]
+    /// }
+    /// ```
+    options: []str
+}

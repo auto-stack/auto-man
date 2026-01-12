@@ -1,0 +1,47 @@
+/// Link type for connecting targets and dependencies
+///
+/// Links declare that a target depends on another target or dependency.
+
+/// Link to another target
+///
+/// Declares that this target depends on another target.
+/// The linked target will be built and linked into this target.
+///
+/// # Example
+/// ```auto
+/// app("myapp") {
+///     link("mylib") {}     // Link to library in this project
+///     link("logger") {}    // Link to dependency
+/// }
+/// ```
+///
+/// # Link Resolution
+/// - Links are resolved during the scan phase
+/// - The target must exist (as lib, dep, or device)
+/// - Circular dependencies are detected and reported as errors
+///
+/// # Build Order
+/// Linked targets are automatically built before the target
+/// that links them.
+type link {
+    /// Name of target to link (positional argument, required)
+    ///
+    /// Must match the name of a dep, lib, or device declared in
+    /// the pac.at file.
+    ///
+    /// # Example
+    /// If you have:
+    /// ```auto
+    /// lib("mylib") { ... }
+    /// dep("logger") { ... }
+    /// ```
+    ///
+    /// You can link to them:
+    /// ```auto
+    /// app("myapp") {
+    ///     link("mylib") {}
+    ///     link("logger") {}
+    /// }
+    /// ```
+    target str
+}

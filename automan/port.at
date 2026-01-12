@@ -1,0 +1,181 @@
+/// Port configuration type for AutoMan
+///
+/// Defines build platform, toolchain, and build system combinations.
+
+/// Port configuration
+///
+/// A port defines a complete compilation target by combining:
+/// - Platform (operating system)
+/// - Toolchain (compiler)
+/// - Build system (CMake, IAR, etc.)
+///
+/// # Example
+/// ```auto
+/// port("windows_ninja") {
+///     platform: "windows"
+///     builder: "ninja"
+///     tool {
+///         kind: "msvc"
+///         location: "C:/Program Files/Microsoft Visual Studio"
+///     }
+/// }
+/// ```
+///
+/// # Predefined Ports
+/// AutoMan comes with several predefined ports:
+/// - `windows_ninja` - Windows + MSVC + Ninja
+/// - `linux_ninja` - Linux + GCC + Ninja
+/// - `iar_arm` - ARM + IAR ARM Compiler
+///
+/// You can define custom ports in your user config (~/.auto/auto-man/am.at)
+/// or project config (.am/port).
+///
+/// # Port Selection
+/// Ports are selected in this order:
+/// 1. Command-line flag: `am build --port iar`
+/// 2. Project config: .am/port file
+/// 3. User default: ~/.auto/auto-man/am.at
+/// 4. Platform default: windows_ninja or linux_ninja
+///
+/// # Build Output
+/// Build artifacts are placed in the location specified by the port's
+/// `at` property (default: "build/").
+type port {
+    /// Port name (positional argument, required)
+    ///
+    /// Must be unique in the configuration.
+    /// Used to identify and select the port.
+    ///
+    /// # Example
+    /// ```auto
+    /// port("my_custom_port") {
+    ///     platform: "linux"
+    ///     builder: "cmake"
+    /// }
+    ///
+    /// // Use the port
+    /// am build --port my_custom_port
+    /// ```
+    name str
+
+    /// Target platform (required)
+    ///
+    /// Specifies the operating system or platform.
+    ///
+    /// # Values
+    /// - "windows" - Microsoft Windows
+    /// - "linux" - Linux
+    /// - "macos" - macOS
+    /// - "embedded" - Embedded/ bare-metal
+    ///
+    /// # Example
+    /// ```auto
+    /// port("linux_port") {
+    ///     platform: "linux"
+    ///     builder: "ninja"
+    /// }
+    /// ```
+    platform Platform
+
+    /// Build system (required)
+    ///
+    /// Specifies the build system to generate.
+    ///
+    /// # Values
+    /// - "cmake" - CMake (generates CMakeLists.txt)
+    /// - "iar" - IAR Embedded Workbench (generates .ewp)
+    /// - "ghs" - Green Hills MULTI (generates .gpj)
+    /// - "ninja" - Ninja build system (generates build.ninja)
+    ///
+    /// # Example
+    /// ```auto
+    /// port("my_port") {
+    ///     platform: "windows"
+    ///     builder: "cmake"  // Generate CMakeLists.txt
+    /// }
+    /// ```
+    builder BuilderType
+
+    /// Toolchain configuration (optional)
+    ///
+    /// Specifies the compiler or toolchain to use.
+    /// If not specified, uses the platform default.
+    ///
+    /// # Example
+    /// ```auto
+    /// port("custom_port") {
+    ///     platform: "linux"
+    ///     builder: "ninja"
+    ///     tool {
+    ///         kind: "gcc"
+    ///         location: "/usr/bin"
+    ///         options: ["-std=c11", "-O2"]
+    ///     }
+    /// }
+    /// ```
+    tool Tool
+
+    /// Build output directory (optional)
+    ///
+    /// Specifies where build artifacts are placed.
+    /// Default: "build/"
+    ///
+    /// # Example
+    /// ```auto
+    /// port("my_port") {
+    ///     platform: "windows"
+    ///     builder: "ninja"
+    ///     at: "out"  // Build in out/ instead of build/
+    /// }
+    /// ```
+    at Path
+
+    /// Default configuration (optional)
+    ///
+    /// Specifies the default build configuration.
+    ///
+    /// # Values
+    /// - "Debug" - Debug build with symbols (no optimization)
+    /// - "Release" - Optimized release build
+    /// - "RelWithDebInfo" - Release with debug symbols
+    /// - "MinSizeRel" - Release optimized for size
+    ///
+    /// # Example
+    /// ```auto
+    /// port("debug_port") {
+    ///     platform: "windows"
+    ///     builder: "ninja"
+    ///     configuration: "Debug"
+    /// }
+    /// ```
+    configuration str
+
+    /// Additional compiler flags (optional)
+    ///
+    /// Extra flags to pass to the compiler.
+    /// Applied to all compilations.
+    ///
+    /// # Example
+    /// ```auto
+    /// port("strict_port") {
+    ///     platform: "linux"
+    ///     builder: "ninja"
+    ///     cflags: ["-Wall", "-Wextra", "-Werror", "-std=c11"]
+    /// }
+    /// ```
+    cflags: []str
+
+    /// Additional linker flags (optional)
+    ///
+    /// Extra flags to pass to the linker.
+    ///
+    /// # Example
+    /// ```auto
+    /// port("static_port") {
+    ///     platform: "linux"
+    ///     builder: "ninja"
+    ///     ldflags: ["-static", "-Wl,--as-needed"]
+    /// }
+    /// ```
+    ldflags: []str
+}

@@ -1,0 +1,24 @@
+/// AutoMan Configuration Types
+///
+/// This module provides typed definitions for AutoMan project configuration.
+/// Use these types in your pac.at file to get type checking and IDE autocomplete.
+///
+/// # Example
+/// ```auto
+/// use automan
+///
+/// app("myapp") {
+///     dir("src") {}
+///     link("mylib") {}
+/// }
+/// ```
+mod automan
+
+pub use target::{app, lib, bag, test}
+pub use dependency::{dep, device}
+pub use port::port
+pub use directory::dir
+pub use link::link
+pub use tool::tool
+
+pub use types::{Version, Path, Url, DepKind, BuilderType, Platform}

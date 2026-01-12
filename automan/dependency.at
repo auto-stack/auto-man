@@ -1,0 +1,230 @@
+/// Dependency type definitions for AutoMan
+///
+/// Defines types for external dependencies: Dep and Device.
+
+/// Base Dependency type
+///
+/// This is an abstract base type for external dependencies.
+/// Dependencies are packages downloaded from git repositories or
+/// package indices and integrated into the project.
+///
+/// # Do Not Use Directly
+/// Use the specific dependency types (dep, device) instead of
+/// using this base type directly.
+///
+/// # Dependency Resolution
+/// Dependencies are resolved during the scan phase:
+/// 1. Query index store for package metadata
+/// 2. Download from git repository
+/// 3. Check version constraints
+/// 4. Install to specified location
+type dependency {
+    /// Dependency name (positional argument, required)
+    ///
+    /// Must be unique and match a package in the index.
+    /// Used for linking from other targets.
+    ///
+    /// # Example
+    /// ```auto
+    /// dep("logger") { ... }
+    /// app("myapp") {
+    ///     link("logger") {}  // Links to the logger dependency
+    /// }
+    /// ```
+    name str
+
+    /// Version requirement (positional argument, optional)
+    ///
+    /// Supports semantic versioning operators.
+    /// Defaults to "latest" if not specified.
+    ///
+    /// # Operators
+    /// - "1.2.3" - Exact version
+    /// - "^1.2.3" - Compatible (>=1.2.3 <2.0.0)
+    /// - "~1.2.0" - Approximate (>=1.2.0 <1.3.0)
+    /// - ">=1.0.0" - Greater than or equal
+    /// - ">1.0.0" - Greater than
+    /// - "<2.0.0" - Less than
+    /// - "latest" - Latest available
+    ///
+    /// # Example
+    /// ```auto
+    /// dep("logger", "1.2.3") { ... }           // Exact version
+    /// dep("utils", "^2.0.0") { ... }           // Compatible
+    /// dep("math", "~1.5.0") { ... }            // Approximate
+    /// ```
+    version Version
+
+    /// Installation location (required)
+    ///
+    /// Path where the dependency will be installed.
+    /// Relative to the project root.
+    ///
+    /// # Default Locations
+    /// - Git dependencies: `deps/<vendor>/<name>/`
+    /// - Local dependencies: specified path
+    ///
+    /// # Example
+    /// ```auto
+    /// dep("logger") {
+    ///     at: "deps/logger"  // Install to deps/logger/
+    /// }
+    /// ```
+    at Path
+
+    /// Repository URL (optional, for git dependencies)
+    ///
+    /// Git repository to clone dependency from.
+    /// Required for git dependencies, ignored for index/local dependencies.
+    ///
+    /// # Supported Formats
+    /// - HTTPS: "https://github.com/user/repo.git"
+    /// - SSH: "git@github.com:user/repo.git"
+    ///
+    /// # Example
+    /// ```auto
+    /// dep("logger") {
+    ///     at: "deps/logger"
+    ///     from: "https://github.com/vendor/logger.git"
+    /// }
+    /// ```
+    from Url
+
+    /// Dependency kind (optional, default: "index")
+    ///
+    /// Specifies where the dependency comes from.
+    ///
+    /// # Values
+    /// - "index" - From package index (default)
+    /// - "git" - From git repository
+    /// - "local" - Local file system
+    ///
+    /// # Example
+    /// ```auto
+    /// dep("local_lib") {
+    ///     kind: "local"
+    ///     at: "../local_lib"
+    /// }
+    ///
+    /// dep("git_lib") {
+    ///     kind: "git"
+    ///     at: "deps/git_lib"
+    ///     from: "https://github.com/user/git_lib.git"
+    /// }
+    /// ```
+    kind DepKind
+}
+
+/// Library dependency
+///
+/// External library that will be downloaded and linked into the project.
+///
+/// # Example
+/// ```auto
+/// dep("logger", "0.1.0") {
+///     at: "deps/logger"
+///     from: "https://github.com/vendor/logger.git"
+/// }
+///
+/// // Then use it in your app
+/// app("myapp") {
+///     link("logger") {}
+/// }
+/// ```
+///
+/// # Version Resolution
+/// - Version constraints are resolved against available versions
+/// - Uses semantic versioning rules
+/// - Records exact version in pac.lock for reproducibility
+///
+/// # Installation
+/// - Downloaded to `deps/<vendor>/<name>/`
+/// - Git commit SHA is recorded for reproducibility
+/// - Can be updated with `am pull` command
+///
+/// # Default Location
+/// - Installed in: `deps/<vendor>/<name>/`
+/// - Vendor is extracted from the repository URL
+///
+/// # Build Output
+/// Dependencies are built before the targets that link to them.
+/// The dependency's own pac.at file is used to build it.
+type dep is dependency {
+    /// Inherits all properties from Dependency
+    /// No additional properties specific to library dependencies
+}
+
+/// Device dependency (hardware support)
+///
+/// Hardware resource package for embedded targets.
+/// Contains startup code, linker scripts, and hardware abstraction layers.
+///
+/// # Example
+/// ```auto
+/// device("stm32f4", "1.0.0") {
+///     at: "devices/stm32f4"
+///     from: "https://github.com/vendor/stm32f4.git"
+/// }
+/// ```
+///
+/// # Use Cases
+/// - Microcontroller support files (CMSIS, startup)
+/// - Linker scripts for memory layout
+/// - Hardware abstraction layers (HAL)
+/// - Device drivers
+/// - Board support packages (BSP)
+///
+/// # Typical Contents
+/// - Startup code (startup_<device>.c)
+/// - Linker scripts (<device>_flash.ld, <device>_ram.ld)
+/// - Device headers (stm32f4xx.h)
+/// - HAL drivers
+/// - CMSIS core
+///
+/// # Default Location
+/// - Installed in: `deps/<vendor>/<name>/`
+/// - Vendor is extracted from the repository URL
+///
+/// # Build Integration
+/// Device dependencies are automatically linked into embedded targets.
+/// The linker scripts and startup code are included in the build.
+type device is dependency {
+    /// Inherits all properties from Dependency
+
+    /// Device family (optional)
+    ///
+    /// Specifies the microcontroller or device family.
+    /// Useful for device-specific build configurations.
+    ///
+    /// # Common Values
+    /// - "STM32F4" - STM32 F4 series
+    /// - "STM32F7" - STM32 F7 series
+    /// - "STM32H7" - STM32 H7 series
+    /// - "NRF52" - Nordic nRF52 series
+    /// - "ESP32" - Espressif ESP32
+    /// - "LPC55" - NXP LPC55 series
+    ///
+    /// # Example
+    /// ```auto
+    /// device("stm32_support") {
+    ///     family: "STM32F4"
+    ///     at: "devices/stm32"
+    ///     from: "https://github.com/stmicroelectronics/cmsis.git"
+    /// }
+    /// ```
+    family str
+
+    /// Memory configuration (optional)
+    ///
+    /// Specifies memory size and layout information.
+    /// Used for generating linker scripts.
+    ///
+    /// # Example
+    /// ```auto
+    /// device("stm32f407") {
+    ///     memory: "FLASH:1M,RAM:128K"
+    ///     at: "devices/stm32f407"
+    /// }
+    /// ```
+    memory str
+}

@@ -1,0 +1,84 @@
+/// Common type definitions used across AutoMan configuration
+///
+/// This module provides primitive wrapper types that are used
+/// throughout the AutoMan configuration system.
+
+/// Semantic version string
+///
+/// Represents a version identifier using semantic versioning.
+/// Supports various version requirement operators.
+///
+/// # Examples
+/// - "1.0.0" - Exact version
+/// - "^1.2.3" - Compatible version (>=1.2.3 <2.0.0)
+/// - "~1.2.0" - Approximate version (>=1.2.0 <1.3.0)
+/// - "latest" - Latest available version
+type Version {
+    /// Version string value
+    value str
+}
+
+/// File system path
+///
+/// Represents a path in the file system. Can be relative or absolute.
+///
+/// # Examples
+/// - "src/main.c" - Relative path
+/// - "C:/Projects/myapp" - Absolute Windows path
+/// - "/usr/local/include" - Absolute Unix path
+type Path {
+    /// Path string value
+    value str
+}
+
+/// Git repository URL
+///
+/// URL for cloning git repositories.
+///
+/// # Examples
+/// - "https://github.com/user/repo.git" - HTTPS format
+/// - "git@github.com:user/repo.git" - SSH format
+type Url {
+    /// URL string value
+    value str
+}
+
+/// Dependency kind
+///
+/// Specifies where a dependency originates from.
+///
+/// # Values
+/// - "index" - From package index (default)
+/// - "git" - From git repository
+/// - "local" - Local file system
+type DepKind {
+    /// Kind string value
+    value str
+}
+
+/// Builder type
+///
+/// Specifies the build system to use for compilation.
+///
+/// # Values
+/// - "cmake" - CMake build system
+/// - "iar" - IAR Embedded Workbench
+/// - "ghs" - Green Hills MULTI
+/// - "ninja" - Ninja build system
+type BuilderType {
+    /// Builder type string value
+    value str
+}
+
+/// Platform type
+///
+/// Specifies the target operating system or platform.
+///
+/// # Values
+/// - "windows" - Windows OS
+/// - "linux" - Linux OS
+/// - "macos" - macOS
+type Platform {
+    /// Platform string value
+    value str
+}

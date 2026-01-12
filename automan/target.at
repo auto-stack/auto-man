@@ -1,0 +1,373 @@
+/// Target type definitions for AutoMan
+///
+/// Defines types for buildable units: App, Lib, Bag, and Test.
+/// All target types share common properties from the Target base type.
+
+/// Base Target type
+///
+/// This is an abstract base type that defines common properties
+/// for all buildable target types.
+///
+/// # Do Not Use Directly
+/// Use the specific target types (app, lib, bag, test) instead of
+/// using this base type directly.
+///
+/// # Common Properties
+/// All target types inherit these properties:
+/// - `name` - Target name (required)
+/// - `version` - Target version (optional)
+/// - `at` - Target location (optional)
+/// - `srcs` - Explicit source files (optional)
+/// - `incs` - Header files (optional)
+/// - `scan` - Enable source scanning (optional, default: true)
+/// - `recurse` - Recursive directory scanning (optional, default: false)
+/// - `dirs` - Directory configurations
+/// - `links` - Dependency links
+type target {
+    /// Target name (positional argument, required)
+    ///
+    /// Must be unique within the project.
+    /// Used as the output filename and for linking.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") { ... }  // Output: myapp.exe or myapp
+    /// lib("mylib") { ... }  // Output: libmylib.a
+    /// ```
+    name str
+
+    /// Target version (positional argument, optional)
+    ///
+    /// Semantic version for this target.
+    /// Defaults to "latest" if not specified.
+    ///
+    /// # Example
+    /// ```auto
+    /// lib("mylib", "1.2.3") { ... }
+    /// ```
+    version Version
+
+    /// Target location (optional)
+    ///
+    /// Path where the target is located.
+    /// Default values depend on target type:
+    /// - App: `apps/<name>`
+    /// - Lib: `libs/<name>`
+    /// - Bag: `bags/<name>`
+    /// - Test: `tests/<name>`
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     at: "src/myapp"  // Override default location
+    /// }
+    /// ```
+    at Path
+
+    /// Parent directory (optional)
+    ///
+    /// Specifies the parent directory for the target.
+    /// The target location is relative to this parent.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     parent: "modules"
+    ///     at: "myapp"  // Actual location: modules/myapp
+    /// }
+    /// ```
+    parent Path
+
+    /// Source files (optional)
+    ///
+    /// Explicit list of C source files to compile.
+    /// If not specified, sources will be discovered via dir() nodes
+    /// or automatic scanning.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     srcs: ["main.c", "utils.c", "platform/uart.c"]
+    /// }
+    /// ```
+    srcs: []Path
+
+    /// Header files (optional)
+    ///
+    /// Explicit list of header files to include.
+    /// These paths are added to the compiler's include path.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     incs: ["include", "lib/common.h"]
+    /// }
+    /// ```
+    incs: []Path
+
+    /// Preprocessor definitions (optional)
+    ///
+    /// List of -D defines for the compiler.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     defines: ["DEBUG=1", "VERSION=\"1.0.0\"", "PLATFORM_WINDOWS"]
+    /// }
+    /// ```
+    defines: []str
+
+    /// Scan for source files (optional, default: true)
+    ///
+    /// If true, automatically scans directories for .c and .at files.
+    /// If false, only uses explicitly listed srcs.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     scan: false  // Disable automatic scanning
+    ///     srcs: ["main.c"]  // Only compile these files
+    /// }
+    /// ```
+    scan bool
+
+    /// Scan subdirectories (optional, default: false)
+    ///
+    /// If true, recursively scans subdirectories.
+    /// If false, only scans the top-level directory.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     dir("src") {
+    ///         recurse: true  // Scan src/core, src/utils, etc.
+    ///     }
+    /// }
+    /// ```
+    recurse bool
+
+    /// Directory configurations
+    ///
+    /// Use dir() nodes to specify directories to scan.
+    /// Each dir node can have its own filtering rules.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     dir("src") {
+    ///         skips: ["tests"]
+    ///     }
+    ///     dir("lib") {}
+    /// }
+    /// ```
+    dirs: []Dir
+
+    /// Dependency links
+    ///
+    /// Use link() nodes to link to other targets.
+    /// Linked targets will be built and linked into this target.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     link("mylib") {}
+    ///     link("logger") {}
+    /// }
+    /// ```
+    links: []Link
+}
+
+/// Application target
+///
+/// Represents an executable application that will be compiled
+/// and linked into a binary.
+///
+/// # Example
+/// ```auto
+/// app("myapp") {
+///     dir("src") {}
+///     link("mylib") {}
+/// }
+/// ```
+///
+/// # Default Behavior
+/// - Location: `apps/<name>`
+/// - Output: `build/Debug/<name>.exe` (Windows)
+/// - Output: `build/Debug/<name>` (Linux)
+/// - Auto-detects main() function
+///
+/// # Build Output
+/// Produces an executable binary that can be run directly.
+type app is target {
+    /// Inherits all properties from Target
+
+    /// Entry point file (optional)
+    ///
+    /// Specify the main.c or main.at file if different from default.
+    /// If not specified, AutoMan will search for main() automatically.
+    ///
+    /// # Example
+    /// ```auto
+    /// app("myapp") {
+    ///     entry: "src/main.at"
+    /// }
+    /// ```
+    entry Path
+}
+
+/// Library target
+///
+/// Represents a static library that can be linked by other targets.
+///
+/// # Example
+/// ```auto
+/// lib("mylib") {
+///     dirs: ["src", "include"]
+///     skips: ["tests"]
+/// }
+/// ```
+///
+/// # Default Behavior
+/// - Location: `libs/<name>`
+/// - Output: `build/Debug/lib<name>.a` (Linux)
+/// - Output: `build/Debug/<name>.lib` (Windows)
+///
+/// # Header Export
+/// Libraries can export headers for other targets to use.
+/// Use `export_dir` to specify which headers are public.
+///
+/// # Build Output
+/// Produces a static library archive (.a or .lib) that can be
+/// linked into applications or other libraries.
+type lib is target {
+    /// Inherits all properties from Target
+
+    /// Header export directory (optional)
+    ///
+    /// Directory containing public headers for other targets.
+    /// Defaults to "include" or "inc" if not specified.
+    ///
+    /// # Example
+    /// ```auto
+    /// lib("mylib") {
+    ///     export_dir: "api"  // Public headers in api/
+    ///     dir("src") {}       // Private code in src/
+    /// }
+    /// ```
+    export_dir Path
+
+    /// Export all headers (optional, default: false)
+    ///
+    /// If true, all headers in export_dir are public.
+    /// If false, only explicitly listed headers are exported.
+    ///
+    /// # Example
+    /// ```auto
+    /// lib("mylib") {
+    ///     export_dir: "include"
+    ///     export_all: true  // All headers in include/ are public
+    /// }
+    /// ```
+    export_all bool
+}
+
+/// Bag target (code collection)
+///
+/// A bag is a collection of code that is not independently compiled.
+/// It's used to organize source code that will be included in other targets.
+///
+/// # Example
+/// ```auto
+/// bag("common") {
+///     dir("utils") {}
+///     dir("platform") {}
+/// }
+/// ```
+///
+/// # Use Cases
+/// - Shared utility code across multiple targets
+/// - Platform-specific implementations
+/// - Code that needs to be compiled into multiple targets
+/// - Header-only libraries
+///
+/// # Default Behavior
+/// - Location: `bags/<name>`
+/// - No separate compilation
+/// - Code is included directly into dependent targets
+///
+/// # When to Use Bag vs Lib
+/// Use a **Bag** when:
+/// - Code is shared but you want it compiled into each target
+/// - You have header-only code
+/// - You're organizing platform-specific implementations
+///
+/// Use a **Lib** when:
+/// - You want a separate compiled library
+/// - You want to control what headers are exported
+/// - The library is used by many targets (avoid recompiling)
+type bag is target {
+    /// Inherits all properties from Target
+    /// No additional properties specific to bags
+}
+
+/// Test target
+///
+/// Represents a test unit that will be compiled and run.
+///
+/// # Example
+/// ```auto
+/// test("mylib_test") {
+///     dir("tests") {}
+///     link("mylib") {}
+/// }
+/// ```
+///
+/// # Default Behavior
+/// - Location: `tests/<name>`
+/// - Output: `build/Debug/<name>.exe`
+/// - Linked with test framework automatically
+///
+/// # Test Frameworks
+/// Common frameworks supported:
+/// - "unity" - Unity test framework
+/// - "gtest" - Google Test
+/// - "custom" - Your own framework
+///
+/// # Build Output
+/// Produces a test executable that can be run to verify functionality.
+type test is target {
+    /// Inherits all properties from Target
+
+    /// Test framework (optional)
+    ///
+    /// Specifies the test framework to use.
+    /// If not specified, uses the project default.
+    ///
+    /// # Values
+    /// - "unity" - Unity test framework (embedded)
+    /// - "gtest" - Google Test (C++)
+    /// - "custom" - Custom test framework
+    ///
+    /// # Example
+    /// ```auto
+    /// test("mylib_test") {
+    ///     framework: "unity"
+    ///     link("mylib") {}
+    /// }
+    /// ```
+    framework str
+
+    /// Main test file (optional)
+    ///
+    /// If specified, this file contains the test runner.
+    /// If not specified, a default test runner is generated.
+    ///
+    /// # Example
+    /// ```auto
+    /// test("mylib_test") {
+    ///     main: "tests/test_runner.c"
+    ///     link("mylib") {}
+    /// }
+    /// ```
+    main Path
+}
