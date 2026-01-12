@@ -24,4 +24,7 @@ version-compare = { workspace = true }
 encoding_rs = { workspace = true }
 is_executable = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.14"
+
 # walkdir = { workspace = true }
