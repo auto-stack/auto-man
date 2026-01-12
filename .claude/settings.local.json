@@ -9,7 +9,10 @@
       "Bash(RUST_BACKTRACE=1 cargo test:*)",
       "Bash(cargo run:*)",
       "Bash(./target/debug/am.exe:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(git push)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ]
   }
 }
