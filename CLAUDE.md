@@ -168,3 +168,17 @@ Git-based dependency resolution:
 - **Path Handling**: Uses `auto_val::AutoPath` and `auto_val::AutoStr` for cross-platform path operations
 - **Interactive Prompts**: Uses `dialoguer` for user selection when multiple options exist
 - **Command Aliases**: `b` for build, `r` for run, `o` for open, `i` for info
+
+## Planning and Development
+
+**IMPORTANT**: When creating implementation plans:
+- Always save plan files to `docs/plans/` directory (not the Claude temp directory)
+- Use sequential numbering: `001-description.plan.md`, `002-description.plan.md`, etc.
+- This ensures plans are tracked with the project and accessible to the team
+- Example: `docs/plans/001-code-quality-improvements.plan.md`
+
+**Plan File Format**:
+- Use `.plan.md` extension for plan files
+- Include a descriptive title after the sequence number
+- Reference related files with markdown links for easy navigation
+- Keep plans in version control for historical context
