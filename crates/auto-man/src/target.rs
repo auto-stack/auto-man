@@ -562,29 +562,33 @@ impl Target {
     pub fn transpile_auto(&mut self) -> AutoResult<()> {
         for path in self.autos.iter() {
             info!("Transpiling {}", path.as_str());
+
+            // Read the Auto source file
+            let content = std::fs::read_to_string(path.as_str())
+                .map_err(|e| format!("Failed to read Auto file '{}': {}", path, e))?;
+
+            // Transpile to C
             let fname = AutoPath::new(path).basename();
-            println!("trans_C fname: {}", fname);
-            // read the file
-            let content = std::fs::read_to_string(path.as_str())?;
-            // transpile the content to c code
-            let (mut c_code, uni) = transpile_c(fname, &content)?;
-            // write the c code to the file
+            let (mut c_code, uni) = transpile_c(fname, &content)
+                .map_err(|e| format!("Failed to transpile '{}': {}", path, e))?;
+
+            // Generate output file paths
             let c_path = path.as_str().replace(".at", ".c");
             let h_path = path.as_str().replace(".at", ".h");
 
+            // Write C file
             let c_content = c_code.done()?;
-            println!(
-                "CONTENT: [{}]",
-                String::from_utf8(c_content.clone()).unwrap()
-            );
             if !c_content.is_empty() {
-                std::fs::write(Path::new(c_path.as_str()), c_content)?;
-                // add the file to the srcs
-                self.srcs.insert(AutoStr::from(c_path));
+                std::fs::write(Path::new(c_path.as_str()), c_content)
+                    .map_err(|e| format!("Failed to write C file '{}': {}", c_path, e))?;
+                self.srcs.insert(AutoStr::from(c_path.clone()));
+                info!("Generated {}", c_path);
             }
-            // write the header file
+
+            // Write header file
             if !c_code.header.is_empty() {
-                std::fs::write(Path::new(h_path.as_str()), c_code.header)?;
+                std::fs::write(Path::new(h_path.as_str()), c_code.header)
+                    .map_err(|e| format!("Failed to write header file '{}': {}", h_path, e))?;
 
                 if let Some(d) = Path::new(h_path.as_str()).parent() {
                     let d: AutoStr = d.to_str().unwrap().into();
@@ -592,8 +596,10 @@ impl Target {
                         self.incs.insert(d);
                     }
                 }
+                info!("Generated {}", h_path);
             }
-            // add code paks
+
+            // Add code paks (additional generated files from dependencies)
             for (_sid, pak) in uni.borrow().code_paks.iter() {
                 let inc = AutoPath::new(pak.header.clone()).parent().parent();
                 if inc.is_dir() {
@@ -602,15 +608,12 @@ impl Target {
                 self.srcs.insert(pak.cfile.clone());
             }
         }
-        // recurse
-        println!("DEPS: [{}]", self.deps.len());
-        println!("Links: [{}]", self.links.len());
-        println!("ALL Deps: [{}]", self.all_deps.len());
-        println!("ALL Links: [{}]", self.all_links.len());
-        println!("ALL srcs: [{:?}]", self.srcs);
+
+        // Recursively transpile dependencies
         for dep in self.deps.iter_mut() {
             dep.transpile_auto()?;
         }
+
         Ok(())
     }
 

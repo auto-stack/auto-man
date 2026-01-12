@@ -13,6 +13,7 @@ pub mod pull;
 mod target;
 pub mod up;
 pub mod util;
+pub mod version;
 
 pub use automan::*;
 pub use builder::*;
@@ -22,6 +23,7 @@ pub use index::*;
 pub use pac::*;
 pub use port::*;
 pub use target::*;
+pub use version::*;
 
 pub use auto_val::AutoError;
 pub use auto_val::AutoResult;
