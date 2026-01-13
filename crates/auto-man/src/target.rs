@@ -340,6 +340,8 @@ impl Target {
         let selects = Self::extract_selects(node);
         let skips = node.get_prop("skips").to_str_vec().to_set();
 
+        println!("Node ID: {:?}", node);
+
         // Process dirs property (array of directory names)
         let dirs_prop = node.get_prop("dirs").to_str_vec();
         let mut dirs: Vec<Dir> = dirs_prop
@@ -486,8 +488,8 @@ impl Target {
         node.set_prop("kind", node_type);
         node.set_prop("relative_path", self.rel.clone());
         node.set_prop("at", self.at.clone());
-        node.set_prop("name", self.local_name().clone());
-        node.set_prop("id", self.local_name().clone());
+        node.set_prop("name", self.name.clone());
+        node.set_prop("id", self.name.clone());
         node.set_prop("root", self.at.clone());
         node.set_prop("srcs", set_to_vec(self.srcs.clone()));
         node.set_prop("incs", set_to_vec(self.incs.clone()));
@@ -545,6 +547,20 @@ impl Target {
 
         if !self.deps.iter().any(|t| t.kind == TargetKind::Bag) {
             node.set_prop("bags", Value::empty_array());
+        }
+
+        // Add defines property
+        node.set_prop("defines", Value::str_array(self.defines.clone()));
+
+        // For IAR builder
+        if self.is_major() && self.port.builder == "iar" {
+            node.set_prop("groups", self.groups().to_xml());
+
+            let mut xo = "none".into();
+            if self.props.has("extra_output") {
+                xo = self.props.get_str_or("extra_output", xo);
+            };
+            node.set_prop("extout", self.get_extra_output(&xo));
         }
 
         node
@@ -868,7 +884,9 @@ impl Target {
             g.files.push(crate::group::File { name: fpath.into() })
         }
         // set dirs
+        println!("Target: {}", t.name);
         for (_n, d) in &t.dirs {
+            println!("dir: {}", d.name);
             let dg = g.mut_kid(&d.name);
             self.group_dir(dg, d);
         }

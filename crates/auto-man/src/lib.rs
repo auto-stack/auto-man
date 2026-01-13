@@ -32,4 +32,4 @@ pub use version::*;
 pub use auto_val::AutoError;
 pub use auto_val::AutoResult;
 
-pub const AUTOMAN_VERSION: &str = "v0.1.2";
+pub const AUTOMAN_VERSION: &str = "v0.1.3";
