@@ -340,8 +340,6 @@ impl Target {
         let selects = Self::extract_selects(node);
         let skips = node.get_prop("skips").to_str_vec().to_set();
 
-        println!("Node ID: {:?}", node);
-
         // Process dirs property (array of directory names)
         let dirs_prop = node.get_prop("dirs").to_str_vec();
         let mut dirs: Vec<Dir> = dirs_prop
@@ -787,7 +785,6 @@ impl Target {
             .iter()
             .map(|s| s.clone())
             .collect::<Vec<AutoStr>>();
-        println!("includes before scan: {:?}", incs);
         let scanned_incs = check_incs(&incs, &self.at)?;
         succ_incs.extend(scanned_incs);
 
@@ -805,7 +802,6 @@ impl Target {
 
         self.srcs = succ_srcs.into_iter().collect();
         self.incs = succ_incs.into_iter().collect();
-        println!("includes: {:?}", self.incs);
         // dirs are moved out and scanned, with all infomation merged into the target
         // so we don't need to store dirs anymore
         // self.dirs is empty now
@@ -884,9 +880,7 @@ impl Target {
             g.files.push(crate::group::File { name: fpath.into() })
         }
         // set dirs
-        println!("Target: {}", t.name);
         for (_n, d) in &t.dirs {
-            println!("dir: {}", d.name);
             let dg = g.mut_kid(&d.name);
             self.group_dir(dg, d);
         }

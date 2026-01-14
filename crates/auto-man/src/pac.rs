@@ -78,7 +78,7 @@ impl Pac {
                         for p in &target_props {
                             if config.args.has(*p) {
                                 let value = config.args.get(*p).unwrap();
-                                println!("Setting prop: {}: {}", *p, value.clone());
+                                // println!("Setting prop: {}: {}", *p, value.clone());
                                 // TODO: find a better way to transfer args to dependencies target
                                 n.set_prop(*p, value);
                             }
@@ -392,6 +392,7 @@ impl Pac {
 
         // Transitively collect links from dependencies
         for link in &target.links {
+            // println!("LINKS TO RESOLVE: {}", link);
             let Some(dep) = targets_map.get(&link.id()) else {
                 continue;
             };
@@ -449,7 +450,7 @@ impl Pac {
     pub fn download(&mut self) -> AutoResult<()> {
         info!("Downloading deps");
         self.download_deps(&AutoStr::new(), &AutoStr::new())?;
-        println!("download done!");
+        info!("download done!");
         Ok(())
     }
 
@@ -719,7 +720,7 @@ impl Pac {
     }
 
     pub fn copy_local(&mut self, dep: &Target) -> AutoResult<()> {
-        println!("copy for dep {}", dep.name);
+        // println!("copy for dep {}", dep.name);
         let from = dep.from.clone();
         let from_path = AutoPath::new(from.clone());
         // check if from dir exists
@@ -751,14 +752,12 @@ impl Pac {
         match info {
             Some(info) => {
                 let mut info = info.clone();
-                println!("INFO: {}", info);
                 // TODO: check if dep version is in index
                 if dep.version == "latest" {
                     info.version = "master".into();
                 } else {
                     info.version = dep.version.clone();
                 }
-                println!("dep version: {}", info.version);
                 self.download_repo(&info, &dep.kind, &at)?;
                 return Ok(());
             }

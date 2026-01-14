@@ -72,7 +72,6 @@ impl Index {
                 let name = n.id();
                 // let version = n.get_prop("version").to_astr();
                 let versions = n.get_prop("versions");
-                println!("versions: {:?}", versions);
                 let version = versions.as_array().iter().last();
                 let version = if let Some(v) = version {
                     v.to_astr()
