@@ -1,0 +1,12 @@
+name: "simple_app"
+version: "0.0.1"
+
+port("windows_cmake") {
+    platform: "windows"
+    builder: "cmake"
+    toolchain: "msvc"
+}
+
+app("simple_app") {
+    dir("source") {}
+}

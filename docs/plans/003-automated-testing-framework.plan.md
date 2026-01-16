@@ -339,26 +339,45 @@ fn generate_wrong_files(case: &TestCase, builder_name: &str) {
 
 ## 实现步骤
 
-### 阶段 1：基础设施（第1-2周）
+### ✅ 阶段 1：基础设施（第1-2周）- **已完成**
 
 **任务 1.1**：创建测试目录结构
-- [ ] 创建 `tests/integration/` 目录
-- [ ] 创建 `tests/integration_test.rs` 文件
-- [ ] 实现 `discover_test_cases()` 函数
+- [x] 创建 `tests/integration/` 目录
+- [x] 创建 `tests/integration_test.rs` 文件
+- [x] 实现 `discover_test_cases()` 函数
+- [x] 创建 `tests/integration/README.md` 文档
 
 **任务 1.2**：实现第一个测试用例（001_simple_app）
-- [ ] 创建 `001_simple_app/pac.at`
-- [ ] 创建 `001_simple_app/source/main.c`
-- [ ] 创建 `001_simple_app/expected/cmake/CMakeLists.txt`
+- [x] 创建 `001_simple_app/pac.at`
+- [x] 创建 `001_simple_app/source/main.c`
+- [x] 创建 `001_simple_app/expected/cmake/CMakeLists.txt`
 
 **任务 1.3**：基础测试执行器
-- [ ] 实现 `run_test_case()`（仅 CMake）
-- [ ] 使用临时目录方式（暂不实现内存输出）
-- [ ] 实现文件对比逻辑
+- [x] 实现 `run_test_case()`（仅 CMake）
+- [x] 使用临时目录方式（暂不实现内存输出）
+- [x] 实现文件对比逻辑 `compare_outputs()`
+- [x] 实现预期文件加载 `load_expected_files()`
 
 **关键文件**：
-- `crates/auto-man/tests/integration_test.rs` - 新建
-- `crates/auto-man/tests/integration/001_simple_app/` - 新建
+- [x] `crates/auto-man/tests/integration_test.rs` - 新建
+- [x] `crates/auto-man/tests/integration/README.md` - 新建
+- [x] `crates/auto-man/tests/integration/001_simple_app/` - 新建
+
+**完成日期**：2025-01-16
+
+**完成摘要**：
+- ✅ 测试目录结构创建完成
+- ✅ 测试执行器基础功能实现
+- ✅ 第一个测试用例（001_simple_app）添加
+- ✅ 测试通过验证（`cargo test --test integration_test`）
+
+**测试结果**：
+```
+running 1 test
+test test_integration_all_cases ... ok
+
+test result: ok. 1 passed; 0 failed
+```
 
 ### 阶段 2：内存输出支持（第2-3周）
 
@@ -747,3 +766,37 @@ cargo test --test integration_test -- generate_expected_files -- --ignored
 | 阶段 4 | 4-5 | 测试用例扩展（002-006） |
 | 阶段 5 | 5-6 | 高级特性（依赖、错误用例） |
 | 阶段 6 | 6 | CI/CD 集成、文档完善 |
+
+---
+
+## 实施进度追踪
+
+### 2025-01-16
+
+**已完成**：阶段 1 - 基础设施
+
+**创建的文件**：
+- [x] `tests/integration_test.rs` - 测试执行器（207行）
+- [x] `tests/integration/README.md` - 测试文档
+- [x] `tests/integration/001_simple_app/pac.at` - 测试用例配置
+- [x] `tests/integration/001_simple_app/source/main.c` - 源文件
+- [x] `tests/integration/001_simple_app/expected/cmake/CMakeLists.txt` - 预期输出
+
+**实现的功能**：
+- ✅ 自动发现测试用例（`discover_test_cases()`）
+- ✅ 支持多 builder 测试（cmake, iar, ghs, ninja）
+- ✅ 加载预期输出文件（`load_expected_files()`）
+- ✅ 文件内容对比逻辑（`compare_outputs()`）
+- ✅ 测试结果统计和报告
+
+**测试结果**：
+```
+$ cargo test --test integration_test
+running 1 test
+test test_integration_all_cases ... ok
+
+test result: ok. 1 passed; 0 failed
+```
+
+**下一步**：阶段 2 - 实现内存输出支持
+
