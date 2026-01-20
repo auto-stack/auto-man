@@ -10,6 +10,12 @@ use std::{fs::File, io::Write};
 use crate::{AutoResult, Port, TargetKind, ToolKind};
 use crate::{Pac, Target};
 
+// 导入ninja子模块
+use super::config::{CompilerConfig, CompilerKind, CompilerLocation, ExecutableType};
+use super::mapper::FlagMapper;
+use super::resolver::CompilerResolver;
+use super::templates::CommandTemplates;
+
 // Wrapper struct for memory output
 struct MemoryWriter {
     buffer: Vec<u8>,
@@ -36,6 +42,7 @@ pub struct NinjaBuilder {
     pub gen: AutoGen,
     pub path: AutoPath,
     pub out: Box<dyn Write + 'static>,
+    pub compiler: Option<CompilerConfig>,
     memory_mode: bool,
     memory_output: Vec<u8>,
 }
@@ -47,6 +54,7 @@ impl NinjaBuilder {
             gen,
             path,
             out: Box::new(std::io::sink()),
+            compiler: None,
             memory_mode: false,
             memory_output: Vec::new(),
         }
@@ -54,6 +62,73 @@ impl NinjaBuilder {
 
     fn new_gen(path: &AutoPath) -> AutoGen {
         AutoGen::new().out(path.clone()).note('$').rename(true)
+    }
+
+    /// 从 Port 加载编译器配置
+    fn load_compiler_config(&mut self, port: &Port) -> AutoResult<()> {
+        // 将 ToolKind 转换为 CompilerKind
+        let kind = match port.tool.kind {
+            ToolKind::Msvc => CompilerKind::MSVC,
+            ToolKind::Gcc => CompilerKind::GCC,
+            ToolKind::Clang => CompilerKind::Clang,
+            ToolKind::IarArm => CompilerKind::IAR,
+            ToolKind::None => {
+                // 默认使用 GCC
+                warn!("ToolKind is None, using GCC as default");
+                CompilerKind::GCC
+            }
+        };
+
+        // 创建编译器可执行文件映射
+        let mut executables = HashMap::new();
+        executables.insert(ExecutableType::Compiler, AutoPath::new(port.tool.compiler.as_str()));
+        executables.insert(ExecutableType::Linker, AutoPath::new(port.tool.linker.as_str()));
+        executables.insert(ExecutableType::Archiver, AutoPath::new(port.tool.archiver.as_str()));
+        executables.insert(ExecutableType::Assembler, AutoPath::new(port.tool.assembler.as_str()));
+
+        // 根据编译器类型获取标志映射
+        let flags = match kind {
+            CompilerKind::MSVC => super::config::FlagMappings::msvc_default(),
+            CompilerKind::GCC => super::config::FlagMappings::gcc_default(),
+            CompilerKind::Clang => super::config::FlagMappings::clang_default(),
+            CompilerKind::IAR => super::config::FlagMappings::iar_default(),
+            CompilerKind::GHS => super::config::FlagMappings::ghs_default(),
+            _ => super::config::FlagMappings::gcc_default(),
+        };
+
+        // 获取默认编译标志
+        let default_cflags = match kind {
+            CompilerKind::IAR => {
+                vec![
+                    "--no_cse".into(),
+                    "--no_unroll".into(),
+                    "--no_inline".into(),
+                    "--no_code_motion".into(),
+                    "--no_tbaa".into(),
+                    "--no_clustering".into(),
+                    "--no_scheduling".into(),
+                    "--debug".into(),
+                    "--endian=little".into(),
+                    "--cpu=Cortex-M4".into(),
+                    "-e".into(),
+                    "--fpu=VFPv4_sp".into(),
+                ]
+            }
+            _ => vec![],
+        };
+
+        // 创建编译器配置
+        let config = CompilerConfig::new(
+            kind,
+            port.tool.name.clone(),
+            executables,
+            flags,
+            CompilerLocation::Env,
+            default_cflags,
+        );
+
+        self.compiler = Some(config);
+        Ok(())
     }
 
     fn reset_ninja_file(&mut self) -> AutoResult<()> {
@@ -81,16 +156,15 @@ impl NinjaBuilder {
     }
 
     fn build_source(&mut self, target: &Target, objs: &mut Vec<AutoStr>) -> AutoResult<()> {
-        let obj_postfix = match target.port.platform.as_str() {
-            "windows" => ".obj",
-            "linux" => ".o",
-            _ => ".o",
-        };
+        // 使用编译器配置获取对象文件扩展名
+        let compiler = self.compiler.as_ref().expect("Compiler config should be loaded");
+        let obj_ext = compiler.get_object_extension();
+
         // build rule for each source file
         for src in target.srcs.iter() {
             println!("Checking src: {}", src);
             if src.ends_with(".c") {
-                let ofile = AutoPath::new(src).filename().replace(".c", obj_postfix);
+                let ofile = AutoPath::new(src).filename().replace(".c", obj_ext);
                 let path = if src.starts_with("/") {
                     src
                 } else {
@@ -99,13 +173,37 @@ impl NinjaBuilder {
                 println!("add build rule for {}", src);
                 self.out
                     .write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
-                // default cflags
-                // out.write(format!("   cflags = {}\n", default_cflags(&target.port)).as_bytes())?;
-                // defines
                 objs.push(ofile);
             }
         }
         Ok(())
+    }
+
+    /// 构建include标志
+    fn build_includes(_compiler: &CompilerConfig, paths: Vec<AutoStr>) -> String {
+        let includes: Vec<String> = paths.iter()
+            .map(|p| format!("-I../{}", AutoPath::new(p.as_str())))
+            .collect();
+        includes.join(" ")
+    }
+
+    /// 构建define标志
+    fn build_defines(compiler: &CompilerConfig, defines: &[AutoStr]) -> String {
+        FlagMapper::format_defines(compiler, defines)
+    }
+
+    /// 构建编译标志
+    fn build_cflags(compiler: &CompilerConfig) -> String {
+        let flags = compiler.default_cflags.iter()
+            .map(|f| f.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // 添加编译器特定的额外标志
+        match compiler.kind {
+            CompilerKind::IAR => flags,
+            _ => flags,
+        }
     }
 }
 
@@ -139,78 +237,93 @@ impl Builder for NinjaBuilder {
         // load srcs in sub dirs into targets
         pac.collect_srcs()?;
 
-        // setup Ninja file header
+        // 加载编译器配置
+        self.load_compiler_config(&pac.port)?;
+
+        // 准备所有需要的数据（避免借用冲突）
+        let all_incs = pac.all_incs();
+        let defines = pac.defines.clone();
+        let pac_name = pac.name.clone();
+
+        // 获取编译器配置的克隆，以便在 reset_ninja_file 之外使用
+        let compiler = self.compiler.as_ref().expect("Compiler config should be loaded").clone();
+
+        // 解析编译器路径
+        let cc_path = CompilerResolver::resolve_executable(&compiler, ExecutableType::Compiler);
+        let as_path = CompilerResolver::resolve_executable(&compiler, ExecutableType::Assembler);
+        let link_path = CompilerResolver::resolve_executable(&compiler, ExecutableType::Linker);
+        let ar_path = CompilerResolver::resolve_executable(&compiler, ExecutableType::Archiver);
+
+        // 打印调试信息（在move之前）
+        println!("Got includes: {:?}", all_incs);
+
+        // setup Ninja file header（在最后，避免借用冲突）
         self.reset_ninja_file()?;
 
-        println!("Got includes: {:?}", pac.all_incs());
+        // 构建标志（all_incs在这里被move）
+        let includes = Self::build_includes(&compiler, all_incs);
+        let defines_flags = Self::build_defines(&compiler, &defines);
+        let cflags = Self::build_cflags(&compiler);
 
-        let mut includes = String::from("includes =");
-        for inc in pac.all_incs() {
-            includes.push_str(&format!(" -I../{}", AutoPath::new(inc)));
-        }
+        // 获取命令模板
+        let templates = CommandTemplates::new(&compiler);
 
-        let port = &pac.port;
+        // 渲染命令
+        let compile_only = FlagMapper::map_compile_only(&compiler);
+        let asm_cmd = templates.render_assemble(
+            as_path.to_astr().as_str(),
+            &includes,
+            &cflags,
+            "$out",
+            "$in"
+        );
+        let cc_cmd = templates.render_compile(
+            cc_path.to_astr().as_str(),
+            &compile_only,
+            &includes,
+            &defines_flags,
+            &cflags,
+            "$out",
+            "$in"
+        );
+        let link_cmd = templates.render_link(
+            link_path.to_astr().as_str(),
+            "$out",
+            "$in",
+            "$ldflags",
+            "$libs"
+        );
+        let lib_cmd = templates.render_archive(
+            ar_path.to_astr().as_str(),
+            "$out",
+            "$in"
+        );
 
-        let (asm, cc, link, lib) = match port.tool.kind {
-            ToolKind::Msvc => (
-                format!("{} /c $in /Fo:$out", port.tool.assembler),
-                format!("{} /c $in /Fo:$out", port.tool.compiler),
-                format!("{} /OUT:$out $in", port.tool.linker),
-                format!("{} /OUT:$out $in", port.tool.archiver),
-            ),
-            ToolKind::Gcc => (
-                format!("{} -c $in -o $out", port.tool.assembler),
-                format!("{} -c $in -o $out", port.tool.compiler),
-                format!("{} -o $out $in", port.tool.linker),
-                format!("{} -o $out $in", port.tool.archiver),
-            ),
-            ToolKind::IarArm => (
-                format!("{} -c $in -o $out", port.tool.assembler),
-                format!("{} -c $in -o $out", port.tool.compiler),
-                format!("{} -o $out $in", port.tool.linker),
-                format!("{} -o $out $in", port.tool.archiver),
-            ),
-            _ => (
-                "clang".to_string(),
-                "clang".to_string(),
-                "clang".to_string(),
-                "clang".to_string(),
-            ),
-        };
-
-        // defines
-        let defines = port.tool.defines(&pac.defines);
-        let defines = format!("defines = {}\n", defines);
-
-        // cflags
-        let cflags = default_cflags(port);
-        let cflags = format!("cflags = {}\n", cflags);
-
-        // write header rules
+        // 写入build.ninja头部
         self.out.write(
             format!(
-                r#"# ninja build file
+                r#"# ninja build file for {} with {} compiler
 
 # includes
-{}
+includes = {}
 
 # defines
-{}
+defines = {}
 
 # cflags
-{}
+cflags = {}
 
 # rules
 rule as
-    command = {} $includes $aflags
+    command = {}
     description = Assembling $in
 
 rule cc
-    command = {} $includes $defines $cflags
+    command = {}
     description = Compiling $in
 
 rule link
-    command = {} $ldflags
+    command = {}
     description = Linking $out
 
 rule lib
@@ -218,7 +331,15 @@ rule lib
     description = Building library $out
 
 "#,
-                includes, defines, cflags, asm, cc, link, lib
+                pac_name,
+                compiler.name,
+                includes,
+                defines_flags,
+                cflags,
+                asm_cmd,
+                cc_cmd,
+                link_cmd,
+                lib_cmd
             )
             .as_bytes(),
         )?;
