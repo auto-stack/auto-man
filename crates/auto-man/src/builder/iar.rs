@@ -131,4 +131,14 @@ impl Builder for IARBuilder {
     fn run(&mut self, _pac: &Pac, _args: Vec<String>) -> AutoResult<()> {
         Ok(())
     }
+
+    fn enable_memory_output(&mut self) -> AutoResult<()> {
+        // TODO: Implement IAR memory output in Phase 3
+        Err("IAR memory output not yet implemented".into())
+    }
+
+    fn get_memory_output(&self) -> std::collections::HashMap<String, Vec<u8>> {
+        // TODO: Implement IAR memory output in Phase 3
+        std::collections::HashMap::new()
+    }
 }

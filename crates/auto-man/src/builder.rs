@@ -12,6 +12,7 @@ pub use tool::*;
 use crate::AutoResult;
 use crate::{Pac, Target};
 use auto_val::{AutoPath, AutoStr};
+use std::collections::HashMap;
 
 pub trait Builder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()>;
@@ -20,6 +21,18 @@ pub trait Builder {
     fn target(&mut self, target: &Target, pac: &Pac) -> AutoResult<()>;
     fn clean(&mut self) -> AutoResult<()>;
     fn run(&mut self, pac: &Pac, args: Vec<String>) -> AutoResult<()>;
+
+    /// Enable memory output mode for testing
+    ///
+    /// When enabled, builder output is captured in memory instead of writing to disk.
+    /// This allows tests to verify generated content without file I/O.
+    fn enable_memory_output(&mut self) -> AutoResult<()>;
+
+    /// Get captured memory output
+    ///
+    /// Returns a map of filename -> content bytes.
+    /// Only valid after enable_memory_output() has been called and build() has completed.
+    fn get_memory_output(&self) -> HashMap<String, Vec<u8>>;
 }
 
 pub enum BuilderKind {

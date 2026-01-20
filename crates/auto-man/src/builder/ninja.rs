@@ -3,17 +3,41 @@ use auto_gen::AutoGen;
 use auto_val::{AutoPath, AutoStr};
 use dialoguer::Select;
 use log::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs::File, io::Write};
 
 use crate::{AutoResult, Port, TargetKind, ToolKind};
 use crate::{Pac, Target};
 
+// Wrapper struct for memory output
+struct MemoryWriter {
+    buffer: Vec<u8>,
+}
+
+impl MemoryWriter {
+    fn new() -> Self {
+        Self { buffer: Vec::new() }
+    }
+}
+
+impl Write for MemoryWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct NinjaBuilder {
     pub gen: AutoGen,
     pub path: AutoPath,
-    pub out: Box<dyn Write>,
+    pub out: Box<dyn Write + 'static>,
+    memory_mode: bool,
+    memory_output: Vec<u8>,
 }
 
 impl NinjaBuilder {
@@ -23,6 +47,8 @@ impl NinjaBuilder {
             gen,
             path,
             out: Box::new(std::io::sink()),
+            memory_mode: false,
+            memory_output: Vec::new(),
         }
     }
 
@@ -31,18 +57,27 @@ impl NinjaBuilder {
     }
 
     fn reset_ninja_file(&mut self) -> AutoResult<()> {
-        // check if path exists
-        if Path::new(self.path.path()).is_file() {
-            // remove file
-            std::fs::remove_file(self.path.path())?;
+        if self.memory_mode {
+            // In memory mode, use a MemoryWriter
+            self.memory_output = Vec::new();
+            let writer: Box<dyn Write + 'static> = Box::new(MemoryWriter::new());
+            self.out = writer;
+            Ok(())
+        } else {
+            // check if path exists
+            if Path::new(self.path.path()).is_file() {
+                // remove file
+                std::fs::remove_file(self.path.path())?;
+            }
+            let parent = self.path.parent();
+            if !parent.is_dir() {
+                std::fs::create_dir_all(parent.path())?;
+            }
+            let out = File::create(self.path.path())?;
+            let writer: Box<dyn Write + 'static> = Box::new(out);
+            self.out = writer;
+            Ok(())
         }
-        let parent = self.path.parent();
-        if !parent.is_dir() {
-            std::fs::create_dir_all(parent.path())?;
-        }
-        let out = File::create(self.path.path())?;
-        self.out = Box::new(out);
-        Ok(())
     }
 
     fn build_source(&mut self, target: &Target, objs: &mut Vec<AutoStr>) -> AutoResult<()> {
@@ -299,10 +334,23 @@ rule lib
         let out = self.out.as_mut();
         out.write(b"\n")?;
         out.flush()?;
+
+        // In memory mode, extract data from MemoryWriter
+        if self.memory_mode {
+            // Use unsafe to extract the MemoryWriter data
+            let raw_ptr = self.out.as_ref() as *const dyn Write as *const MemoryWriter;
+            if !raw_ptr.is_null() {
+                unsafe {
+                    let writer = &*raw_ptr;
+                    self.memory_output = writer.buffer.clone();
+                }
+            }
+            self.out = Box::new(std::io::sink());
+            return Ok(());
+        }
+
         // let out be finished and close the file
         self.out = Box::new(std::io::sink());
-        // self.out = Box::new(std::io::sink());
-        //
         let build_path = self.path.parent();
 
         println!(
@@ -386,6 +434,25 @@ rule lib
             }
         }
         Ok(())
+    }
+
+    fn enable_memory_output(&mut self) -> AutoResult<()> {
+        self.memory_mode = true;
+        self.memory_output = Vec::new();
+        Ok(())
+    }
+
+    fn get_memory_output(&self) -> HashMap<String, Vec<u8>> {
+        let mut map = HashMap::new();
+        if self.memory_mode {
+            // Extract filename from path
+            let filename = Path::new(self.path.path())
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("build.ninja");
+            map.insert(filename.to_string(), self.memory_output.clone());
+        }
+        map
     }
 }
 

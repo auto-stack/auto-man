@@ -1,7 +1,7 @@
 use super::Builder;
 use auto_val::AutoStr;
 use log::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -9,9 +9,33 @@ use std::path::Path;
 use crate::AutoResult;
 use crate::{Pac, Target, TargetKind};
 
+// Wrapper struct for memory output that collects data into a Vec
+struct MemoryWriter {
+    buffer: Vec<u8>,
+}
+
+impl MemoryWriter {
+    fn new() -> Self {
+        Self { buffer: Vec::new() }
+    }
+}
+
+impl Write for MemoryWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct CMakeBuilder {
     pub cmake_path: String,
-    pub out: Box<dyn Write>,
+    pub out: Box<dyn Write + 'static>,  // Changed to 'static to allow memory mode
+    memory_mode: bool,
+    memory_output: Vec<u8>,
 }
 
 impl CMakeBuilder {
@@ -19,18 +43,29 @@ impl CMakeBuilder {
         Self {
             cmake_path: path.to_string(),
             out: Box::new(std::io::sink()),
+            memory_mode: false,
+            memory_output: Vec::new(),
         }
     }
 
     fn clear_cmake_file(&mut self) -> AutoResult<()> {
-        // check if path exists
-        if Path::new(&self.cmake_path).is_file() {
-            // remove file
-            std::fs::remove_file(&self.cmake_path)?;
+        if self.memory_mode {
+            // In memory mode, use a MemoryWriter
+            self.memory_output = Vec::new();
+            let writer: Box<dyn Write + 'static> = Box::new(MemoryWriter::new());
+            self.out = writer;
+            Ok(())
+        } else {
+            // check if path exists
+            if Path::new(&self.cmake_path).is_file() {
+                // remove file
+                std::fs::remove_file(&self.cmake_path)?;
+            }
+            let out = File::create(&self.cmake_path)?;
+            let writer: Box<dyn Write + 'static> = Box::new(out);
+            self.out = writer;
+            Ok(())
         }
-        let out = File::create(&self.cmake_path)?;
-        self.out = Box::new(out);
-        Ok(())
     }
 }
 
@@ -108,6 +143,22 @@ impl Builder for CMakeBuilder {
     fn finish(&mut self, _pac: &Pac) -> AutoResult<()> {
         let out = self.out.as_mut();
         out.flush()?;
+
+        // In memory mode, extract data from MemoryWriter
+        if self.memory_mode {
+            // Use unsafe to extract the MemoryWriter data
+            // This is safe because we just created it in clear_cmake_file()
+            let raw_ptr = self.out.as_ref() as *const dyn Write as *const MemoryWriter;
+            if !raw_ptr.is_null() {
+                unsafe {
+                    let writer = &*raw_ptr;
+                    self.memory_output = writer.buffer.clone();
+                }
+            }
+            self.out = Box::new(std::io::sink());
+            return Ok(());
+        }
+
         self.out = Box::new(std::io::sink());
 
         // run cmake build to generate the win32 project
@@ -221,5 +272,24 @@ impl Builder for CMakeBuilder {
             return Err(format!("Failed to run cmake").into());
         }
         Ok(())
+    }
+
+    fn enable_memory_output(&mut self) -> AutoResult<()> {
+        self.memory_mode = true;
+        self.memory_output = Vec::new();
+        Ok(())
+    }
+
+    fn get_memory_output(&self) -> HashMap<String, Vec<u8>> {
+        let mut map = HashMap::new();
+        if self.memory_mode {
+            // Extract filename from cmake_path
+            let filename = Path::new(&self.cmake_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("CMakeLists.txt");
+            map.insert(filename.to_string(), self.memory_output.clone());
+        }
+        map
     }
 }
