@@ -1,4 +1,4 @@
-use super::Builder;
+use crate::builder::Builder;
 use auto_gen::AutoGen;
 use auto_val::{AutoPath, AutoStr};
 use dialoguer::Select;
