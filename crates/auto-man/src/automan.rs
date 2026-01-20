@@ -155,6 +155,10 @@ impl Automan {
         info!("loading index store from {}", index_store.path.to_astr());
         pac.index = shared(Index::load(index_store.path.join("index.at").to_astr())?);
         pac.device_index = shared(Index::load(index_store.path.join("devices.at").to_astr())?);
+
+        // 加载编译器配置
+        pac.load_compiler_store()?;
+
         pac.set_port(port_name.clone())?;
         pac.save_port(port_name.clone())?;
 

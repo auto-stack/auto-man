@@ -4,7 +4,7 @@ mod iar;
 pub use iar::*;
 mod ghs;
 pub use ghs::*;
-mod ninja;
+pub mod ninja;
 pub use ninja::*;
 mod tool;
 pub use tool::*;

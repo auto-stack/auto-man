@@ -8,6 +8,7 @@ pub mod mapper;
 pub mod templates;
 pub mod resolver;
 pub mod builder;
+pub mod compiler_store;
 
 // 重新导出常用类型
 pub use config::{
@@ -24,6 +25,8 @@ pub use mapper::FlagMapper;
 pub use templates::CommandTemplates;
 
 pub use resolver::CompilerResolver;
+
+pub use compiler_store::CompilerStore;
 
 // 导出 NinjaBuilder
 pub use builder::NinjaBuilder;

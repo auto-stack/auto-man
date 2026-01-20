@@ -860,19 +860,53 @@ fn parse_compiler_config(node: &Node) -> CompilerConfig {
 - 现有测试用例通过
 - MSVC/GCC/Clang 编译器支持正常工作
 
-### 4.3 Phase 3: 配置文件支持（1-2天）
+### 4.3 Phase 3: 配置文件支持（1-2天）✅ **已完成**
+
+**完成日期**: 2025-01-20
 
 **任务**：
-- [ ] 扩展 AutoConfig 解析器支持 compiler 节点
-- [ ] 实现 `parse_compiler_configs()`
-- [ ] 实现配置节到 `CompilerConfig` 的转换
-- [ ] 添加配置验证（检查编译器是否存在）
-- [ ] 编写配置示例和文档
+- [x] 扩展 AutoConfig 解析器支持 compiler 节点
+- [x] 实现 `CompilerStore::load_from_am_config()`
+- [x] 实现配置节到 `CompilerConfig` 的转换
+- [x] 添加配置验证（检查编译器是否存在）
+- [x] 编写配置示例和文档
+
+**实现的文件**：
+- `crates/auto-man/src/builder/ninja/compiler_store.rs` (新文件, 263行)
+- `crates/auto-man/src/port.rs` - 添加 `compiler_name` 字段
+- `crates/auto-man/src/pac.rs` - 添加 `compiler_store` 字段和 `load_compiler_store()` 方法
+- `crates/auto-man/src/automan.rs` - 在 `parse_pac()` 中加载 compiler_store
+- `crates/auto-man/src/builder.rs` - 将 ninja 模块设为公开
+- `docs/compiler-config-example.md` - 配置示例文档
 
 **验收标准**：
-- 可以从 `am.at` 加载编译器配置
-- Port 可以引用编译器配置
-- 配置验证工作正常
+- [x] 可以从 `am.at` 加载编译器配置
+- [x] Port 可以引用编译器配置
+- [x] 配置验证工作正常（86个单元测试全部通过）
+
+**关键实现细节**：
+
+1. **CompilerStore**: 新模块负责从 `~/.auto/auto-man/am.at` 加载编译器配置
+   - 支持 7 种编译器类型: MSVC, GCC, Clang, GHS, IAR, Targeting, Hightec
+   - 支持三种 location: Env, Dir, Executable
+   - 支持三种 flag 格式: Prefix, Postfix, Both
+
+2. **Port 扩展**: 添加 `compiler_name: Option<AutoStr>` 字段,用于引用编译器配置
+
+3. **优先级系统**:
+   - 优先使用 `Port.compiler_name` 引用的编译器配置
+   - 如果找不到,回退到 `Port.tool` 配置
+   - 确保向后兼容性
+
+4. **配置解析**:
+   - 使用 ValueKey 进行节点查找
+   - 使用 kids_iter() 遍历子节点
+   - 正确处理 Kid::Node 和 Kid::Lazy 类型
+
+**测试结果**:
+```
+test result: ok. 86 passed; 0 failed; 0 ignored
+```
 
 ### 4.4 Phase 4: 扩展编译器支持（2-3天）
 

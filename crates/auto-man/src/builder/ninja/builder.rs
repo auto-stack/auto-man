@@ -65,7 +65,26 @@ impl NinjaBuilder {
     }
 
     /// 从 Port 加载编译器配置
-    fn load_compiler_config(&mut self, port: &Port) -> AutoResult<()> {
+    fn load_compiler_config(&mut self, port: &Port, pac: &Pac) -> AutoResult<()> {
+        // 优先使用 Port.compiler_name 引用的编译器配置
+        if let Some(compiler_name) = &port.compiler_name {
+            if let Some(compiler_store) = &pac.compiler_store {
+                if let Some(compiler_config) = compiler_store.get(compiler_name) {
+                    info!("Using compiler config: {} from am.at", compiler_name);
+                    self.compiler = Some(compiler_config.clone());
+                    return Ok(());
+                } else {
+                    warn!(
+                        "Compiler config '{}' not found in am.at, falling back to Port.tool",
+                        compiler_name
+                    );
+                }
+            }
+        }
+
+        // 回退到使用 Port.tool 配置
+        info!("Using compiler config from Port.tool");
+
         // 将 ToolKind 转换为 CompilerKind
         let kind = match port.tool.kind {
             ToolKind::Msvc => CompilerKind::MSVC,
@@ -238,7 +257,7 @@ impl Builder for NinjaBuilder {
         pac.collect_srcs()?;
 
         // 加载编译器配置
-        self.load_compiler_config(&pac.port)?;
+        self.load_compiler_config(&pac.port, pac)?;
 
         // 准备所有需要的数据（避免借用冲突）
         let all_incs = pac.all_incs();

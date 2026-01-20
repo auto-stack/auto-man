@@ -10,6 +10,8 @@ pub struct Port {
     pub platform: AutoStr,
     pub at: AutoStr,
     pub tool: Tool,
+    /// 引用的编译器配置名称 (可选)
+    pub compiler_name: Option<AutoStr>,
 }
 
 impl Default for Port {
@@ -21,6 +23,7 @@ impl Default for Port {
                 platform: "windows".into(),
                 at: "build".into(),
                 tool: Tool::from_kind("msvc".into(), crate::ToolKind::Msvc),
+                compiler_name: None,
             },
             _ => Self {
                 name: "linux_ninja".into(),
@@ -28,6 +31,7 @@ impl Default for Port {
                 platform: "linux".into(),
                 at: "build".into(),
                 tool: Tool::from_kind("gcc".into(), crate::ToolKind::Gcc),
+                compiler_name: None,
             },
         }
     }

@@ -42,6 +42,8 @@ pub struct Pac {
     /// Whether to show header files in `srcs`
     pub show_headers: bool,
     pub defines: Vec<AutoStr>,
+    /// 编译器配置存储 (从 am.at 加载)
+    pub compiler_store: Option<crate::builder::ninja::CompilerStore>,
     is_update: bool,
 }
 
@@ -106,6 +108,7 @@ impl Pac {
             build_location: "cmake".into(),
             show_headers: false,
             defines,
+            compiler_store: None,
             is_update: false,
         }
     }
@@ -116,6 +119,27 @@ impl Pac {
                 target.transpile_auto()?;
             }
         }
+        Ok(())
+    }
+
+    /// 从用户配置文件加载编译器配置
+    pub fn load_compiler_store(&mut self) -> AutoResult<()> {
+        use dirs::home_dir;
+
+        let home = home_dir().ok_or("Can't find home directory")?;
+        let auto_dir = home.join(".auto").join("auto-man");
+        let am_at_path = auto_dir.join("am.at");
+
+        if !am_at_path.exists() {
+            info!("am.at not found at {}, compiler configs not loaded", am_at_path.display());
+            return Ok(());
+        }
+
+        use crate::builder::ninja::CompilerStore;
+        let compiler_store = CompilerStore::load_from_am_config(&am_at_path)?;
+        self.compiler_store = Some(compiler_store);
+
+        info!("Loaded compiler configs from am.at");
         Ok(())
     }
 
@@ -580,6 +604,14 @@ impl Pac {
             let mut tool = Tool::from(kind.clone(), kind);
             tool.set_path(loc.as_str());
             port.tool = tool;
+        }
+
+        // compiler_name (可选的编译器配置引用)
+        if port_node.has_prop("compiler") {
+            let compiler_name = port_node.get_prop("compiler").to_astr();
+            if !compiler_name.is_empty() {
+                port.compiler_name = Some(compiler_name);
+            }
         }
 
         self.port = port;
