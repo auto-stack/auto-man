@@ -57,34 +57,16 @@ impl Dir {
     }
 
     pub fn from_node(node: &Node, parent: AutoStr, target_kind: TargetKind) -> Self {
+        use crate::node_ext::NodeExt;
+
         let name = AutoStr::from(node.args.args[0].to_astr());
         let parent_path = Path::new(parent.as_str());
-        let rel_path = if node.has_prop("at") {
-            node.get_prop("at").to_astr()
-        } else {
-            name.clone()
-        };
+        let rel_path = node.get_str_or("at", name.as_str());
         let at = parent_path.join(rel_path.as_str()).unified();
-        // info!(" <<<<<<<<<<< making Dir {}::{} with root: {}", parent, name, at);
 
-        // info!("making Dir {}::{} with root: {}", parent, name, root);
-        let scan = if node.has_prop("scan") {
-            node.get_prop("scan").to_bool()
-        } else {
-            true
-        };
-
-        let recurse = if node.has_prop("recurse") {
-            node.get_prop("recurse").to_bool()
-        } else {
-            false
-        };
-
-        let headers = if node.has_prop("headers") {
-            node.get_prop("headers").to_bool()
-        } else {
-            false
-        };
+        let scan = node.get_bool_or("scan", true);
+        let recurse = node.get_bool_or("recurse", false);
+        let headers = node.get_bool_or("headers", false);
 
         // TODO read srcs, incs, skips from node
         let mut dirs = node
@@ -100,11 +82,10 @@ impl Dir {
             dirs.push(dir);
         }
 
-        let srcs = node.get_prop("srcs").to_str_vec();
-        let incs = node.get_prop("incs").to_str_vec();
+        let srcs = node.get_str_vec_or("srcs");
+        let incs = node.get_str_vec_or("incs");
         let skips = node
-            .get_prop("skips")
-            .to_str_vec()
+            .get_str_vec_or("skips")
             .into_iter()
             .collect::<HashSet<AutoStr>>();
         // info!("dir contents: {}", name);
@@ -245,6 +226,7 @@ impl Dir {
         let mut all_srcs = HashSet::new();
 
         if self.scan {
+            // 扫描当前目录
             let (files, has_headers) =
                 scan_dir_flat(root_path, &self.target_kind, &self.skips, self.show_headers)?;
             all_srcs.extend(files);
@@ -252,32 +234,17 @@ impl Dir {
                 all_incs.insert(self.at.clone());
             }
 
-            // check `src` folder in current dir
-            let src_path = root_path.join("src");
-            let (files, has_headers) =
-                scan_dir_flat(&src_path, &self.target_kind, &self.skips, self.show_headers)?;
-            all_srcs.extend(files);
-            if has_headers {
-                all_incs.insert(src_path.unified());
-            }
-
-            // check `include` folder in current dir
-            let inc_path = root_path.join("include");
-            let (files, has_headers) =
-                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
-            all_srcs.extend(files);
-            if has_headers {
-                all_incs.insert(inc_path.unified());
-            }
-
-            // check `inc` folder in current dir
-            let inc_path = root_path.join("inc");
-            let (files, has_headers) =
-                scan_dir_flat(&inc_path, &self.target_kind, &self.skips, self.show_headers)?;
-            all_srcs.extend(files);
-            if has_headers {
-                all_incs.insert(inc_path.unified());
-            }
+            // 使用 scan_standard_subdirs 扫描标准子目录
+            use crate::scanner::scan_standard_subdirs;
+            let std_result = scan_standard_subdirs(
+                root_path,
+                &self.target_kind,
+                &self.skips,
+                self.show_headers,
+                scan_dir_flat,
+            )?;
+            all_srcs.extend(std_result.sources);
+            all_incs.extend(std_result.includes);
         }
 
         // check specified srcs
@@ -453,43 +420,26 @@ pub fn scan_dir_flat(
 
         let ext = path.extension();
         let path_str = path.unified();
-        if let Some(ext) = ext {
-            match ext.to_str().unwrap() {
-                "at" => {
-                    if file_name == "pac.at" || file_name == "device.at" {
-                        continue;
-                    }
+
+        // 使用 FileFilter 判断是否应该包含此文件
+        use crate::file_types::{FileFilter, FileType};
+        let filter = FileFilter::for_target(kind);
+        let file_name_str = file_name.to_str().unwrap();
+        let ext_str = ext.and_then(|e| e.to_str());
+
+        if !filter.should_include(file_name_str, ext_str) {
+            continue;
+        }
+
+        // 处理头文件
+        if let Some(file_type) = ext_str.and_then(FileType::from_extension) {
+            if file_type.is_header() {
+                headers_found = true;
+                if use_header {
                     files_found.insert(path_str);
                 }
-                "c" => {
-                    files_found.insert(path_str);
-                }
-                "h" => {
-                    headers_found = true;
-                    if use_header {
-                        files_found.insert(path_str);
-                    }
-                }
-                "s" => {
-                    files_found.insert(path_str);
-                }
-                "S" => {
-                    files_found.insert(path_str);
-                }
-                "gpj" => {
-                    continue;
-                }
-                "850" => {
-                    // TODO: should only work in RH850 platform
-                    files_found.insert(path_str);
-                }
-                _ => {
-                    if kind == &TargetKind::Device {
-                        files_found.insert(path_str);
-                    } else {
-                        continue;
-                    }
-                }
+            } else if file_type.is_source() {
+                files_found.insert(path_str);
             }
         }
     }
