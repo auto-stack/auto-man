@@ -50,6 +50,8 @@ fn select_port(input: Option<String>, ports: &Vec<AutoStr>) -> AutoResult<AutoSt
 
 impl Pac {
     pub fn new(config: AutoConfig) -> Self {
+        use crate::node_ext::NodeExt;
+
         let pac_name = config.name();
         let version = config.version();
         let props = config.root.props_clone();
@@ -59,10 +61,7 @@ impl Pac {
         let builder = None;
 
         // defines
-        let mut defines = vec![];
-        if config.root.has_prop("defines") {
-            defines = config.root.get_prop("defines").to_str_vec();
-        }
+        let defines = config.root.get_str_vec_or("defines");
 
         // target related properties
         let target_props = vec!["at"];
@@ -573,6 +572,7 @@ impl Pac {
 
         // 解析完整的编译器配置
         use crate::builder::ninja::config::{CompilerConfig, CompilerLocation, FlagFormat, FlagMappings};
+        use crate::node_ext::NodeExt;
         use auto_val::{Kid, ValueKey};
 
         if let Some(Kid::Node(compiler_node)) = port_node.get_kid(&ValueKey::Str("compiler".into())) {
@@ -628,32 +628,28 @@ impl Pac {
                 // 解析 flags
                 let flags = if let Some(Kid::Node(flags_node)) = compiler_node.get_kid(&ValueKey::Str("flags".into())) {
                     let parse_flag_format = |flag_name: &str| -> FlagFormat {
-                        if flags_node.has_prop(flag_name) {
-                            let flag_value = flags_node.get_prop(flag_name).to_astr();
-                            if flag_value.contains('(') {
-                                let left_paren = flag_value.find('(').unwrap_or(0);
-                                let right_paren = flag_value.find(')').unwrap_or(flag_value.len());
-                                let format_type = &flag_value[0..left_paren];
-                                let format_arg = &flag_value[left_paren + 1..right_paren];
+                        let flag_value = flags_node.get_str_or(flag_name, "-");
+                        if flag_value.contains('(') {
+                            let left_paren = flag_value.find('(').unwrap_or(0);
+                            let right_paren = flag_value.find(')').unwrap_or(flag_value.len());
+                            let format_type = &flag_value[0..left_paren];
+                            let format_arg = &flag_value[left_paren + 1..right_paren];
 
-                                match format_type {
-                                    "Prefix" => FlagFormat::Prefix(format_arg.to_string()),
-                                    "Postfix" => FlagFormat::Postfix(format_arg.to_string()),
-                                    "Both" => {
-                                        let args: Vec<&str> = format_arg.split(", ").collect();
-                                        if args.len() == 2 {
-                                            FlagFormat::Both(args[0].to_string(), args[1].to_string())
-                                        } else {
-                                            FlagFormat::Prefix(args[0].to_string())
-                                        }
+                            match format_type {
+                                "Prefix" => FlagFormat::Prefix(format_arg.to_string()),
+                                "Postfix" => FlagFormat::Postfix(format_arg.to_string()),
+                                "Both" => {
+                                    let args: Vec<&str> = format_arg.split(", ").collect();
+                                    if args.len() == 2 {
+                                        FlagFormat::Both(args[0].to_string(), args[1].to_string())
+                                    } else {
+                                        FlagFormat::Prefix(args[0].to_string())
                                     }
-                                    _ => FlagFormat::Prefix(format_arg.to_string()),
                                 }
-                            } else {
-                                FlagFormat::Prefix(flag_value.as_str().to_string())
+                                _ => FlagFormat::Prefix(format_arg.to_string()),
                             }
                         } else {
-                            FlagFormat::Prefix("-{}".to_string())
+                            FlagFormat::Prefix(flag_value.as_str().to_string())
                         }
                     };
 
@@ -680,11 +676,7 @@ impl Pac {
 
                 // 解析 default_cflags
                 let default_cflags = if let Some(Kid::Node(cflags_node)) = compiler_node.get_kid(&ValueKey::Str("default_cflags".into())) {
-                    if cflags_node.has_prop("value") {
-                        cflags_node.get_prop("value").to_str_vec()
-                    } else {
-                        Vec::new()
-                    }
+                    cflags_node.get_str_vec_or("value")
                 } else {
                     Vec::new()
                 };
