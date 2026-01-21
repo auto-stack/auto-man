@@ -173,6 +173,30 @@ impl FlagMappings {
             compile_only: FlagFormat::Prefix("-c".to_string()),
         }
     }
+
+    /// 为 Targeting 创建默认标志映射
+    pub fn targeting_default() -> Self {
+        FlagMappings {
+            include: FlagFormat::Prefix("-I{}".to_string()),
+            define: FlagFormat::Prefix("-D{}".to_string()),
+            library: FlagFormat::Prefix("-l{}".to_string()),
+            library_path: FlagFormat::Prefix("-L{}".to_string()),
+            output: FlagFormat::Prefix("-o{}".to_string()),
+            compile_only: FlagFormat::Prefix("-c".to_string()),
+        }
+    }
+
+    /// 为 Hightec 创建默认标志映射
+    pub fn hightec_default() -> Self {
+        FlagMappings {
+            include: FlagFormat::Prefix("-I{}".to_string()),
+            define: FlagFormat::Prefix("-D{}".to_string()),
+            library: FlagFormat::Prefix("-l{}".to_string()),
+            library_path: FlagFormat::Prefix("-L{}".to_string()),
+            output: FlagFormat::Prefix("-o{}".to_string()),
+            compile_only: FlagFormat::Prefix("-c".to_string()),
+        }
+    }
 }
 
 /// 编译器位置配置
@@ -319,6 +343,42 @@ impl CompilerConfig {
         }
     }
 
+    /// 为 Targeting 创建默认配置
+    pub fn targeting_default() -> Self {
+        let mut executables = HashMap::new();
+        executables.insert(ExecutableType::Compiler, AutoPath::new("tcpp.exe"));
+        executables.insert(ExecutableType::Linker, AutoPath::new("tlink.exe"));
+        executables.insert(ExecutableType::Archiver, AutoPath::new("tlib.exe"));
+        executables.insert(ExecutableType::Assembler, AutoPath::new("tas.exe"));
+
+        Self {
+            kind: CompilerKind::Targeting,
+            name: "targeting".into(),
+            executables,
+            flags: FlagMappings::targeting_default(),
+            location: CompilerLocation::Env,
+            default_cflags: vec!["-O2".into(), "-Wall".into()],
+        }
+    }
+
+    /// 为 Hightec 创建默认配置
+    pub fn hightec_default() -> Self {
+        let mut executables = HashMap::new();
+        executables.insert(ExecutableType::Compiler, AutoPath::new("gcc.exe"));
+        executables.insert(ExecutableType::Linker, AutoPath::new("gcc.exe"));
+        executables.insert(ExecutableType::Archiver, AutoPath::new("ar.exe"));
+        executables.insert(ExecutableType::Assembler, AutoPath::new("as.exe"));
+
+        Self {
+            kind: CompilerKind::Hightec,
+            name: "hightec".into(),
+            executables,
+            flags: FlagMappings::hightec_default(),
+            location: CompilerLocation::Env,
+            default_cflags: vec!["-O2".into(), "-Wall".into()],
+        }
+    }
+
     /// 获取可执行文件名称
     pub fn get_executable(&self, exec_type: ExecutableType) -> Option<&AutoPath> {
         self.executables.get(&exec_type)
@@ -352,6 +412,8 @@ mod tests {
         assert_eq!(CompilerKind::from_str("Clang"), Some(CompilerKind::Clang));
         assert_eq!(CompilerKind::from_str("iar"), Some(CompilerKind::IAR));
         assert_eq!(CompilerKind::from_str("ghs"), Some(CompilerKind::GHS));
+        assert_eq!(CompilerKind::from_str("targeting"), Some(CompilerKind::Targeting));
+        assert_eq!(CompilerKind::from_str("hightec"), Some(CompilerKind::Hightec));
         assert_eq!(CompilerKind::from_str("unknown"), None);
     }
 
@@ -416,5 +478,75 @@ mod tests {
         assert_eq!(flags.define.apply("DEBUG"), "-DDEBUG");
         assert_eq!(flags.library.apply("mylib"), "-lmylib");
         assert_eq!(flags.library_path.apply("path"), "-Lpath");
+    }
+
+    #[test]
+    fn test_compiler_config_clang() {
+        let config = CompilerConfig::clang_default();
+        assert_eq!(config.kind, CompilerKind::Clang);
+        assert_eq!(config.get_object_extension(), ".o");
+        assert_eq!(config.get_executable_extension(), "");
+        assert_eq!(
+            config.get_executable(ExecutableType::Compiler),
+            Some(&"clang.exe".into())
+        );
+    }
+
+    #[test]
+    fn test_compiler_config_iar() {
+        let config = CompilerConfig::iar_default();
+        assert_eq!(config.kind, CompilerKind::IAR);
+        assert_eq!(config.get_object_extension(), ".o");
+        assert!(!config.default_cflags.is_empty());
+        assert!(config.default_cflags.iter().any(|f| f.as_str() == "--debug"));
+    }
+
+    #[test]
+    fn test_compiler_config_ghs() {
+        let config = CompilerConfig::ghs_default();
+        assert_eq!(config.kind, CompilerKind::GHS);
+        assert_eq!(config.get_object_extension(), ".o");
+        assert_eq!(
+            config.get_executable(ExecutableType::Compiler),
+            Some(&"ccarm.exe".into())
+        );
+    }
+
+    #[test]
+    fn test_compiler_config_targeting() {
+        let config = CompilerConfig::targeting_default();
+        assert_eq!(config.kind, CompilerKind::Targeting);
+        assert_eq!(config.get_object_extension(), ".o");
+        assert_eq!(
+            config.get_executable(ExecutableType::Compiler),
+            Some(&"tcpp.exe".into())
+        );
+    }
+
+    #[test]
+    fn test_compiler_config_hightec() {
+        let config = CompilerConfig::hightec_default();
+        assert_eq!(config.kind, CompilerKind::Hightec);
+        assert_eq!(config.get_object_extension(), ".o");
+        assert_eq!(
+            config.get_executable(ExecutableType::Compiler),
+            Some(&"gcc.exe".into())
+        );
+    }
+
+    #[test]
+    fn test_flag_mappings_targeting() {
+        let flags = FlagMappings::targeting_default();
+        assert_eq!(flags.include.apply("path"), "-Ipath");
+        assert_eq!(flags.define.apply("DEBUG"), "-DDEBUG");
+        assert_eq!(flags.library.apply("mylib"), "-lmylib");
+    }
+
+    #[test]
+    fn test_flag_mappings_hightec() {
+        let flags = FlagMappings::hightec_default();
+        assert_eq!(flags.include.apply("path"), "-Ipath");
+        assert_eq!(flags.define.apply("DEBUG"), "-DDEBUG");
+        assert_eq!(flags.library.apply("mylib"), "-lmylib");
     }
 }

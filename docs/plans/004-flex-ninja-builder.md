@@ -908,19 +908,77 @@ fn parse_compiler_config(node: &Node) -> CompilerConfig {
 test result: ok. 86 passed; 0 failed; 0 ignored
 ```
 
-### 4.4 Phase 4: 扩展编译器支持（2-3天）
+### 4.4 Phase 4: 扩展编译器支持（2-3天）✅ **已完成**
+
+**完成日期**: 2025-01-20
 
 **任务**：
-- [ ] 添加 GHS 编译器配置
-- [ ] 添加 IAR 编译器配置（完整）
-- [ ] 添加 Targeting 编译器配置
-- [ ] 添加 Hightec 编译器配置
-- [ ] 为每个编译器编写测试用例
+- [x] 添加 Targeting 编译器配置
+- [x] 添加 Hightec 编译器配置
+- [x] 为所有7种编译器编写完整的测试用例
+
+**实现的文件**：
+- `crates/auto-man/src/builder/ninja/config.rs` - 添加了 Targeting 和 Hightec 的默认配置和标志映射
 
 **验收标准**：
-- 所有 7 种编译器都有完整配置
-- 每个编译器的标志映射正确
-- 测试覆盖所有编译器类型
+- [x] 所有 7 种编译器都有完整配置 (MSVC, GCC, Clang, IAR, GHS, Targeting, Hightec)
+- [x] 每个编译器的标志映射正确
+- [x] 测试覆盖所有编译器类型 (93个测试全部通过)
+
+**编译器配置总结**:
+
+1. **MSVC** (config.rs:218-233)
+   - 可执行文件: cl.exe, link.exe, lib.exe, ml64.exe
+   - 对象文件扩展名: .obj
+   - 可执行文件扩展名: .exe
+   - 标志格式: 前缀式 (/I, /D, /LIBPATH:)
+
+2. **GCC** (config.rs:236-251)
+   - 可执行文件: gcc.exe, ar.exe
+   - 对象文件扩展名: .o
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+
+3. **Clang** (config.rs:254-269)
+   - 可执行文件: clang.exe, ar.exe
+   - 对象文件扩展名: .o
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+
+4. **IAR** (config.rs:272-302)
+   - 可执行文件: iccarm.exe, ilinkarm.exe, iarchive.exe, iasmarm.exe
+   - 对象文件扩展名: .o
+   - 默认标志: 包含12个调试和优化标志 (--no_cse, --debug, --cpu=Cortex-M4等)
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+
+5. **GHS** (config.rs:305-320)
+   - 可执行文件: ccarm.exe, cxarm.exe, asarm.exe
+   - 对象文件扩展名: .o
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+
+6. **Targeting** (config.rs:322-338) **新增**
+   - 可执行文件: tcpp.exe, tlink.exe, tlib.exe, tas.exe
+   - 对象文件扩展名: .o
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+   - 默认标志: -O2, -Wall
+
+7. **Hightec** (config.rs:340-356) **新增**
+   - 可执行文件: gcc.exe, ar.exe, as.exe
+   - 对象文件扩展名: .o
+   - 标志格式: 前缀式 (-I, -D, -l, -L)
+   - 默认标志: -O2, -Wall
+
+**新增测试用例**:
+- `test_compiler_config_clang`: 验证Clang配置
+- `test_compiler_config_iar`: 验证IAR配置和default_cflags
+- `test_compiler_config_ghs`: 验证GHS配置
+- `test_compiler_config_targeting`: 验证Targeting配置
+- `test_compiler_config_hightec`: 验证Hightec配置
+- `test_flag_mappings_targeting`: 验证Targeting标志映射
+- `test_flag_mappings_hightec`: 验证Hightec标志映射
+
+**测试结果**:
+```
+test result: ok. 93 passed; 0 failed; 0 ignored
+```
 
 ### 4.5 Phase 5: 测试和文档（2-3天）
 
