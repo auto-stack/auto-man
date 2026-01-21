@@ -59,7 +59,8 @@ impl Dir {
     pub fn from_node(node: &Node, parent: AutoStr, target_kind: TargetKind) -> Self {
         use crate::node_ext::NodeExt;
 
-        let name = AutoStr::from(node.args.args[0].to_astr());
+        // Get directory name from main argument (works for both `dir("name")` and `dir name`)
+        let name = node.main_arg().to_astr();
         let parent_path = Path::new(parent.as_str());
         let rel_path = node.get_str_or("at", name.as_str());
         let at = parent_path.join(rel_path.as_str()).unified();
