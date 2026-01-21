@@ -172,15 +172,17 @@ impl Target {
     }
 
     pub fn from(node: Node, pac: AutoStr) -> Self {
+        use crate::node_ext::NodeExt;
+
         // Extract basic information
         let (name, version) = Self::extract_name_and_version(&node);
         let kind = Self::extract_kind(&node);
         let origin = Self::extract_origin(&node);
-        let from = Self::extract_from_property(&node);
+        let from = node.get_str_or("from", "");
 
-        // Extract flags
-        let is_scan = Self::extract_scan_flag(&node);
-        let recurse = Self::extract_recurse_flag(&node);
+        // Extract flags using NodeExt
+        let is_scan = node.get_bool_or("scan", true);
+        let recurse = node.get_bool_or("recurse", false);
 
         // Calculate location
         let (at, rename) = Self::calculate_location(&node, &name, &kind, &pac);
@@ -188,14 +190,15 @@ impl Target {
         // Extract directory information
         let dirs = Self::extract_directories(&node, &at, &rename, &kind);
 
-        // Extract source files and includes
-        let (srcs, incs) = Self::extract_sources_and_includes(&node);
+        // Extract source files and includes using NodeExt
+        let srcs = node.get_str_vec_or("srcs").into_iter().collect();
+        let incs = node.get_str_vec_or("incs").into_iter().collect();
 
         // Extract links and other properties
         let links = node.get_kids("link");
         let props = node.props_clone();
         let selects = Self::extract_selects(&node);
-        let skips = node.get_prop("skips").to_str_vec().to_set();
+        let skips = node.get_str_vec_or("skips").into_iter().collect();
 
         let is_main = name == pac;
 
@@ -278,33 +281,6 @@ impl Target {
         origin
     }
 
-    /// Extract 'from' property from node
-    fn extract_from_property(node: &Node) -> AutoStr {
-        if node.has_prop("from") {
-            node.get_prop("from").to_astr()
-        } else {
-            AutoStr::default()
-        }
-    }
-
-    /// Extract 'scan' flag from node
-    fn extract_scan_flag(node: &Node) -> bool {
-        if node.has_prop("scan") {
-            node.get_prop("scan").to_bool()
-        } else {
-            true
-        }
-    }
-
-    /// Extract 'recurse' flag from node
-    fn extract_recurse_flag(node: &Node) -> bool {
-        if node.has_prop("recurse") {
-            node.get_prop("recurse").to_bool()
-        } else {
-            false
-        }
-    }
-
     /// Calculate the target location and rename
     fn calculate_location(node: &Node, name: &AutoStr, kind: &TargetKind, pac: &AutoStr) -> (AutoStr, AutoStr) {
         // Get parent property if exists
@@ -378,13 +354,6 @@ impl Target {
         }
 
         selects
-    }
-
-    /// Extract source files and includes from node
-    fn extract_sources_and_includes(node: &Node) -> (HashSet<AutoStr>, HashSet<AutoStr>) {
-        let srcs = node.get_prop("srcs").to_str_vec().to_set();
-        let incs = node.get_prop("incs").to_str_vec().to_set();
-        (srcs, incs)
     }
 
     pub fn location(&self) -> AutoPath {
@@ -1130,36 +1099,42 @@ mod tests {
 
     #[test]
     fn test_extract_scan_flag() {
+        use crate::node_ext::NodeExt;
+
         // Test with scan flag set to false
         let code = r#"name: "test"; app("test") { scan: false }"#;
         let config = auto_lang::config::AutoConfig::new(code).unwrap();
         let node = config.root.nodes("app").first().unwrap().clone();
 
-        let is_scan = Target::extract_scan_flag(&node);
+        let is_scan = node.get_bool_or("scan", true);
 
         assert_eq!(is_scan, false);
     }
 
     #[test]
     fn test_extract_scan_flag_default() {
+        use crate::node_ext::NodeExt;
+
         // Test without scan flag (should default to true)
         let code = r#"name: "test"; app("test") {}"#;
         let config = auto_lang::config::AutoConfig::new(code).unwrap();
         let node = config.root.nodes("app").first().unwrap().clone();
 
-        let is_scan = Target::extract_scan_flag(&node);
+        let is_scan = node.get_bool_or("scan", true);
 
         assert_eq!(is_scan, true);
     }
 
     #[test]
     fn test_extract_recurse_flag() {
+        use crate::node_ext::NodeExt;
+
         // Test with recurse flag set to true
         let code = r#"name: "test"; app("test") { recurse: true }"#;
         let config = auto_lang::config::AutoConfig::new(code).unwrap();
         let node = config.root.nodes("app").first().unwrap().clone();
 
-        let recurse = Target::extract_recurse_flag(&node);
+        let recurse = node.get_bool_or("recurse", false);
 
         assert_eq!(recurse, true);
     }
@@ -1167,12 +1142,15 @@ mod tests {
     #[test]
     fn test_extract_sources_and_includes() {
         use auto_val::AutoStr;
+        use crate::node_ext::NodeExt;
 
         let code = r#"name: "test"; app("test") { srcs: ["main.c", "utils.c"], incs: ["header.h"] }"#;
         let config = auto_lang::config::AutoConfig::new(code).unwrap();
         let node = config.root.nodes("app").first().unwrap().clone();
 
-        let (srcs, incs) = Target::extract_sources_and_includes(&node);
+        // 使用 NodeExt 直接获取属性
+        let srcs: Vec<AutoStr> = node.get_str_vec_or("srcs");
+        let incs: Vec<AutoStr> = node.get_str_vec_or("incs");
 
         assert_eq!(srcs.len(), 2);
         assert!(srcs.contains(&AutoStr::from("main.c")));
