@@ -2,16 +2,16 @@
 
 A modern build system and package manager for embedded C/Auto development. Similar to Cargo for Rust, AutoMan specializes in embedded systems with multi-platform build support (CMake, IAR, GHS, Ninja).
 
-**Key Concept**: Auto is an intermediate language that transpiles to C, providing type safety and modern features while seamlessly integrating with existing C codebases.
+**Core Philosophy**: Auto is an intermediate language that transpiles to C, providing type safety and modern features while seamlessly integrating with existing C codebases.
 
 ## Features
 
 - **Build Management**: Transpile Auto to C, compile C to binaries
 - **Multi-Platform Build**: Support for CMake, IAR, GHS, and CCS build systems
 - **Package Management**: Organize codebases as `pac` (packages)
-- **Dependency Management**: Automatic git-based dependency download and resolution
+- **Dependency Management**: Automatic git-based dependency download and version resolution
 - **Device Resources**: Configure and download hardware resources (chip libraries, configurations)
-- **Testing**: Automated test execution with built-in test framework
+- **Testing Framework**: Built-in testing system with automated test execution
 
 ## Installation
 
@@ -60,7 +60,7 @@ hello/
 └── deps/           # Downloaded dependencies
 ```
 
-The `pac.at` file uses AutoConfig format (similar to JSON/XML) to define project metadata, targets, and dependencies:
+The `pac.at` file uses AutoConfig format (similar to JSON) to define project metadata, targets, and dependencies:
 
 ```rust
 name: "hello"
@@ -191,6 +191,47 @@ port("iar_arm") {
 }
 ```
 
+## Compiler Configuration
+
+Starting from v0.1.4, AutoMan supports configuring compilers directly in the project's `pac.at` file:
+
+```rust
+port("windows_msvc") {
+    platform: "windows"
+    builder: "ninja"
+    at: "build"
+
+    compiler {
+        kind: "MSVC"
+        location: Env
+
+        executables {
+            cc: "cl.exe"
+            ar: "lib.exe"
+            link: "link.exe"
+            as: "ml64.exe"
+        }
+
+        flags {
+            include: Prefix("/I")
+            define: Prefix("/D")
+            library: Postfix(".lib")
+            library_path: Prefix("/LIBPATH:")
+            output: Both("/Fo", ".obj")
+            compile_only: Prefix("/c")
+        }
+
+        default_cflags: [
+            "/O2",
+            "/W3",
+            "/MD"
+        ]
+    }
+}
+```
+
+For detailed compiler configuration instructions, see [Port Compiler Configuration Guide](docs/port-compiler-config.md).
+
 ## The Build Process
 
 Running `am build` executes these steps:
@@ -318,6 +359,7 @@ By default, AutoMan scans these directories for source files:
 Supported file types:
 - Auto: `.at`
 - C: `.c`, `.h`
+- Assembly: `.s`, `.S`, `.850`
 
 ## Index System
 
@@ -360,6 +402,9 @@ cargo test
 - `src/index.rs` - Package/device index management
 - `src/git.rs` - Git operations for dependencies
 - `src/asset.rs` - Embedded template system
+- `src/scanner.rs` - Unified directory scanning logic
+- `src/file_types.rs` - File type registry
+- `src/node_ext.rs` - Node property extensions
 
 ## License
 

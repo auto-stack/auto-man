@@ -1,17 +1,17 @@
 # AutoMan
 
-一个现代化的嵌入式 C/Auto 开发构建系统和包管理器。类似于 Rust 的 Cargo，AutoMan 专注于嵌入式系统，支持多平台构建（CMake、IAR、GHS、Ninja）。
+现代化的嵌入式 C/Auto 开发构建系统和包管理器。类似于 Rust 的 Cargo，AutoMan 专注于嵌入式系统开发，支持多平台构建（CMake、IAR、GHS、Ninja）。
 
-**核心概念**：Auto 是一种中间语言，可以转译为 C 语言，在提供类型安全和现代特性的同时，与现有的 C 代码库无缝集成。
+**核心理念**：Auto 是一种中间语言，可转译为 C 语言，在提供类型安全和现代特性的同时，与现有 C 代码库无缝集成。
 
 ## 特性
 
-- **构建管理**：将 Auto 转译为 C，将 C 编译为二进制程序
+- **构建管理**：Auto 转译为 C，C 编译为二进制程序
 - **多平台构建**：支持 CMake、IAR、GHS 和 CCS 等编译系统
 - **包管理**：以 `pac`（包）为单位组织代码库
-- **依赖管理**：基于 Git 的自动依赖下载和解析
+- **依赖管理**：基于 Git 的自动依赖下载和版本解析
 - **设备资源**：配置并下载硬件资源（芯片库、配置文件等）
-- **测试**：内置测试框架，自动运行测试用例
+- **测试框架**：内置测试系统，自动运行测试用例
 
 ## 安装
 
@@ -45,8 +45,8 @@ am clib mymath
 
 ```bash
 cd hello
-am build    # 构建项目（缩写：am b）
-am run      # 运行可执行文件（缩写：am r）
+am build    # 构建项目（简写：am b）
+am run      # 运行可执行文件（简写：am r）
 ```
 
 ## 项目结构
@@ -60,7 +60,7 @@ hello/
 └── deps/           # 下载的依赖
 ```
 
-`pac.at` 文件使用 AutoConfig 格式（类似 JSON/XML）来定义项目元数据、目标和依赖：
+`pac.at` 文件使用 AutoConfig 格式（类似 JSON）定义项目元数据、目标和依赖：
 
 ```rust
 name: "hello"
@@ -117,7 +117,7 @@ AutoMan 使用基于 Git 的依赖管理。在 `pac.at` 中添加依赖：
 name: "myapp"
 version: "0.1.0"
 
-// 带版本的依赖
+// 指定版本的依赖
 dep("mymath", version: "0.1.5") {}
 
 // 或使用最新版本（master:HEAD）
@@ -190,6 +190,47 @@ port("iar_arm") {
     at: "build_iar"
 }
 ```
+
+## 编译器配置
+
+从 v0.1.4 开始，AutoMan 支持在项目的 `pac.at` 文件中直接配置编译器：
+
+```rust
+port("windows_msvc") {
+    platform: "windows"
+    builder: "ninja"
+    at: "build"
+
+    compiler {
+        kind: "MSVC"
+        location: Env
+
+        executables {
+            cc: "cl.exe"
+            ar: "lib.exe"
+            link: "link.exe"
+            as: "ml64.exe"
+        }
+
+        flags {
+            include: Prefix("/I")
+            define: Prefix("/D")
+            library: Postfix(".lib")
+            library_path: Prefix("/LIBPATH:")
+            output: Both("/Fo", ".obj")
+            compile_only: Prefix("/c")
+        }
+
+        default_cflags: [
+            "/O2",
+            "/W3",
+            "/MD"
+        ]
+    }
+}
+```
+
+详细的编译器配置说明请参考 [Port 编译器配置指南](docs/port-compiler-config.md)。
 
 ## 构建流程
 
@@ -295,8 +336,8 @@ fn test_add {
 ```bash
 # 项目管理
 am clean       # 清理构建产物
-am open        # 在 IDE 中打开项目（缩写：am o）
-am info        # 显示包/目标信息（缩写：am i）
+am open        # 在 IDE 中打开项目（简写：am o）
+am info        # 显示包/目标信息（简写：am i）
 
 # 配置
 am reset       # 重置 automan 配置和索引
@@ -318,6 +359,7 @@ am upgrade     # 更新 AutoMan 到最新版本
 支持的文件类型：
 - Auto：`.at`
 - C：`.c`、`.h`
+- 汇编：`.s`、`.S`、`.850`
 
 ## 索引系统
 
@@ -353,13 +395,16 @@ cargo test
 ### 项目结构
 
 - `src/automan.rs` - 核心编排逻辑
-- `src/builder.rs` - 构建器特征和实现
+- `src/builder.rs` - 构建器 trait 和实现
 - `src/target.rs` - 目标发现和扫描
 - `src/port.rs` - 端口/平台/工具链定义
 - `src/pac.rs` - 包配置解析
 - `src/index.rs` - 包/设备索引管理
 - `src/git.rs` - 依赖的 Git 操作
 - `src/asset.rs` - 嵌入式模板系统
+- `src/scanner.rs` - 统一的目录扫描逻辑
+- `src/file_types.rs` - 文件类型注册表
+- `src/node_ext.rs` - Node 属性扩展
 
 ## 许可证
 
