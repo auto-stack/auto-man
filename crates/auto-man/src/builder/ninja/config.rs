@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 /// 编译器类型枚举
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompilerKind {
     MSVC,
     GCC,
@@ -78,7 +78,7 @@ impl ExecutableType {
 }
 
 /// 标志格式类型
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FlagFormat {
     Prefix(String),           // "-I{}" -> -I/path
     Postfix(String),          // "{}.lib" -> path.lib
@@ -103,7 +103,7 @@ impl FlagFormat {
 }
 
 /// 编译器标志映射配置
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlagMappings {
     pub include: FlagFormat,
     pub define: FlagFormat,
@@ -200,7 +200,7 @@ impl FlagMappings {
 }
 
 /// 编译器位置配置
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CompilerLocation {
     Env,                          // 从环境变量 PATH 查找
     Dir(AutoPath),                // 指定安装目录
@@ -208,7 +208,7 @@ pub enum CompilerLocation {
 }
 
 /// 编译器配置
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerConfig {
     pub kind: CompilerKind,
     pub name: AutoStr,

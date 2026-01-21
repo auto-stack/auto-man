@@ -9,7 +9,6 @@ use crate::make_builder;
 use crate::AutoResult;
 use crate::Port;
 use crate::TargetOrigin;
-use crate::Tool;
 use crate::{Index, PacInfo};
 use crate::{Target, TargetKind, TargetStatus};
 use auto_lang::config::AutoConfig;
@@ -42,8 +41,6 @@ pub struct Pac {
     /// Whether to show header files in `srcs`
     pub show_headers: bool,
     pub defines: Vec<AutoStr>,
-    /// 编译器配置存储 (从 am.at 加载)
-    pub compiler_store: Option<crate::builder::ninja::CompilerStore>,
     is_update: bool,
 }
 
@@ -108,7 +105,6 @@ impl Pac {
             build_location: "cmake".into(),
             show_headers: false,
             defines,
-            compiler_store: None,
             is_update: false,
         }
     }
@@ -119,27 +115,6 @@ impl Pac {
                 target.transpile_auto()?;
             }
         }
-        Ok(())
-    }
-
-    /// 从用户配置文件加载编译器配置
-    pub fn load_compiler_store(&mut self) -> AutoResult<()> {
-        use dirs::home_dir;
-
-        let home = home_dir().ok_or("Can't find home directory")?;
-        let auto_dir = home.join(".auto").join("auto-man");
-        let am_at_path = auto_dir.join("am.at");
-
-        if !am_at_path.exists() {
-            info!("am.at not found at {}, compiler configs not loaded", am_at_path.display());
-            return Ok(());
-        }
-
-        use crate::builder::ninja::CompilerStore;
-        let compiler_store = CompilerStore::load_from_am_config(&am_at_path)?;
-        self.compiler_store = Some(compiler_store);
-
-        info!("Loaded compiler configs from am.at");
         Ok(())
     }
 
@@ -570,9 +545,9 @@ impl Pac {
         Ok(())
     }
 
-    fn merge_port(&mut self, port: AutoStr) -> AutoResult<()> {
+    fn merge_port(&mut self, port_name: AutoStr) -> AutoResult<()> {
         // reload config with said port
-        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port);
+        let port_node = self.ports.iter().find(|p| p.main_arg().to_astr() == port_name);
 
         let Some(port_node) = port_node else {
             self.port = Port::default();
@@ -596,21 +571,135 @@ impl Pac {
         port.platform = port_node.get_prop("platform").to_astr();
         port.at = port_node.get_prop("at").to_astr();
 
-        // tool
-        if port_node.has_prop("tool") {
-            let tool = port_node.get_prop("tool");
-            let kind = tool.as_obj().get_str_of("kind");
-            let loc = tool.as_obj().get_str_of("location");
-            let mut tool = Tool::from(kind.clone(), kind);
-            tool.set_path(loc.as_str());
-            port.tool = tool;
-        }
+        // 解析完整的编译器配置
+        use crate::builder::ninja::config::{CompilerConfig, CompilerLocation, FlagFormat, FlagMappings};
+        use auto_val::{Kid, ValueKey};
 
-        // compiler_name (可选的编译器配置引用)
-        if port_node.has_prop("compiler") {
-            let compiler_name = port_node.get_prop("compiler").to_astr();
-            if !compiler_name.is_empty() {
-                port.compiler_name = Some(compiler_name);
+        if let Some(Kid::Node(compiler_node)) = port_node.get_kid(&ValueKey::Str("compiler".into())) {
+            // 解析编译器类型
+            let kind_str = compiler_node.get_prop("kind").to_astr();
+            if let Some(kind) = crate::builder::ninja::config::CompilerKind::from_str(kind_str.as_str()) {
+                // 解析 location
+                let location = if let Some(Kid::Node(location_node)) = compiler_node.get_kid(&ValueKey::Str("location".into())) {
+                    let location_type = location_node.main_arg().to_astr();
+                    match location_type.as_str() {
+                        "Env" => CompilerLocation::Env,
+                        "Dir" => {
+                            let dir_str = location_node.get_prop("path").to_astr();
+                            CompilerLocation::Dir(auto_val::AutoPath::new(dir_str.as_str()))
+                        }
+                        "Executable" => {
+                            let exec_type_str = location_node.get_prop("type").to_astr();
+                            let exec_type = crate::builder::ninja::config::ExecutableType::from_str(exec_type_str.as_str());
+                            if let Some(exec_type) = exec_type {
+                                let path = auto_val::AutoPath::new(location_node.get_prop("path").to_astr().as_str());
+                                CompilerLocation::Executable(exec_type, path)
+                            } else {
+                                CompilerLocation::Env
+                            }
+                        }
+                        _ => CompilerLocation::Env
+                    }
+                } else {
+                    CompilerLocation::Env
+                };
+
+                // 解析 executables
+                let mut executables = std::collections::HashMap::new();
+                if let Some(Kid::Node(execs_node)) = compiler_node.get_kid(&ValueKey::Str("executables".into())) {
+                    if execs_node.has_prop("cc") {
+                        let cc = auto_val::AutoPath::new(execs_node.get_prop("cc").to_astr().as_str());
+                        executables.insert(crate::builder::ninja::config::ExecutableType::Compiler, cc);
+                    }
+                    if execs_node.has_prop("ar") {
+                        let ar = auto_val::AutoPath::new(execs_node.get_prop("ar").to_astr().as_str());
+                        executables.insert(crate::builder::ninja::config::ExecutableType::Archiver, ar);
+                    }
+                    if execs_node.has_prop("link") {
+                        let link = auto_val::AutoPath::new(execs_node.get_prop("link").to_astr().as_str());
+                        executables.insert(crate::builder::ninja::config::ExecutableType::Linker, link);
+                    }
+                    if execs_node.has_prop("as") {
+                        let as_cmd = auto_val::AutoPath::new(execs_node.get_prop("as").to_astr().as_str());
+                        executables.insert(crate::builder::ninja::config::ExecutableType::Assembler, as_cmd);
+                    }
+                }
+
+                // 解析 flags
+                let flags = if let Some(Kid::Node(flags_node)) = compiler_node.get_kid(&ValueKey::Str("flags".into())) {
+                    let parse_flag_format = |flag_name: &str| -> FlagFormat {
+                        if flags_node.has_prop(flag_name) {
+                            let flag_value = flags_node.get_prop(flag_name).to_astr();
+                            if flag_value.contains('(') {
+                                let left_paren = flag_value.find('(').unwrap_or(0);
+                                let right_paren = flag_value.find(')').unwrap_or(flag_value.len());
+                                let format_type = &flag_value[0..left_paren];
+                                let format_arg = &flag_value[left_paren + 1..right_paren];
+
+                                match format_type {
+                                    "Prefix" => FlagFormat::Prefix(format_arg.to_string()),
+                                    "Postfix" => FlagFormat::Postfix(format_arg.to_string()),
+                                    "Both" => {
+                                        let args: Vec<&str> = format_arg.split(", ").collect();
+                                        if args.len() == 2 {
+                                            FlagFormat::Both(args[0].to_string(), args[1].to_string())
+                                        } else {
+                                            FlagFormat::Prefix(args[0].to_string())
+                                        }
+                                    }
+                                    _ => FlagFormat::Prefix(format_arg.to_string()),
+                                }
+                            } else {
+                                FlagFormat::Prefix(flag_value.as_str().to_string())
+                            }
+                        } else {
+                            FlagFormat::Prefix("-{}".to_string())
+                        }
+                    };
+
+                    FlagMappings {
+                        include: parse_flag_format("include"),
+                        define: parse_flag_format("define"),
+                        library: parse_flag_format("library"),
+                        library_path: parse_flag_format("library_path"),
+                        output: parse_flag_format("output"),
+                        compile_only: parse_flag_format("compile_only"),
+                    }
+                } else {
+                    // 使用默认 flags
+                    match kind {
+                        crate::builder::ninja::config::CompilerKind::MSVC => FlagMappings::msvc_default(),
+                        crate::builder::ninja::config::CompilerKind::GCC => FlagMappings::gcc_default(),
+                        crate::builder::ninja::config::CompilerKind::Clang => FlagMappings::clang_default(),
+                        crate::builder::ninja::config::CompilerKind::IAR => FlagMappings::iar_default(),
+                        crate::builder::ninja::config::CompilerKind::GHS => FlagMappings::ghs_default(),
+                        crate::builder::ninja::config::CompilerKind::Targeting => FlagMappings::targeting_default(),
+                        crate::builder::ninja::config::CompilerKind::Hightec => FlagMappings::hightec_default(),
+                    }
+                };
+
+                // 解析 default_cflags
+                let default_cflags = if let Some(Kid::Node(cflags_node)) = compiler_node.get_kid(&ValueKey::Str("default_cflags".into())) {
+                    if cflags_node.has_prop("value") {
+                        cflags_node.get_prop("value").to_str_vec()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                // 创建编译器配置
+                let compiler_config = CompilerConfig {
+                    kind,
+                    name: port.name.clone(),
+                    executables,
+                    flags,
+                    location,
+                    default_cflags,
+                };
+
+                port.compiler = Some(compiler_config);
             }
         }
 

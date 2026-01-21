@@ -1,38 +1,42 @@
 use std::env;
 
-use crate::Tool;
 use auto_val::AutoStr;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Port {
     pub name: AutoStr,
     pub builder: AutoStr,
     pub platform: AutoStr,
     pub at: AutoStr,
-    pub tool: Tool,
-    /// 引用的编译器配置名称 (可选)
-    pub compiler_name: Option<AutoStr>,
+    /// 编译器配置 (可选)
+    pub compiler: Option<crate::builder::ninja::config::CompilerConfig>,
 }
 
 impl Default for Port {
     fn default() -> Self {
+        use crate::builder::ninja::config::CompilerConfig;
+
         match env::consts::OS {
-            "windows" => Self {
-                name: "windows_ninja".into(),
-                builder: "ninja".into(),
-                platform: "windows".into(),
-                at: "build".into(),
-                tool: Tool::from_kind("msvc".into(), crate::ToolKind::Msvc),
-                compiler_name: None,
-            },
-            _ => Self {
-                name: "linux_ninja".into(),
-                builder: "ninja".into(),
-                platform: "linux".into(),
-                at: "build".into(),
-                tool: Tool::from_kind("gcc".into(), crate::ToolKind::Gcc),
-                compiler_name: None,
-            },
+            "windows" => {
+                let compiler = CompilerConfig::msvc_default();
+                Self {
+                    name: "windows_ninja".into(),
+                    builder: "ninja".into(),
+                    platform: "windows".into(),
+                    at: "build".into(),
+                    compiler: Some(compiler),
+                }
+            }
+            _ => {
+                let compiler = CompilerConfig::gcc_default();
+                Self {
+                    name: "linux_ninja".into(),
+                    builder: "ninja".into(),
+                    platform: "linux".into(),
+                    at: "build".into(),
+                    compiler: Some(compiler),
+                }
+            }
         }
     }
 }

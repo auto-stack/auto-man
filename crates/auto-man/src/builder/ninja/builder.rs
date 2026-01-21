@@ -7,11 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs::File, io::Write};
 
-use crate::{AutoResult, Port, TargetKind, ToolKind};
+use crate::{AutoResult, Port, TargetKind};
 use crate::{Pac, Target};
 
 // 导入ninja子模块
-use super::config::{CompilerConfig, CompilerKind, CompilerLocation, ExecutableType};
+use super::config::{CompilerConfig, CompilerKind, ExecutableType};
 use super::mapper::FlagMapper;
 use super::resolver::CompilerResolver;
 use super::templates::CommandTemplates;
@@ -65,89 +65,19 @@ impl NinjaBuilder {
     }
 
     /// 从 Port 加载编译器配置
-    fn load_compiler_config(&mut self, port: &Port, pac: &Pac) -> AutoResult<()> {
-        // 优先使用 Port.compiler_name 引用的编译器配置
-        if let Some(compiler_name) = &port.compiler_name {
-            if let Some(compiler_store) = &pac.compiler_store {
-                if let Some(compiler_config) = compiler_store.get(compiler_name) {
-                    info!("Using compiler config: {} from am.at", compiler_name);
-                    self.compiler = Some(compiler_config.clone());
-                    return Ok(());
-                } else {
-                    warn!(
-                        "Compiler config '{}' not found in am.at, falling back to Port.tool",
-                        compiler_name
-                    );
-                }
-            }
+    fn load_compiler_config(&mut self, port: &Port, _pac: &Pac) -> AutoResult<()> {
+        // 直接使用 port.compiler
+        if let Some(compiler_config) = &port.compiler {
+            info!("Using compiler config: {} from port", compiler_config.name);
+            self.compiler = Some(compiler_config.clone());
+            Ok(())
+        } else {
+            // 如果没有配置编译器，使用默认配置
+            warn!("No compiler configured for port {}, using default", port.name);
+            let default_config = CompilerConfig::gcc_default();
+            self.compiler = Some(default_config);
+            Ok(())
         }
-
-        // 回退到使用 Port.tool 配置
-        info!("Using compiler config from Port.tool");
-
-        // 将 ToolKind 转换为 CompilerKind
-        let kind = match port.tool.kind {
-            ToolKind::Msvc => CompilerKind::MSVC,
-            ToolKind::Gcc => CompilerKind::GCC,
-            ToolKind::Clang => CompilerKind::Clang,
-            ToolKind::IarArm => CompilerKind::IAR,
-            ToolKind::None => {
-                // 默认使用 GCC
-                warn!("ToolKind is None, using GCC as default");
-                CompilerKind::GCC
-            }
-        };
-
-        // 创建编译器可执行文件映射
-        let mut executables = HashMap::new();
-        executables.insert(ExecutableType::Compiler, AutoPath::new(port.tool.compiler.as_str()));
-        executables.insert(ExecutableType::Linker, AutoPath::new(port.tool.linker.as_str()));
-        executables.insert(ExecutableType::Archiver, AutoPath::new(port.tool.archiver.as_str()));
-        executables.insert(ExecutableType::Assembler, AutoPath::new(port.tool.assembler.as_str()));
-
-        // 根据编译器类型获取标志映射
-        let flags = match kind {
-            CompilerKind::MSVC => super::config::FlagMappings::msvc_default(),
-            CompilerKind::GCC => super::config::FlagMappings::gcc_default(),
-            CompilerKind::Clang => super::config::FlagMappings::clang_default(),
-            CompilerKind::IAR => super::config::FlagMappings::iar_default(),
-            CompilerKind::GHS => super::config::FlagMappings::ghs_default(),
-            _ => super::config::FlagMappings::gcc_default(),
-        };
-
-        // 获取默认编译标志
-        let default_cflags = match kind {
-            CompilerKind::IAR => {
-                vec![
-                    "--no_cse".into(),
-                    "--no_unroll".into(),
-                    "--no_inline".into(),
-                    "--no_code_motion".into(),
-                    "--no_tbaa".into(),
-                    "--no_clustering".into(),
-                    "--no_scheduling".into(),
-                    "--debug".into(),
-                    "--endian=little".into(),
-                    "--cpu=Cortex-M4".into(),
-                    "-e".into(),
-                    "--fpu=VFPv4_sp".into(),
-                ]
-            }
-            _ => vec![],
-        };
-
-        // 创建编译器配置
-        let config = CompilerConfig::new(
-            kind,
-            port.tool.name.clone(),
-            executables,
-            flags,
-            CompilerLocation::Env,
-            default_cflags,
-        );
-
-        self.compiler = Some(config);
-        Ok(())
     }
 
     fn reset_ninja_file(&mut self) -> AutoResult<()> {
@@ -593,14 +523,5 @@ rule lib
             map.insert(filename.to_string(), self.memory_output.clone());
         }
         map
-    }
-}
-
-fn default_cflags(port: &Port) -> AutoStr {
-    match port.tool.kind {
-        ToolKind::IarArm => {
-            "--no_cse --no_unroll --no_inline --no_code_motion --no_tbaa --no_clustering --no_scheduling --debug --endian=little --cpu=Cortex-M4 -e --fpu=VFPv4_sp --dlib_config D:/soft/IAR_EWARM_9.2/arm/inc/c/DLib_Config_Normal.h".into()
-        }
-        _ => "".into(),
     }
 }
