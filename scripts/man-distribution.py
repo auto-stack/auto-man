@@ -137,21 +137,55 @@ def clone(gate: Gate) -> str:
         if actual != FIXED[name]:
             raise RuntimeError(f"{name} clone HEAD {actual} != fixed {FIXED[name]}")
         gate.receipt["actual_sources"][name] = actual
-    return "four independent local clones match fixed commits"
+    core_group = gate.scratch / "grp-core"
+    core_group.mkdir()
+    for name in ("auto-man", "auto-lang"):
+        gate.run("clone-core", ["git", "clone", "--quiet", "--local", str(group / name),
+                                str(core_group / name)], gate.scratch, timeout=600)
+    if (core_group / "auto-ui").exists() or (core_group / "auto-down").exists():
+        raise RuntimeError("Core clone must not contain UI/down sources")
+    return "four full clones plus isolated Man/lang Core clones match fixed commits"
 
 
 def fresh_lock(gate: Gate) -> str:
     root = gate.scratch / "grp-a/auto-man"
     (root / "Cargo.lock").unlink()
     gate.run("fresh-lock", ["cargo", "generate-lockfile"], root, timeout=1800)
-    return "fresh Man lock regenerated"
+    core = gate.scratch / "grp-core/auto-man"
+    (core / "core/Cargo.lock").unlink()
+    gate.run("fresh-core-lock", ["cargo", "generate-lockfile", "--manifest-path", "core/Cargo.toml"],
+             core, timeout=1800)
+    return "fresh full and Core locks regenerated in their own workspaces"
 
 
 def core_build(gate: Gate) -> str:
-    root = gate.scratch / "grp-a/auto-man"
-    gate.run("core-locked-build", ["cargo", "build", "--locked", "-p", "auto",
-                                  "--no-default-features", "--features", "core"], root)
-    return "independent clone Core auto built"
+    root = gate.scratch / "grp-core/auto-man"
+    gate.run("core-locked-build", ["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
+                                  "-p", "auto", "--no-default-features", "--features", "core"], root)
+    for edges in ("normal,build", "normal,build,dev"):
+        tree = gate.run("core-tree", ["cargo", "tree", "--locked", "--manifest-path", "core/Cargo.toml",
+                                      "--edges", edges, "--prefix", "none"], root).stdout
+        if any(line.startswith(("auto-ui", "shell-pack", "iced", "auto-lang v", "auto-man v"))
+               for line in tree.splitlines()):
+            raise RuntimeError(f"forbidden UI/compat package in Core {edges} closure")
+    install = gate.scratch / "install-core"
+    gate.run("core-install", ["python", "scripts/man-install.py", "install", "--profile", "core",
+                              "--install-root", str(install)], root)
+    gate.run("core-verify", ["python", "scripts/man-install.py", "verify", "--install-root",
+                             str(install), "--profile", "core"], root)
+    gate.run("core-sdk-check", ["cargo", "check", "--locked", "--manifest-path",
+                                str(install / "sdk/Cargo.toml"), "--no-default-features", "--features", "core"],
+             gate.scratch)
+    probe = gate.scratch / "core-probe.at"
+    probe.write_text('fn main() {\n    print("core-independent-ok")\n}\n', encoding="utf-8")
+    result = gate.run("core-installed-run", [str(install / exe("auto")), str(probe)], gate.scratch)
+    if "core-independent-ok" not in result.stdout:
+        raise RuntimeError("independent Core install failed to execute language script")
+    denied = gate.run("core-ui-denied", [str(install / exe("auto")), "ui", "list"], gate.scratch,
+                      expect=(1, 2, 3))
+    if "ui-extra" not in denied.stdout + denied.stderr and "full profile" not in denied.stdout + denied.stderr:
+        raise RuntimeError("Core UI request did not name the missing profile")
+    return "no-UI/down Core clone builds, installs, rebuilds SDK and runs language/UI-denial commands"
 
 
 def full_install(gate: Gate) -> str:
@@ -220,8 +254,8 @@ def relocate(gate: Gate) -> str:
         shutil.rmtree(target)
     moved = gate.scratch / "grp-b"
     shutil.move(str(source), moved)
-    gate.run("relocate-core", ["cargo", "build", "--locked", "-p", "auto",
-                              "--no-default-features", "--features", "core"], moved / "auto-man")
+    gate.run("relocate-core", ["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
+                              "-p", "auto", "--no-default-features", "--features", "core"], moved / "auto-man")
     install_b = gate.scratch / "install-b"
     shutil.move(str(gate.scratch / "install-a"), install_b)
     gate.run("relocate-verify", ["python", "scripts/man-install.py", "verify",
@@ -309,11 +343,61 @@ def missing_tool(gate: Gate) -> str:
     return "missing explicit tool rejected before generation side effects"
 
 
+def owner_liveness(gate: Gate) -> str:
+    import contextlib
+    import importlib.util
+    import io
+
+    spec = importlib.util.spec_from_file_location("man_install_liveness", MAN / "scripts/man-install.py")
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+
+    def staging(label: str, pid: int) -> tuple[Path, Path]:
+        root = gate.scratch / f"owner-{label}"
+        stage = root.with_name(f".{root.name}.man-staging-{label}")
+        stage.mkdir()
+        (stage / ".man-staging.marker").write_text(json.dumps({"schema": "man-staging/1", "pid": pid}))
+        (stage / "user-input.txt").write_text("preserve unless owner is confirmed dead")
+        return root, stage
+
+    if os.name == "nt":
+        root, protected = staging("protected", 4)
+        if installer.process_alive(4) is False:
+            raise RuntimeError("protected System process must not be classified as dead")
+        installer.recover_stale_staging(root)
+        if not protected.exists():
+            raise RuntimeError("unqueryable protected owner staging was deleted")
+        shutil.rmtree(protected)
+    root, live = staging("live", os.getpid())
+    installer.recover_stale_staging(root)
+    if not live.exists():
+        raise RuntimeError("live owner staging was deleted")
+    shutil.rmtree(live)
+    root, dead = staging("dead", 2147483647)
+    installer.recover_stale_staging(root)
+    if dead.exists():
+        raise RuntimeError("confirmed-dead owner staging was not reclaimed")
+    root, unknown = staging("unknown", 12345)
+    original = installer.process_alive
+    diagnostics = io.StringIO()
+    try:
+        installer.process_alive = lambda _pid: None
+        with contextlib.redirect_stderr(diagnostics):
+            installer.recover_stale_staging(root)
+    finally:
+        installer.process_alive = original
+    if not unknown.exists() or "owner liveness unknown" not in diagnostics.getvalue():
+        raise RuntimeError("unknown owner must be preserved and named")
+    shutil.rmtree(unknown)
+    return "protected/unknown/live staging preserved; confirmed-dead staging reclaimed"
+
+
 def recovery(gate: Gate) -> str:
     gate.run("recovery-install", ["python", "scripts/man-install.py", "install", "--profile", "full",
                                   "--install-root", str(gate.scratch / "install-b"), "--skip-build"],
              gate.scratch / "grp-b/auto-man")
-    return "post-failure managed install verifies green"
+    detail = owner_liveness(gate)
+    return f"post-failure managed install verifies green; {detail}"
 
 
 if __name__ == "__main__":

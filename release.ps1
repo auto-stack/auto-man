@@ -1,6 +1,2 @@
-$v = $args[0]
-
-$f = ".\target\release\auto-man.exe"
-$z = ".\target\release\auto-man_windows_x64_v$v.zip"
-
-Compress-Archive -Path $f -DestinationPath $z
+Write-Error "release.ps1 is retired: it packaged the legacy auto-man.exe. Use scripts/man-install.py and docs/installation.md for the current auto Core/full delivery."
+exit 2

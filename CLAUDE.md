@@ -1,184 +1,47 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for development in the current AutoMan workspace.
 
-## Overview
+## Current architecture
 
-AutoMan (Auto Manager) is a build system and package manager for embedded C/Auto language development. Similar to Cargo for Rust, but specialized for embedded systems with multi-platform build support (CMake, IAR, GHS, Ninja).
+AutoMan owns the `auto` CLI, management runtime/core, package lock/resolver, toolchain and asset facilities, and the I-TOOL client. AutoLang owns the language SDK, protocol/project models, and owned execution helpers. AutoUI owns UI compiler/runtime/tools. The executable is `auto`; `am` and the old single-crate layout are legacy only.
 
-**Key Concept**: Auto is an intermediate language that transpiles to C, providing type safety and modern features while seamlessly integrating with existing C codebases.
+The CLI source is shared without duplication:
 
-## Development Commands
+- `crates/auto` is the Full package and integration-test source.
+- `crates/auto-core` plus `core/Cargo.toml` is the independent Core workspace. It reuses `crates/auto/src/main.rs`, `build.rs`, and selected tests through Cargo target paths.
+- Core has no UI path dependency and uses `core/Cargo.lock` / `core/target`.
+- The root workspace and root lock remain the Full/development workspace.
 
-### Building AutoMan itself
+## Build and install
+
 ```bash
-# Build the project
-cargo build
+# Core: only matched Man/lang sources are required.
+cargo build --locked --manifest-path core/Cargo.toml -p auto --no-default-features --features core
 
-# Build with release optimizations
-cargo build --release
+# Full: matched UI/down source siblings are required.
+cargo build --locked -p auto
+cargo build --locked -p auto-ui-tools --manifest-path ../auto-ui/Cargo.toml
 
-# Run tests
-cargo test
-
-# Install locally (installs `am` command)
-cargo install --path .
+# Managed installation; do not use cargo install --path . at the virtual root.
+python scripts/man-install.py install --profile core --install-root /path/to/auto-core
+python scripts/man-install.py install --profile full --install-root /path/to/auto-full
 ```
 
-### Common workflow for testing changes
+Read `docs/installation.md` for fixed sources, upgrade backups, restoration, and relocation. `release.ps1` is retired and intentionally returns an error. Historical `am` material is under `docs/legacy-am.md` and is not a current command reference.
+
+## Tests and CI
+
 ```bash
-# Build and install locally
-cargo install --path .
-
-# Test the installed `am` command
-am app hello
-cd hello
-am build
+cargo t    # workspace libraries and auto bin
+cargo tc   # management Core libraries
+cargo ti   # Man integration targets; requires owner tools
 ```
 
-## Architecture
+For a single real generation test, first build `auto-ui-tools` in AutoUI. The test discovers the group sibling by default; `AUTO_UI_TOOL_BIN` is an explicit authoritative override. Lifetime tests similarly use `te-child` from AutoLang and honor `AUTO_TE_CHILD_BIN`; the independent tool-client fixture uses `TE_CHILD_BIN`.
 
-### Core Abstractions
+The cross-repository local CI entry is `auto-lang/scripts/cross-repo-tiers.py`. Its `man-ti` bootstrap builds UI and language helpers in their owner repositories and injects the resolved roots/tool paths. Do not reintroduce Man-target lookup or fallback to an arbitrary main checkout.
 
-**Automan** (`src/automan.rs`) - Main orchestrator that manages projects, scanning, building, and dependencies
+## Change discipline
 
-**Builder System** (`src/builder.rs`) - Trait-based architecture supporting:
-- `CMakeBuilder` - Windows (Visual Studio) and Linux (GCC)
-- `IARBuilder` - IAR Embedded Workbench
-- `GHSBuilder` - Green Hills MULTI
-- `NinjaBuilder` - Ninja build system
-
-**Target** (`src/target.rs`) - Represents buildable units:
-- `App` - Executable applications
-- `Lib` - Static libraries
-- `Dep` - External dependencies (downloaded from git)
-- `Device` - Hardware resource packages
-- `Bag` - Code collections (not independently compiled)
-- `Test` - Test units
-
-**Port** (`src/port.rs`) - Defines compilation targets (platform + toolchain + builder):
-- Windows default: `windows_ninja` (MSVC + Ninja)
-- Linux default: `linux_ninja` (GCC + Ninja)
-- Custom ports configured in user's `~/.auto/auto-man/am.at`
-
-**Pac** (`src/pac.rs`) - Package representation parsed from `pac.at` configuration files
-
-### Build Process Flow
-
-1. **Scan Phase** (`am scan`):
-   - Parse `pac.at` for AutoConfig syntax
-   - Download dependencies (git-based) to `deps/`
-   - Discover source files (Auto `.at` and C `.c`/`.h`)
-
-2. **Transpile Phase**:
-   - Convert Auto `.at` files to C `.h`/`.c` files using `auto-lang` crate
-   - Auto files use `use` statements → C `#include` with namespacing
-
-3. **Build Generation**:
-   - Generate build configuration (CMakeLists.txt, .ewp for IAR, etc.)
-   - Invoke appropriate build system based on Port
-
-4. **Compile**:
-   - Build artifacts to `build/` directory
-   - Debug builds: `build/Debug/` on Windows
-
-### Asset System
-
-Templates and build configurations are embedded at compile time using `rust-embed`:
-
-**Project Templates** (`assets/templates/`):
-- `app` - Auto language application
-- `lib` - Auto language library  
-- `capp` - C application
-- `clib` - C library
-- `libdemo` - Demo library with examples
-
-**Builder Templates** (`assets/builders/`):
-- `iar/` - IAR project files (.ewp, .eww, .ewd, .ewt)
-- `ghs/` - GHS project files (.gpj)
-
-### Configuration System
-
-Two-level configuration:
-
-1. **Project Config** - `pac.at` in project root:
-   - Defines targets (app, lib, dep, device)
-   - Specifies dependencies and links
-   - AutoConfig format (JSON-like, supports scripting)
-
-2. **User Config** - `~/.auto/auto-man/am.at`:
-   - Port definitions (platform, builder, toolchain)
-   - Index repositories for packages/devices
-   - Git repository URLs
-
-Example `pac.at`:
-```rust
-name: "hello"
-version: "0.0.1"
-
-dep("log", version: "0.0.2") {
-    at: "source/lib/log"
-}
-
-app("hello") {
-    link("log") {}
-    dir("motor") {
-        dir("bldc") {}
-    }
-}
-```
-
-### Index System
-
-**IndexStore** (`src/index.rs`) - Manages package and device registries:
-- Downloads index from git repositories
-- Caches locally in `~/.auto/auto-man/index/`
-- Supports vendor/pac naming to avoid conflicts
-
-### Dependency Management
-
-Git-based dependency resolution:
-- Format: `vendor/pac:version` (e.g., `soutek/mymath:0.1.5`)
-- Downloaded to `deps/` directory
-- Must be explicitly linked to targets via `link()` nodes
-- Recursive dependency support
-
-## Key Source Files
-
-- `src/main.rs` - CLI entry point with clap command definitions
-- `src/automan.rs` - Core project orchestration logic
-- `src/builder.rs` - Builder trait and implementations
-- `src/target.rs` - Target discovery and source file scanning
-- `src/port.rs` - Port/platform/toolchain definitions
-- `src/pac.rs` - Package configuration parsing
-- `src/index.rs` - Package/device index management
-- `src/git.rs` - Git operations for dependencies
-- `src/asset.rs` - Embedded template system
-- `src/group.rs` - Target grouping and organization
-- `src/dir.rs` - Directory scanning logic
-- `src/util.rs` - Utility functions
-- `src/up.rs` - Self-update functionality
-- `src/pull.rs` - Dependency update operations
-
-## Important Notes
-
-- **Auto Language Integration**: This crate depends on the `auto-lang` workspace crates (`auto-val`, `auto-gen`) which are sibling projects in `../auto-lang/`. The `Atom` type is now exported directly from `auto-lang` (previously from `auto-atom` which has been merged into `auto-lang`).
-- **Logging**: Uses `simplelog` with Info level by default
-- **Error Handling**: All public functions return `AutoResult<T>` (alias for `Result<T, AutoError>`)
-- **Path Handling**: Uses `auto_val::AutoPath` and `auto_val::AutoStr` for cross-platform path operations
-- **Interactive Prompts**: Uses `dialoguer` for user selection when multiple options exist
-- **Command Aliases**: `b` for build, `r` for run, `o` for open, `i` for info
-
-## Planning and Development
-
-**IMPORTANT**: When creating implementation plans:
-- Always save plan files to `docs/plans/` directory (not the Claude temp directory)
-- Use sequential numbering: `001-description.plan.md`, `002-description.plan.md`, etc.
-- This ensures plans are tracked with the project and accessible to the team
-- Example: `docs/plans/001-code-quality-improvements.plan.md`
-
-**Plan File Format**:
-- Use `.plan.md` extension for plan files
-- Include a descriptive title after the sequence number
-- Reference related files with markdown links for easy navigation
-- Keep plans in version control for historical context
+Keep Core/free of UI and compatibility-package dependencies. Preserve the staged install transaction, named backups, unknown-directory protection, and the rule that only a confirmed-dead staging owner permits cleanup. Update `docs/installation.md` and both READMEs when commands, profiles, version sources, or recovery behavior change.

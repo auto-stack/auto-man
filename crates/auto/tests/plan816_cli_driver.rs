@@ -6,13 +6,15 @@
 //! - V-04 serve/req 具名管道往返（daemon 协议真实入口）；
 //! - V-04 watch 变更触发 SFC 再生（HMR 前置）+ 终止退出；
 //! - V-04 gen 经真实工具进程（I-TOOL 五操作链，AUTO_UI_TOOL_BIN 指向
-//!   主 workspace 产物；缺工具=诚实红灯）。
+//!   UI owner 产物；缺工具=诚实红灯）。
 //!
 //! F-816-B-R5-04：全部自有 reader（run_bounded 排水与 WatchGuard 泵）
 //! 走 [`stoppable_drain`] 的**双平台真停止协议**——Windows=停止侧重发
 //! CancelIoEx 唤醒挂起读；Unix=poll(2) 50ms 就绪分片（阻塞 read 在无
 //! 字节/无 EOF 时永远观察不到停止标志）。宽限尽未停的 JoinHandle 移入
 //! 进程级残留登记（归属保留），不随局部 Vec 销毁、不伪称已回收。
+
+#![cfg_attr(feature = "core", allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -609,13 +611,16 @@ fn te_child_bin() -> PathBuf {
             let exe = "te-child.exe";
             #[cfg(not(windows))]
             let exe = "te-child";
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/debug")
-                .join(exe)
+            let lang = std::env::var_os("AUTO_LANG_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../auto-lang")
+                });
+            lang.join("target/debug").join(exe)
         });
     assert!(
         p.exists(),
-        "te-child not found at {} — cargo build -p auto-tool-execution --bin te-child or set AUTO_TE_CHILD_BIN",
+        "te-child not found at {} — cargo build -p auto-tool-execution --bin te-child in the language owner or set AUTO_TE_CHILD_BIN",
         p.display()
     );
     p
@@ -909,6 +914,7 @@ fn root_failure_before_transfer_still_reclaims_receiver() {
 /// V-04：watch 就绪横幅 + 变更触发 SFC 再生（内容身份 oracle + 单一
 /// 总预算 20s + RAII 守卫含停止协议）。
 #[test]
+#[cfg(not(feature = "core"))]
 fn watch_regenerates_sfc_on_change() {
     let proj = TempProj::new("watch", "name: \"wdriver\"\nrender: \"vue\"\n", APP);
     let mut watch_spec =
@@ -977,19 +983,12 @@ fn watch_regenerates_sfc_on_change() {
 
 /// V-03/V-04：`auto gen` 经真实工具进程（I-TOOL 五操作链）。
 #[test]
+#[cfg(not(feature = "core"))]
 fn gen_runs_through_real_tool_process() {
-    let tool = std::env::var_os("AUTO_UI_TOOL_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/debug/auto-ui-tool.exe");
-            assert!(
-            p.exists(),
-            "auto-ui-tool not found at {} — cargo build -p auto-ui-tools or set AUTO_UI_TOOL_BIN",
-            p.display()
-        );
-            p
-        });
+    let tool = auto_tool_client::discovery::resolve_existing(
+        &auto_tool_client::discovery::DiscoverySpec::auto_ui_tool(),
+    )
+    .unwrap_or_else(|err| panic!("resolve UI owner tool: {err}"));
     let proj = TempProj::new("gen", "name: \"gdriver\"\nrender: \"vue\"\n", APP);
     let (code, out, err) = run(
         &["gen"],

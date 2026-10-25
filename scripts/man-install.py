@@ -71,7 +71,8 @@ def clean_tree(src: Path, dst: Path) -> None:
 
 
 def metadata_package_dirs(profile: str) -> set[Path]:
-    cmd = ["cargo", "metadata", "--format-version", "1"]
+    manifest = MAN / "core/Cargo.toml" if profile == "core" else MAN / "Cargo.toml"
+    cmd = ["cargo", "metadata", "--locked", "--manifest-path", str(manifest), "--format-version", "1"]
     if profile == "core":
         cmd += ["--no-default-features", "--features", "core"]
     metadata = json.loads(subprocess.check_output(cmd, cwd=str(MAN), text=True))
@@ -164,8 +165,22 @@ def stage_sources(stage: Path, profile: str) -> dict:
         manifest = target / "Cargo.toml"
         if manifest.is_file():
             rewrite_manifest(manifest)
+            if profile == "core" and source.name == "auto-core":
+                text = manifest.read_text(encoding="utf-8")
+                manifest.write_text(text.replace('workspace = "../../core"\n', ""),
+                                    encoding="utf-8", newline="\n")
         packages.append({"name": source.name, "source_repo": repo,
                          "source_path": rel.as_posix(), "installed_path": rel.as_posix()})
+    shared_targets = []
+    if profile == "core":
+        shared = MAN / "crates/auto"
+        clean_tree(shared / "src", sdk / "crates/auto/src")
+        shutil.copy2(shared / "build.rs", sdk / "crates/auto/build.rs")
+        test_target = sdk / "crates/auto/tests"
+        test_target.mkdir(parents=True)
+        shutil.copy2(shared / "tests/plan816_cli_driver.rs", test_target / "plan816_cli_driver.rs")
+        shared_targets = ["crates/auto/src", "crates/auto/build.rs",
+                          "crates/auto/tests/plan816_cli_driver.rs"]
     for manifest in sdk.glob("crates/*/Cargo.toml"):
         projection_edits.extend(project_missing_optional(manifest, installed))
 
@@ -175,14 +190,19 @@ def stage_sources(stage: Path, profile: str) -> dict:
         shutil.copy2(LANG / rel, target)
     clean_tree(LANG / "vendor/autodown-test-parser", sdk / "vendor/autodown-test-parser")
     clean_tree(LANG / "crates/autoui-skill", sdk / "crates/autoui-skill")
-    shutil.copy2(MAN / "Cargo.lock", sdk / "Cargo.lock")
+    lock = MAN / "core/Cargo.lock" if profile == "core" else MAN / "Cargo.lock"
+    shutil.copy2(lock, sdk / "Cargo.lock")
     workspace = (MAN / "Cargo.toml").read_text(encoding="utf-8")
     members_start = workspace.index("members = [")
     members_end = workspace.index("]\ndefault-members", members_start) + 1
     member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down"}))
     workspace = workspace[:members_start] + f"members = [{member_list}]" + workspace[members_end:]
+    default_member = "crates/auto-core" if profile == "core" else "crates/auto"
+    workspace = workspace.replace('default-members = ["crates/auto"]',
+                                  f'default-members = ["{default_member}"]')
     workspace = workspace.replace("../auto-lang/crates/patches/", "crates/patches/")
     if profile == "core":
+        workspace = workspace.replace('exclude = ["crates/auto-core"]\n', "")
         workspace = workspace.split("[patch.crates-io]", 1)[0].rstrip() + "\n"
     (sdk / "Cargo.toml").write_text(workspace, encoding="utf-8", newline="\n")
     run(["cargo", "generate-lockfile"], sdk)
@@ -190,13 +210,14 @@ def stage_sources(stage: Path, profile: str) -> dict:
         clean_tree(DOWN, sdk / "auto-down")
         for rel in ("packages/blueprints", "packages/widgets"):
             clean_tree(LANG / rel, sdk / rel)
-    for repo in ("auto-lang", "auto-man", "auto-ui"):
+    license_repos = ("auto-lang", "auto-man") if profile == "core" else ("auto-lang", "auto-man", "auto-ui")
+    for repo in license_repos:
         license_root = {"auto-lang": LANG, "auto-man": MAN, "auto-ui": UI}[repo]
         target = stage / "licenses" / repo
         target.mkdir(parents=True, exist_ok=True)
         shutil.copy2(license_root / "LICENSE", target / "LICENSE")
     return {"sdk_layout": "combined-crates", "packages": packages,
-            "projection_edits": projection_edits,
+            "projection_edits": projection_edits, "shared_targets": shared_targets,
             "root_inputs": ROOT_INPUTS + ["vendor/autodown-test-parser", "crates/autoui-skill"]}
 
 
@@ -226,15 +247,19 @@ def verify(root: Path, expected_profile: str | None = None) -> dict:
         extra = sorted(set(actual) - set(expected))
         changed = sorted(k for k in set(actual) & set(expected) if actual[k] != expected[k])
         raise RuntimeError(f"install content mismatch: missing={missing}, extra={extra}, changed={changed}")
-    names = {Path(p).name for p in actual}
     if profile == "core":
         forbidden = [p for p in actual if p.startswith("sdk/crates/auto-ui")
                      or p.startswith("sdk/crates/auto-lang/") or p.startswith("sdk/crates/shell-pack")
+                     or p.startswith("licenses/auto-ui/") or p == "sdk/crates/auto/Cargo.toml"
                      or p == exe("auto-ui-tool")]
         if forbidden:
             raise RuntimeError(f"UI source/tool in Core install: {forbidden}")
-        if exe("auto") not in names:
-            raise RuntimeError("Core auto binary missing")
+        for required in (exe("auto"), "sdk/crates/auto-core/Cargo.toml",
+                         "sdk/crates/auto/src/main.rs", "sdk/crates/auto/build.rs"):
+            if required not in actual:
+                raise RuntimeError(f"Core required input missing: {required}")
+        if set(doc["sources"]) != {"auto-man", "auto-lang"}:
+            raise RuntimeError(f"Core source identity must contain only Man/lang: {doc['sources']}")
     else:
         for required in (exe("auto"), exe("auto-ui-tool"), "sdk/crates/auto-ui-tools/Cargo.toml"):
             if required not in actual:
@@ -246,21 +271,28 @@ def unique_sibling(root: Path, kind: str) -> Path:
     return root.with_name(f".{root.name}.man-{kind}-{os.getpid()}-{time.time_ns()}")
 
 
-def process_alive(pid: int) -> bool:
+def process_alive(pid: int) -> bool | None:
     if os.name == "nt":
         import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-        if not handle:
+        ctypes.set_last_error(0)
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if handle:
+            kernel.CloseHandle(handle)
+            return True
+        error = ctypes.get_last_error()
+        if error == 87:
             return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
+        return None
     try:
         os.kill(pid, 0)
         return True
     except ProcessLookupError:
         return False
-    except (PermissionError, OSError):
+    except PermissionError:
         return True
+    except OSError:
+        return None
 
 
 def recover_stale_staging(root: Path) -> None:
@@ -275,8 +307,12 @@ def recover_stale_staging(root: Path) -> None:
                 continue
         except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue
-        if not process_alive(pid):
+        alive = process_alive(pid)
+        if alive is False:
             shutil.rmtree(candidate)
+        elif alive is None:
+            print(f"man-install: owner liveness unknown for pid {pid}; preserving staging {candidate}",
+                  file=sys.stderr)
 
 
 def install(profile: str, install_root: Path, fail_point: str | None, skip_build: bool) -> dict:
@@ -287,11 +323,14 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
     recover_stale_staging(root)
     if not skip_build:
         if profile == "core":
-            run(["cargo", "build", "--locked", "-p", "auto", "--no-default-features", "--features", "core"], MAN)
+            run(["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
+                 "-p", "auto", "--no-default-features", "--features", "core"], MAN)
         else:
             run(["cargo", "build", "--locked", "-p", "auto"], MAN)
             run(["cargo", "build", "--locked", "-p", "auto-ui-tools"], UI)
-    sources = {"auto-man": head(MAN), "auto-lang": head(LANG), "auto-ui": head(UI), "auto-down": head(DOWN)}
+    sources = {"auto-man": head(MAN), "auto-lang": head(LANG)}
+    if profile == "full":
+        sources.update({"auto-ui": head(UI), "auto-down": head(DOWN)})
     stage = unique_sibling(root, "staging")
     backup = None
     try:
@@ -301,7 +340,8 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
         if fail_point == "prepare":
             raise RuntimeError("injected prepare failure")
         source_receipt = stage_sources(stage, profile)
-        shutil.copy2(MAN / "target/debug" / exe("auto"), stage / exe("auto"))
+        binary_root = MAN / "core/target/debug" if profile == "core" else MAN / "target/debug"
+        shutil.copy2(binary_root / exe("auto"), stage / exe("auto"))
         if profile == "full":
             shutil.copy2(UI / "target/debug" / exe("auto-ui-tool"), stage / exe("auto-ui-tool"))
         doc = {

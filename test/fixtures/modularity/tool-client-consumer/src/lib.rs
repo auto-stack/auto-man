@@ -29,14 +29,14 @@ use auto_tool_protocol::message::{ClientBody, WireRequest};
 #[cfg(test)]
 use auto_tool_protocol::{ErrorKind, FrameError, PROTOCOL_VERSION};
 
-/// 真实工具二进制：env 覆盖 → 主 workspace 默认产物路径；缺失即失败
-/// （诚实红灯，不静默跳过——先 `cargo build -p auto-ui-tools`）。
+/// 真实工具二进制：env 覆盖 → UI owner 默认产物路径；缺失即失败
+/// （诚实红灯，不静默跳过——先在 owner 仓构建对应工具）。
 #[cfg(test)]
 fn tool_bin() -> std::path::PathBuf {
     binary("AUTO_UI_TOOL_BIN", "auto-ui-tool")
 }
 
-/// 具名测试子进程：env 覆盖 → 主 workspace 默认产物路径。
+/// 具名测试子进程：env 覆盖 → 语言 owner 默认产物路径。
 #[cfg(test)]
 fn te_child() -> std::path::PathBuf {
     binary("TE_CHILD_BIN", "te-child")
@@ -44,21 +44,31 @@ fn te_child() -> std::path::PathBuf {
 
 #[cfg(test)]
 fn binary(env_key: &str, name: &str) -> std::path::PathBuf {
-    if let Some(path) = std::env::var_os(env_key) {
-        return path.into();
-    }
-    let exe = if cfg!(windows) {
-        format!("{name}.exe")
+    let path = if let Some(path) = std::env::var_os(env_key) {
+        path.into()
     } else {
-        name.to_string()
+        let exe = if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        };
+        let (root_key, repo) = if name == "auto-ui-tool" {
+            ("AUTO_UI_ROOT", "auto-ui")
+        } else {
+            ("AUTO_LANG_ROOT", "auto-lang")
+        };
+        let root = std::env::var_os(root_key)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../../..")
+                    .join(repo)
+            });
+        root.join("target/debug").join(exe)
     };
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../target/debug")
-        .join(exe);
     assert!(
         path.exists(),
-        "{name} binary not found at {} — build it first: \
-         cargo build -p auto-ui-tools -p auto-tool-execution (or set {env_key})",
+        "{name} binary not found at {} — build it in its owner repository (or set {env_key})",
         path.display()
     );
     path
@@ -704,7 +714,7 @@ fn discovery_finds_real_tool_with_m815a_surface() {
     let mut spec = DiscoverySpec::auto_ui_tool();
     spec.workspace_root = Some(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../..")
+            .join("../../../../../auto-ui")
             .canonicalize()
             .expect("workspace root"),
     );
@@ -756,7 +766,7 @@ fn discovery_missing_ui_capability_is_named_no_fallback() {
     let mut spec = DiscoverySpec::auto_ui_tool();
     spec.workspace_root = Some(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../..")
+            .join("../../../../../auto-ui")
             .canonicalize()
             .expect("workspace root"),
     );
@@ -776,7 +786,7 @@ fn discovery_protocol_version_mismatch_is_named() {
     let mut spec = DiscoverySpec::auto_ui_tool();
     spec.workspace_root = Some(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../..")
+            .join("../../../../../auto-ui")
             .canonicalize()
             .expect("workspace root"),
     );

@@ -4,7 +4,7 @@
 //! 1. **env 覆盖**（`AUTO_UI_TOOL_BIN` 等具名键）——显式路径，必须存在；
 //! 2. **已配置/已安装匹配 tool**：候选二进制经真实 `describe` 核验
 //!    协议版本与所需能力；
-//! 3. **开发/安装解析**：workspace `target/{debug,release}` →
+//! 3. **开发/安装解析**：UI owner `target/{debug,release}` →
 //!    与当前可执行文件邻接的安装目录。
 //!
 //! 禁止：`build.rs` 偷编译 UI、搜索任意兄弟仓、隐式下载。完整安装
@@ -270,11 +270,16 @@ fn workspace_root(spec: &DiscoverySpec) -> Option<PathBuf> {
     if let Some(r) = &spec.workspace_root {
         return Some(r.clone());
     }
-    // 从当前源码包锚点推断（集成测试的 CARGO_MANIFEST_DIR 在 fixture 下）。
+    if let Some(root) = std::env::var_os("AUTO_UI_ROOT") {
+        return Some(PathBuf::from(root));
+    }
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
         let mut p = PathBuf::from(manifest);
         for _ in 0..6 {
             if p.join("Cargo.toml").exists() && p.join("crates").is_dir() {
+                if p.file_name().and_then(|name| name.to_str()) == Some("auto-man") {
+                    return p.parent().map(|group| group.join("auto-ui"));
+                }
                 return Some(p);
             }
             if !p.pop() {

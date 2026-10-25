@@ -1,0 +1,49 @@
+[package]
+name = "auto"
+version = "0.1.0"
+edition = "2021"
+default-run = "auto"
+workspace = "../../core"
+build = "../auto/build.rs"
+
+[[bin]]
+name = "auto"
+path = "../auto/src/main.rs"
+
+[[test]]
+name = "plan816_cli_driver"
+path = "../auto/tests/plan816_cli_driver.rs"
+
+[dependencies]
+clap = { workspace = true }
+auto-lang-core = { path = "../../../auto-lang/crates/auto-lang-core" }
+auto-val = { path = "../../../auto-lang/crates/auto-val" }
+auto-man-runtime = { path = "../auto-man-runtime" }
+auto-tool-client = { path = "../auto-tool-client" }
+auto-tool-execution = { path = "../../../auto-lang/crates/auto-tool-execution" }
+auto-tool-protocol = { path = "../../../auto-lang/crates/auto-tool-protocol" }
+auto-project-model = { path = "../../../auto-lang/crates/auto-project-model" }
+miette = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+walkdir = "2.5.0"
+indicatif = "0.18.3"
+log = "0.4"
+simplelog = "0.12"
+colored = { workspace = true }
+notify = { workspace = true }
+
+[features]
+default = []
+core = []
+ui-extra = []
+python = ["auto-lang-core/python"]
+with-file-history = ["auto-lang-core/with-file-history"]
+autodown = []
+mpv-native = []
+mpv-gpu = ["mpv-native"]
+mpv-widget = ["mpv-gpu"]
+mpv = ["mpv-native", "mpv-gpu", "mpv-widget"]
+
+[dev-dependencies]
+tempfile = "3"
