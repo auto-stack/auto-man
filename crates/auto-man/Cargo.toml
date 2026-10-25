@@ -62,6 +62,10 @@ dialoguer = { workspace = true }
 glob = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true }
+# PLAN-832 fresh-lock lever: brotli-decompressor 6.2.0 was published but
+# unavailable and broke locked builds; 6.1.1 is the newest usable version.
+# No direct source use — it enters the closure via reqwest brotli decoding.
+# Revisit once 6.2.x is installable.
 brotli-decompressor = "=6.1.1"
 colored = { workspace = true }
 glob-match = { workspace = true }
