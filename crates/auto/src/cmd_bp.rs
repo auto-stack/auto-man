@@ -12,7 +12,7 @@
 //!   auto bp check src/front/bps/login.at --spec form/login
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use auto_ui_compiler::ui_gen::bp::{BlueprintPackage, BlueprintRegistry};
 use auto_ui_compiler::ui_gen::WidgetRegistry;
@@ -55,12 +55,10 @@ fn registry() -> BlueprintRegistry {
         return BlueprintRegistry::with_defaults();
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let resolved = auto_ui_compiler::ui_gen::bp::registry::resolve_blueprints_root(&cwd);
     let man_placeholder =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/blueprints");
-    let resolved = resolved.canonicalize().unwrap_or(resolved);
     let man_placeholder = man_placeholder.canonicalize().unwrap_or(man_placeholder);
-    if resolved != man_placeholder {
+    if has_project_blueprints(&cwd, &man_placeholder) {
         return BlueprintRegistry::with_defaults();
     }
     if let Ok(current) = std::env::current_exe() {
@@ -71,11 +69,23 @@ fn registry() -> BlueprintRegistry {
             }
         }
     }
+    let resolved = auto_ui_compiler::ui_gen::bp::registry::resolve_blueprints_root(&cwd);
+    let resolved = resolved.canonicalize().unwrap_or(resolved);
+    if resolved != man_placeholder {
+        return BlueprintRegistry::with_defaults();
+    }
     let lang = std::env::var_os("AUTO_LANG_ROOT")
         .filter(|root| !root.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../auto-lang"));
     scan_registry(lang.join("packages/blueprints"))
+}
+
+fn has_project_blueprints(cwd: &Path, man_placeholder: &Path) -> bool {
+    cwd.ancestors().any(|dir| {
+        let candidate = dir.join("packages/blueprints");
+        candidate.is_dir() && candidate.canonicalize().unwrap_or(candidate) != man_placeholder
+    })
 }
 
 fn scan_registry(root: PathBuf) -> BlueprintRegistry {

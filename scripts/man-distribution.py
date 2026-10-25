@@ -29,6 +29,7 @@ SCRUB = {
     "AUTO_UI_TOOL_BIN", "AUTO_RUST_WORKSPACE", "AUTO_LANG_CRATE",
     "AUTO_DELIVERY_SOURCE_ROOT", "AUTO_UI_SOURCE_ROOT", "CARGO_TARGET_DIR",
     "RUSTC_WRAPPER", "TE_CHILD_BIN", "AUTO_TE_CHILD_BIN",
+    "AUTO_BLUEPRINTS_ROOT", "CARGO_MANIFEST_DIR",
 }
 
 
@@ -236,7 +237,24 @@ serde_json = "1"
     return "external crate executes management + SDK + protocol with one source"
 
 
+def installed_blueprints(gate: Gate) -> str:
+    install = gate.scratch / "install-a"
+    spec = install / "sdk/packages/blueprints/form/login/spec.md"
+    original = spec.read_bytes()
+    marker = b"PLAN832_INSTALLED_SDK_ONLY"
+    try:
+        spec.write_bytes(original + b"\n" + marker + b"\n")
+        shown = gate.run("installed-blueprints", [str(install / exe("auto")), "bp", "show", "form/login"],
+                         gate.scratch)
+        if marker.decode() not in shown.stdout:
+            raise RuntimeError("installed CLI did not read its own SDK blueprint")
+    finally:
+        spec.write_bytes(original)
+    return "installed CLI reads unique marker from its own SDK, not development sources"
+
+
 def installed_ui(gate: Gate) -> str:
+    blueprint_detail = installed_blueprints(gate)
     install = gate.scratch / "install-a"
     project = gate.scratch / "ui-project"
     shutil.copytree(gate.scratch / "grp-a/auto-lang/examples/ui/001-helloworld", project)
@@ -245,7 +263,7 @@ def installed_ui(gate: Gate) -> str:
     gate.run("installed-build", [str(auto), "build"], project, timeout=600)
     if not (project / "gen/front/vue/dist/index.html").is_file():
         raise RuntimeError("installed Vue dist missing")
-    return "installed full CLI generates and builds real Vue app"
+    return f"installed full CLI generates and builds real Vue app; {blueprint_detail}"
 
 
 def relocate_core(gate: Gate) -> str:
