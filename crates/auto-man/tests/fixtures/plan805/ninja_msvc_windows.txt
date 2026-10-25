@@ -39,3 +39,4 @@ build math.lib: lib math.obj
 build test.obj: cc ../t/test.c
 # target executable
 build t.exe: link test.obj
+

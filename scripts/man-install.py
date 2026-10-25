@@ -152,6 +152,10 @@ def stage_sources(stage: Path, profile: str) -> dict:
     for source in sorted(package_dirs, key=lambda p: p.as_posix()):
         repo, root = repo_for(source)
         rel = source.relative_to(root)
+        if repo == "auto-down":
+            packages.append({"name": source.name, "source_repo": repo,
+                             "source_path": rel.as_posix(), "installed_path": f"auto-down/{rel.as_posix()}"})
+            continue
         if rel.parts[0] != "crates":
             raise RuntimeError(f"non-crate package input requires explicit mapping: {source}")
         target = sdk / rel
@@ -175,13 +179,13 @@ def stage_sources(stage: Path, profile: str) -> dict:
     workspace = (MAN / "Cargo.toml").read_text(encoding="utf-8")
     members_start = workspace.index("members = [")
     members_end = workspace.index("]\ndefault-members", members_start) + 1
-    member_list = ", ".join(f'"crates/{name}"' for name in sorted(installed))
+    member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down"}))
     workspace = workspace[:members_start] + f"members = [{member_list}]" + workspace[members_end:]
     workspace = workspace.replace("../auto-lang/crates/patches/", "crates/patches/")
     if profile == "core":
         workspace = workspace.split("[patch.crates-io]", 1)[0].rstrip() + "\n"
     (sdk / "Cargo.toml").write_text(workspace, encoding="utf-8", newline="\n")
-    run(["cargo", "generate-lockfile", "--offline"], sdk)
+    run(["cargo", "generate-lockfile"], sdk)
     if profile == "full":
         clean_tree(DOWN, sdk / "auto-down")
         for rel in ("packages/blueprints", "packages/widgets"):

@@ -39,3 +39,4 @@ build libmath.a: lib math.o
 build test.o: cc ../t/test.c
 # target executable
 build t: link test.o
+
