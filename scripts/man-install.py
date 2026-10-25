@@ -326,6 +326,7 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
         return result
     except Exception:
         if backup and backup.exists() and not root.exists():
+            (backup / ".man-backup.marker").unlink(missing_ok=True)
             os.replace(backup, root)
         if stage.exists() and (stage / ".man-staging.marker").is_file():
             shutil.rmtree(stage)
