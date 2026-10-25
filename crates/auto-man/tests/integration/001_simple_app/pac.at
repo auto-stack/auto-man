@@ -1,6 +1,0 @@
-name: "simple_app"
-version: "0.0.1"
-
-app simple_app {
-    dir source {}
-}

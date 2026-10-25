@@ -1,38 +1,60 @@
 [workspace]
-members = ["crates/auto-man"]
+members = [
+    "crates/auto",
+    "crates/auto-man",
+    "crates/auto-man-runtime",
+    "crates/auto-man-core",
+    "crates/auto-package-lock",
+    "crates/auto-package-resolver",
+    "crates/auto-toolchain-core",
+    "crates/auto-man-assets",
+    "crates/auto-tool-client",
+]
+default-members = ["crates/auto"]
+default-run = "auto"
 resolver = "2"
-default-run = "auto-man"
 
 [workspace.dependencies]
 clap = { version = "4.5.17", features = ["derive"] }
-rust-embed = { version = "8.5.0", features = ["compression"] }
-
-# auto-lang = { git = "https://gitee.com/auto-stack/auto-lang"}
-auto-lang = { path = "../auto-lang/crates/auto-lang" }
-auto-val = { path = "../auto-lang/crates/auto-val" }
-auto-gen = { path = "../auto-lang/crates/auto-gen" }
-auto-man = { path = "crates/auto-man" }
-# switch to this dynamic lib for debug mode
-# gpui = { version = "0.1.0", git = "https://gitee.com/auto-stack/auto-ui", package = "gpui-dynamic" }
-# switch to this static lib for release mode
-# gpui = { git = "https://github.com/zed-industries/zed" }
-
-# print table in console
-tabled = "0.18.0"
-
-# logging
-simplelog = "0.12.0"
-log = "0.4.26"
-normalize-path = "0.2.1"
-dialoguer = "0.11.0"
-glob = "0.3.2"
 dirs = "6.0.0"
-reqwest = { version = "0.12", features = ["blocking"] }
-version-compare = "0.0.11"
-windows-registry = "0.5.1"
-colored = "3"
-zip = "3.0.0"
+rustyline = { version = "14.0.0", features = ["with-file-history"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde = { version = "1.0", features = ["derive"] }
+miette = { version = "7.2", features = ["fancy"] }
+thiserror = "2.0.12"
+regex = "1.11.1"
+strum = "0.26"
+strum_macros = "0.26"
+ecow = "0.2.3"
+normalize-path = "0.2.1"
+roxmltree = "0.18.0"
+dashmap = "6.1"
+tokio = { version = "1.49", features = ["full"] }
+blake3 = "1.5"
+bincode = "1.3"
 glob-match = "0.2.1"
-# walkdir = "2"
-encoding_rs = "0.8.35"
-is_executable = "1.0.5"
+chrono = "0.4"
+notify = "7.0"
+urlencoding = "2.1"
+sysinfo = "0.33"
+tabled = "0.18"
+simplelog = "0.12"
+log = "0.4"
+dialoguer = "0.11"
+glob = "0.3"
+reqwest = { version = "0.12", features = ["blocking"] }
+version-compare = "0.0"
+colored = "3"
+zip = "3.0"
+encoding_rs = "0.8"
+is_executable = "1.0"
+toml = "0.8"
+indicatif = "0.17"
+rust-embed = { version = "8.5", features = ["compression"] }
+tempfile = "3.14"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[patch.crates-io]
+iced_widget = { path = "../auto-lang/crates/patches/iced_widget" }

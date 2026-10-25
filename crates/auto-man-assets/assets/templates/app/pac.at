@@ -1,0 +1,7 @@
+name: "${name}"
+version: "0.1.0"
+
+// desktop_render: "auto" | "queue" | "independent" (Plan 500)
+// desktop_render: "auto"
+
+app("${name}") {}
