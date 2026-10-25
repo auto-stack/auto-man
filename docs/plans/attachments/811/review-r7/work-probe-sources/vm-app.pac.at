@@ -1,0 +1,12 @@
+// pac.at — PLAN-811 V-05 VM/Iced probe: front-only media app (no rust
+// back). The VM interpreter exposes auto.image natives directly; the
+// harness drives button-stepped media binding and asserts ImageSurface
+// loaded/error event counts on the real iced renderer.
+
+name: "p811-vm-media"
+version: "1.0.0"
+scene: "ui"
+render: "vue"
+title: "P811 VM Media"
+title_zh: "811 VM 媒体探针"
+window: "fit"

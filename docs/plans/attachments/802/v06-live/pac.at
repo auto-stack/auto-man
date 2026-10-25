@@ -1,0 +1,8 @@
+name: "p802-v06-scroll-probe"
+version: "1.0.0"
+description: "PLAN-802 V06 实机滚动验证探针（editor 寄宿 scroller 真窗口链）"
+scene: "ui"
+render: "vm"
+title: "PLAN802-V06-ScrollProbe"
+title_zh: "802 滚动探针"
+window: "760x540"

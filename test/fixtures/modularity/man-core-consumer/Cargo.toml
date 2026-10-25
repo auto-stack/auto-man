@@ -24,7 +24,7 @@ publish = false
 [dependencies]
 auto-man-core = { path = "../../../../crates/auto-man-core" }
 # 规则数据层（Node/Obj/AutoStr 同身份直用，与 toolchain-core-consumer 同边界）
-auto-val = { path = "../../../../auto-lang/crates/auto-val" }
+auto-val = { path = "../../../../../auto-lang/crates/auto-val" }
 
 # 独立 workspace（根 Cargo.toml exclude 内）；无锁文件、无成员。
 [workspace]

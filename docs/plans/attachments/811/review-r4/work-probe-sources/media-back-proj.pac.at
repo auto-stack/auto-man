@@ -1,0 +1,17 @@
+// pac.at — PLAN-811 V-05 isolated generated-back probe (review F811-R1-03).
+//
+// Minimal real production project: the back API exercises the viewer session
+// family plus one plain user route. `auto gen` emits the real axum backend
+// (media HTTP handler + media file service + session handlers calling
+// auto_media_core) which the harness builds, runs, and drives over real TCP.
+
+name: "p811-media-http"
+version: "1.0.0"
+scene: "ui"
+render: "vue"
+api: "rust"
+front_port: 3311
+back_port: 8311
+title: "P811 Media HTTP Probe"
+title_zh: "811 媒体 HTTP 探针"
+window: "fit"

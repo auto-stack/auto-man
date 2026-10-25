@@ -25,7 +25,7 @@ publish = false
 [dependencies]
 auto-package-lock = { path = "../../../../crates/auto-package-lock" }
 # Tests construct AutoPath (the core's codec path type — leaf data crate).
-auto-val = { path = "../../../../auto-lang/crates/auto-val" }
+auto-val = { path = "../../../../../auto-lang/crates/auto-val" }
 
 # 独立 workspace（见上）；无锁文件、无成员。
 [workspace]

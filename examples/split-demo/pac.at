@@ -1,0 +1,27 @@
+// pac.at - Split Demo (前后端分离示例)
+// Demonstrates Plan 130: Workspace with separate front/back projects
+//
+// Directory structure:
+//   split-demo/
+//   ├── pac.at              <- Workspace config (this file)
+//   ├── front/
+//   │   ├── pac.at          <- Frontend project config
+//   │   └── app.at
+//   └── back/
+//       ├── pac.at          <- Backend project config
+//       └── api.at
+//
+// After build:
+//   ├── front/vue/          <- Generated Vue project
+//   └── back/rust/          <- Generated Rust backend
+//
+// Commands:
+//   auto build              # Build all members
+//   auto build --target front  # Build only front
+//   auto run                # Run dev servers
+
+name: "split-demo"
+version: "1.0.0"
+scene: "workspace"
+
+members: ["./front", "./back"]

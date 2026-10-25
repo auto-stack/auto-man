@@ -1,0 +1,28 @@
+// pac.at - Multi-Frontend Demo (多前端示例)
+// Demonstrates Plan 130: Multiple frontends from single source
+//
+// Directory structure:
+//   multi-frontend-demo/
+//   ├── pac.at              <- Workspace config (this file)
+//   ├── front/
+//   │   ├── pac.at          <- Frontend project config (multi-backend)
+//   │   └── app.at
+//   └── back/
+//       ├── pac.at          <- Backend project config
+//       └── api.at
+//
+// After build:
+//   ├── front/vue/          <- Generated Vue web project
+//   ├── front/tauri/        <- Generated Tauri desktop project
+//   └── back/rust/          <- Generated Rust backend
+//
+// Commands:
+//   auto build                 # Build all members
+//   auto build --target front  # Build only front (vue + tauri)
+//   auto run --target tauri    # Run Tauri desktop app
+
+name: "multi-frontend-demo"
+version: "1.0.0"
+scene: "workspace"
+
+members: ["./front", "./back"]

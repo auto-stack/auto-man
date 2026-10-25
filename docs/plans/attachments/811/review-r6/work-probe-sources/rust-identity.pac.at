@@ -1,0 +1,8 @@
+// pac.at — PLAN-811 R3 identity/no-timer probes (merged forms).
+name: "p811-rust-identity"
+version: "1.0.0"
+scene: "ui"
+render: "rust"
+title: "P811 Identity"
+title_zh: "811 身份矩阵"
+window: "fit"

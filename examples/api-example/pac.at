@@ -1,0 +1,24 @@
+// pac.at - Workspace Root Package Config
+// Plan 130: Workspace with front + back separation
+//
+// Directory structure:
+//   api-example/
+//   ├── pac.at              <- Workspace config (this file)
+//   ├── front/              <- Frontend source (AURA widgets)
+//   │   ├── pac.at          <- Frontend config
+//   │   └── app.at          <- UI components
+//   └── back/               <- Backend source (Auto code)
+//       ├── pac.at          <- Backend config
+//       ├── api.at          <- API interface definitions
+//       ├── db.at           <- Database operations
+//       └── service.at      <- Common utilities
+//
+// Usage:
+//   auto build              # Build both front and back
+//   auto run                # Run in selected mode (vue/tauri)
+
+name: "api-example"
+version: "1.0.0"
+scene: "workspace"
+
+members: ["front", "back"]
