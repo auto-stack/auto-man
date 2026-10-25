@@ -287,7 +287,25 @@ fn workspace_root(spec: &DiscoverySpec) -> Option<PathBuf> {
             }
         }
     }
-    None
+    let current = std::env::current_exe().ok()?;
+    let profile = current.parent()?;
+    if profile.file_name().and_then(|name| name.to_str()) != Some("debug")
+        && profile.file_name().and_then(|name| name.to_str()) != Some("release")
+    {
+        return None;
+    }
+    let target = profile.parent()?;
+    if target.file_name().and_then(|name| name.to_str()) != Some("target") {
+        return None;
+    }
+    let root = target.parent()?;
+    if !root.join("Cargo.toml").is_file() || !root.join("crates").is_dir() {
+        return None;
+    }
+    if root.file_name().and_then(|name| name.to_str()) == Some("auto-man") {
+        return root.parent().map(|group| group.join("auto-ui"));
+    }
+    Some(root.to_path_buf())
 }
 
 /// 缺 UI 能力负控辅助：对已发现工具请求表外操作应由宿主 `UnknownOperation`

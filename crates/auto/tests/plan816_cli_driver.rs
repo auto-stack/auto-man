@@ -24,7 +24,12 @@ const AUTO: &str = env!("CARGO_BIN_EXE_auto");
 
 fn run(args: &[&str], cwd: &Path, env: &[(&str, String)]) -> (i32, String, String) {
     let mut cmd = Command::new(AUTO);
-    cmd.args(args).current_dir(cwd).stdin(Stdio::null());
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .env_remove("CARGO_MANIFEST_DIR")
+        .env_remove("AUTO_UI_TOOL_BIN")
+        .env_remove("AUTO_UI_ROOT");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -985,16 +990,8 @@ fn watch_regenerates_sfc_on_change() {
 #[test]
 #[cfg(not(feature = "core"))]
 fn gen_runs_through_real_tool_process() {
-    let tool = auto_tool_client::discovery::resolve_existing(
-        &auto_tool_client::discovery::DiscoverySpec::auto_ui_tool(),
-    )
-    .unwrap_or_else(|err| panic!("resolve UI owner tool: {err}"));
     let proj = TempProj::new("gen", "name: \"gdriver\"\nrender: \"vue\"\n", APP);
-    let (code, out, err) = run(
-        &["gen"],
-        proj.path(),
-        &[("AUTO_UI_TOOL_BIN", tool.to_string_lossy().to_string())],
-    );
+    let (code, out, err) = run(&["gen"], proj.path(), &[]);
     assert_eq!(code, 0, "stdout={out} stderr={err}");
     assert!(
         proj.path().join("gen/front/vue/src/App.vue").exists()

@@ -54,17 +54,19 @@ The new staging directory then becomes the install root. A failed preparation, v
 
 ## Restore a previous installation
 
-Use the backup created by the installer; do not delete or overwrite user files. In PowerShell, first move the current candidate aside, then move the backup back:
+Use the backup created by the installer; do not delete or overwrite user files. In PowerShell, first move the current candidate aside, then move the backup back. The backup's owned `.man-backup.marker` is transaction metadata, not installed payload: preserve it outside the restored root before verification so strict extra-file checking remains intact.
 
 ```powershell
 $root = "D:\apps\auto-full"
 $backup = "D:\apps\.auto-full.man-backup-<pid>-<timestamp>"
-Move-Item $root "$root.man-failed-$(Get-Date -Format yyyyMMddHHmmss)"
+$stamp = Get-Date -Format yyyyMMddHHmmss
+Move-Item $root "$root.man-failed-$stamp"
 Move-Item $backup $root
+Move-Item "$root/.man-backup.marker" "$root.man-restored-backup-marker-$stamp"
 python scripts/man-install.py verify --profile full --install-root $root
 ```
 
-Use `--profile core` for a Core restoration. Verify before using the restored commands. The manifest is the version and content source of truth; an executable's filename alone is not provenance.
+Use `--profile core` for a Core restoration. Verify before using the restored commands. Do not bypass verification or ignore other extra files. The manifest is the version and content source of truth; an executable's filename alone is not provenance.
 
 ## Relocation and troubleshooting
 

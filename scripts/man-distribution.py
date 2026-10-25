@@ -418,12 +418,37 @@ def owner_liveness(gate: Gate) -> str:
     return "protected/unknown/live staging preserved; confirmed-dead staging reclaimed"
 
 
+def documented_restore(gate: Gate) -> str:
+    root = gate.scratch / "install-b"
+    source = gate.scratch / "grp-b/auto-man"
+    upgraded = gate.run("documented-restore-upgrade",
+                        ["python", "scripts/man-install.py", "install", "--profile", "full",
+                         "--install-root", str(root), "--skip-build"], source)
+    backup = Path(json.loads(upgraded.stdout)["backup_root"])
+    failed = root.with_name(f"{root.name}.man-failed-{os.getpid()}")
+    os.replace(root, failed)
+    os.replace(backup, root)
+    marker = root / ".man-backup.marker"
+    if not marker.is_file():
+        raise RuntimeError("real upgrade backup lacks its transaction marker")
+    os.replace(marker, gate.scratch / "restored-backup-marker.txt")
+    gate.run("documented-restore-verify", ["python", "scripts/man-install.py", "verify",
+                                           "--install-root", str(root), "--profile", "full"], source)
+    result = gate.run("documented-restore-command", [str(root / exe("auto")),
+                                                      str(gate.scratch / "relocate-probe.at")],
+                      gate.scratch)
+    if "relocated" not in result.stdout:
+        raise RuntimeError("restored backup failed to execute the previous language command")
+    return "real backup follows documented marker preservation, verifies and runs"
+
+
 def recovery(gate: Gate) -> str:
     gate.run("recovery-install", ["python", "scripts/man-install.py", "install", "--profile", "full",
                                   "--install-root", str(gate.scratch / "install-b"), "--skip-build"],
              gate.scratch / "grp-b/auto-man")
     detail = owner_liveness(gate)
-    return f"post-failure managed install verifies green; {detail}"
+    restored = documented_restore(gate)
+    return f"post-failure managed install verifies green; {detail}; {restored}"
 
 
 if __name__ == "__main__":
