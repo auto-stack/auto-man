@@ -246,11 +246,45 @@ def unique_sibling(root: Path, kind: str) -> Path:
     return root.with_name(f".{root.name}.man-{kind}-{os.getpid()}-{time.time_ns()}")
 
 
+def process_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+
+
+def recover_stale_staging(root: Path) -> None:
+    for candidate in root.parent.glob(f".{root.name}.man-staging-*"):
+        marker = candidate / ".man-staging.marker"
+        if not marker.is_file():
+            continue
+        try:
+            owner = json.loads(marker.read_text(encoding="utf-8"))
+            pid = int(owner["pid"])
+            if owner.get("schema") != "man-staging/1":
+                continue
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            continue
+        if not process_alive(pid):
+            shutil.rmtree(candidate)
+
+
 def install(profile: str, install_root: Path, fail_point: str | None, skip_build: bool) -> dict:
     root = install_root.resolve()
     root.parent.mkdir(parents=True, exist_ok=True)
     if root.exists() and any(root.iterdir()) and not (root / MANIFEST).is_file():
         raise RuntimeError(f"refusing non-empty unmanaged install root: {root}")
+    recover_stale_staging(root)
     if not skip_build:
         if profile == "core":
             run(["cargo", "build", "--locked", "-p", "auto", "--no-default-features", "--features", "core"], MAN)
@@ -262,7 +296,8 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
     backup = None
     try:
         stage.mkdir()
-        (stage / ".man-staging.marker").write_text("PLAN-832 owned staging\n", encoding="utf-8")
+        (stage / ".man-staging.marker").write_text(
+            json.dumps({"schema": "man-staging/1", "pid": os.getpid()}) + "\n", encoding="utf-8")
         if fail_point == "prepare":
             raise RuntimeError("injected prepare failure")
         source_receipt = stage_sources(stage, profile)
