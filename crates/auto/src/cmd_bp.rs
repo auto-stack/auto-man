@@ -12,6 +12,7 @@
 //!   auto bp check src/front/bps/login.at --spec form/login
 
 use std::fs;
+use std::path::PathBuf;
 
 use auto_ui_compiler::ui_gen::bp::{BlueprintPackage, BlueprintRegistry};
 use auto_ui_compiler::ui_gen::WidgetRegistry;
@@ -50,7 +51,38 @@ pub fn run(action: BpAction, format: Option<OutputFormat>) -> Result<()> {
 }
 
 fn registry() -> BlueprintRegistry {
-    BlueprintRegistry::with_defaults()
+    if std::env::var_os("AUTO_BLUEPRINTS_ROOT").is_some() {
+        return BlueprintRegistry::with_defaults();
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let resolved = auto_ui_compiler::ui_gen::bp::registry::resolve_blueprints_root(&cwd);
+    let man_placeholder =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/blueprints");
+    let resolved = resolved.canonicalize().unwrap_or(resolved);
+    let man_placeholder = man_placeholder.canonicalize().unwrap_or(man_placeholder);
+    if resolved != man_placeholder {
+        return BlueprintRegistry::with_defaults();
+    }
+    if let Ok(current) = std::env::current_exe() {
+        if let Some(install) = current.parent() {
+            let installed = install.join("sdk/packages/blueprints");
+            if installed.is_dir() {
+                return scan_registry(installed);
+            }
+        }
+    }
+    let lang = std::env::var_os("AUTO_LANG_ROOT")
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../auto-lang"));
+    scan_registry(lang.join("packages/blueprints"))
+}
+
+fn scan_registry(root: PathBuf) -> BlueprintRegistry {
+    BlueprintRegistry::scan_dir(root).unwrap_or_else(|errors| {
+        log::debug!("blueprint scan errors: {errors:?}");
+        BlueprintRegistry::new()
+    })
 }
 
 /// Split a `kind/name` key.
@@ -556,7 +588,7 @@ mod tests {
     #[test]
     fn check_passes_on_known_good_login_reference() {
         // Resolve the committed minimal reference and run check against its spec.
-        let reg = BlueprintRegistry::with_defaults();
+        let reg = registry();
         let pkg = reg.get("form", "login").expect("form/login present");
         let path = pkg.references.get("minimal").expect("minimal variant");
         let file = path.to_string_lossy().to_string();
@@ -579,7 +611,7 @@ mod tests {
     /// stable across two runs, and the T-01 package present.
     #[test]
     fn bp_list_at_golden_stable() {
-        let reg = BlueprintRegistry::with_defaults();
+        let reg = registry();
         assert!(!reg.packages().is_empty(), "default catalog must scan");
         let out = emit_catalog_at(&reg);
 
