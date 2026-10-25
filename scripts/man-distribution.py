@@ -273,6 +273,9 @@ def failure(gate: Gate, point: str) -> str:
     leftovers = list(gate.scratch.glob(".install-b.man-staging-*"))
     if leftovers:
         raise RuntimeError(f"owned staging left after {point}: {leftovers}")
+    gate.run(f"failure-{point}-verify", ["python", "scripts/man-install.py", "verify",
+                                         "--install-root", str(install), "--profile", "full"],
+             gate.scratch / "grp-b/auto-man")
     return f"{point} failure is named and previous install remains intact"
 
 
