@@ -48,6 +48,7 @@ cargo build --locked -p auto
 # 仓内定向测试入口。
 cargo t
 cargo tc
+cargo tcore
 cargo ti
 ```
 

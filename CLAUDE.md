@@ -33,9 +33,10 @@ Read `docs/installation.md` for fixed sources, upgrade backups, restoration, and
 ## Tests and CI
 
 ```bash
-cargo t    # workspace libraries and auto bin
-cargo tc   # management Core libraries
-cargo ti   # Man integration targets; requires owner tools
+cargo t      # Full workspace libraries and auto bin
+cargo tc     # management Core libraries
+cargo tcore  # independent Core bin + non-UI CLI driver (23 tests)
+cargo ti     # Man integration targets; requires owner tools
 ```
 
 For a single real generation test, first build `auto-ui-tools` in AutoUI. The test discovers the group sibling by default; `AUTO_UI_TOOL_BIN` is an explicit authoritative override. Lifetime tests similarly use `te-child` from AutoLang and honor `AUTO_TE_CHILD_BIN`; the independent tool-client fixture uses `TE_CHILD_BIN`.

@@ -48,6 +48,7 @@ cargo build --locked -p auto
 # Scoped repository tests.
 cargo t
 cargo tc
+cargo tcore
 cargo ti
 ```
 

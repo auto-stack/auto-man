@@ -248,7 +248,33 @@ def installed_ui(gate: Gate) -> str:
     return "installed full CLI generates and builds real Vue app"
 
 
+def relocate_core(gate: Gate) -> str:
+    source = gate.scratch / "grp-core"
+    for pattern in ("*/target", "*/core/target"):
+        for target in source.glob(pattern):
+            shutil.rmtree(target)
+    shutil.rmtree(gate.scratch / "install-core/sdk/target", ignore_errors=True)
+    moved = gate.scratch / "grp-core-b"
+    shutil.move(str(source), moved)
+    gate.run("relocate-core-independent", ["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
+                                           "-p", "auto", "--no-default-features", "--features", "core"],
+             moved / "auto-man")
+    install = gate.scratch / "install-core-b"
+    shutil.move(str(gate.scratch / "install-core"), install)
+    gate.run("relocate-core-verify", ["python", "scripts/man-install.py", "verify", "--install-root",
+                                      str(install), "--profile", "core"], moved / "auto-man")
+    gate.run("relocate-core-metadata", ["cargo", "metadata", "--locked", "--manifest-path",
+                                        str(install / "sdk/Cargo.toml"), "--no-deps", "--format-version", "1"],
+             gate.scratch)
+    result = gate.run("relocate-core-script", [str(install / exe("auto")),
+                                                str(gate.scratch / "core-probe.at")], gate.scratch)
+    if "core-independent-ok" not in result.stdout:
+        raise RuntimeError("relocated Core install failed to execute language script")
+    return "Core source and install relocate after deleting every original target"
+
+
 def relocate(gate: Gate) -> str:
+    core_detail = relocate_core(gate)
     source = gate.scratch / "grp-a"
     for target in source.glob("*/target"):
         shutil.rmtree(target)
