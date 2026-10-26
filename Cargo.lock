@@ -555,7 +555,6 @@ dependencies = [
  "auto-tool-execution",
  "auto-tool-protocol",
  "auto-ui-compiler",
- "auto-ui-dialect",
  "auto-ui-runtime",
  "auto-val",
  "clap",
@@ -813,6 +812,7 @@ version = "0.1.0"
 dependencies = [
  "auto-val",
  "miette",
+ "serde",
  "strum_macros",
  "thiserror 2.0.21",
 ]
@@ -973,6 +973,7 @@ dependencies = [
  "auto-ast",
  "auto-diagnostics",
  "auto-lex",
+ "serde",
 ]
 
 [[package]]
@@ -1035,6 +1036,7 @@ version = "0.1.0"
 dependencies = [
  "auto-atom",
  "auto-lang-core",
+ "auto-parser-api",
  "auto-ui-dialect",
  "auto-val",
  "inventory",
@@ -1052,7 +1054,11 @@ dependencies = [
 name = "auto-ui-dialect"
 version = "0.1.0"
 dependencies = [
+ "auto-ast",
  "auto-parser-api",
+ "auto-val",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1063,9 +1069,11 @@ dependencies = [
  "arboard",
  "auto-lang-core",
  "auto-media-core",
+ "auto-parser-api",
  "auto-terminal-core",
  "auto-text-core",
  "auto-ui-compiler",
+ "auto-ui-dialect",
  "auto-val",
  "autodown-core",
  "axum",
@@ -1114,6 +1122,7 @@ dependencies = [
  "auto-tool-execution",
  "auto-tool-protocol",
  "auto-ui-compiler",
+ "auto-ui-dialect",
  "auto-ui-runtime",
  "auto-val",
  "base64 0.22.1",
@@ -2529,6 +2538,9 @@ name = "ecow"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78e4f79b296fbaab6ce2e22d52cb4c7f010fe0ebe7a32e34fa25885fd797bd02"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "either"

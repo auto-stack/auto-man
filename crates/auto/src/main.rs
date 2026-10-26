@@ -995,15 +995,12 @@ fn main() -> Result<()> {
     result
 }
 
-/// ui-extra 形态的 UI 宿主装配（PLAN-816 T-05，镜像 auto-lang 兼容包的
-/// install_ui_host_capabilities 三件套）：UI 文法表（auto-ui-dialect 单源）
-/// + SDK 钩子注册 + provider 实装（auto-ui-runtime 单点）。Core 形态无
-/// 本调用——SDK 侧 no-op（文法表缺席=UI 文法不可用，provider 未装）。
+/// ui-extra 形态的 UI 宿主装配：SDK 钩子注册 + provider 实装
+///（auto-ui-runtime 单点）。UI 文法由调用方经 `parse_domain` 显式组合，
+/// 不再进程级注入；Core 形态无本调用。
 #[cfg(feature = "ui-extra")]
 fn install_ui_host_capabilities() {
-    let _ = auto_lang_core::set_ui_grammar(auto_ui_dialect::ui_grammar());
     auto_lang_core::set_ui_host_install_hook(|| {
-        let _ = auto_lang_core::set_ui_grammar(auto_ui_dialect::ui_grammar());
         auto_ui_runtime::install_ui_host_capabilities();
     });
     auto_ui_runtime::install_ui_host_capabilities();

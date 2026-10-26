@@ -132,7 +132,7 @@ pub struct Pac {
     /// 标量 `theme: "dark"|"light"` 仍走 458 链路不动；块形态在此承载原始
     /// 声明，消费端经 `auto_lang_core::design_tokens::decl::compose` 合成后
     /// `set_theme_composed` 应用（词表/值校验在 compose 层）。
-    pub theme_decl: Option<auto_lang_core::design_tokens::decl::ThemeDecl>,
+    pub theme_decl: Option<auto_project_model::generation_request::ThemeDeclLite>,
 
     /// Plan 458: UI accent (theme primary color) preset name, declared as
     /// `accent: "indigo" | "coral" | "ocean" | "sage" | "amber"` in pac.at.
@@ -215,15 +215,14 @@ impl Pac {
         };
 
         // theme{} 块轻声明 → 语言 ThemeDecl（compose 留语言侧）
-        let theme_decl =
-            decl.theme_decl
-                .as_ref()
-                .map(|d| auto_lang_core::design_tokens::decl::ThemeDecl {
-                    name: d.name.clone(),
-                    extends: d.extends.clone(),
-                    mode: d.mode.clone(),
-                    colors: d.colors.clone(),
-                });
+        let theme_decl = decl.theme_decl.as_ref().map(|d| {
+            auto_project_model::generation_request::ThemeDeclLite {
+                name: d.name.clone(),
+                extends: d.extends.clone(),
+                mode: d.mode.clone(),
+                colors: d.colors.clone(),
+            }
+        });
 
         let mut port = Port::default();
         port.builder = decl.default_port_builder;

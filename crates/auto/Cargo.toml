@@ -44,7 +44,6 @@ notify = { workspace = true }
 # ---- ui-extra：五操作协议面之外的 UI 静态面（完整 profile 组成部分）----
 auto-ui-compiler = { path = "../../../auto-ui/crates/auto-ui-compiler", optional = true }
 auto-ui-runtime = { path = "../../../auto-ui/crates/auto-ui-runtime", optional = true }
-auto-ui-dialect = { path = "../../../auto-ui/crates/auto-ui-dialect", optional = true }
 
 [features]
 # 完整 profile（现行默认交付形态）：全部命令支持面。
@@ -63,7 +62,6 @@ core = []
 ui-extra = [
     "dep:auto-ui-compiler",
     "dep:auto-ui-runtime",
-    "dep:auto-ui-dialect",
     "dep:shell-pack",
 ]
 python = ["auto-lang-core/python"]
