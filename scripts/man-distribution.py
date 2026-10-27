@@ -481,6 +481,38 @@ mod plan842_host_probe {
         dev_main.write_bytes(dev_main_before)
         bundle_main.write_bytes(bundle_main_before)
 
+    # A different Full installation selected explicitly also remains managed
+    # when its receipt is missing, while a standalone source remains valid.
+    detached = gate.scratch / "detached-full-no-receipt"
+    detached_sdk = detached / "sdk"
+    detached_sdk.mkdir(parents=True)
+    (detached / exe("auto")).write_bytes(b"")
+    (detached / exe("auto-ui-tool")).write_bytes(b"")
+    (detached_sdk / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    for name in ("auto-lang", "auto-lang-core", "a2r-std", "auto-media-core"):
+        package = detached_sdk / "crates" / name
+        (package / "src").mkdir(parents=True)
+        (package / "Cargo.toml").write_text(f'[package]\nname = "{name}"\nversion = "0.1.0"\n', encoding="utf-8")
+        (package / "src/lib.rs").write_text("", encoding="utf-8")
+    try:
+        dev_main.write_bytes(dev_sentinel)
+        bundle_main.write_bytes(bundle_sentinel)
+        for case, cmd, cwd, extra in (
+                ("installed-dev-detached-no-receipt", [str(auto), "gen"], dev_project,
+                 {**dev_env, "AUTO_LANG_ROOT": str(detached_sdk), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                ("installed-delivery-detached-no-receipt", command, project,
+                 {"AUTO_DELIVERY_SOURCE_ROOT": str(detached_sdk), "AUTO_UI_SOURCE_ROOT": str(UI)})):
+            failure = gate.run(case, cmd, cwd, extra=extra, expect=(1, 2))
+            if "producer" not in (failure.stdout + failure.stderr).lower():
+                raise RuntimeError(f"{case} lacked producer diagnostic")
+        if (dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous
+                or bundle_main.read_bytes() != bundle_sentinel
+                or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before):
+            raise RuntimeError("detached missing receipt changed old output")
+    finally:
+        dev_main.write_bytes(dev_main_before)
+        bundle_main.write_bytes(bundle_main_before)
+
     # Cover every producer input class and set difference against the receipt,
     # not just the four packages directly named by the generated workspace.
     dev_main.write_bytes(dev_sentinel)
