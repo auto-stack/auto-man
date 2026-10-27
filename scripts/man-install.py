@@ -237,7 +237,11 @@ def verify(root: Path, expected_profile: str | None = None) -> dict:
     if not path.is_file():
         raise RuntimeError(f"missing {MANIFEST}: {root}")
     doc = json.loads(path.read_text(encoding="utf-8"))
-    profile = doc["profile"]
+    if not isinstance(doc, dict) or doc.get("schema") != "man-install/1":
+        raise RuntimeError(f"unsupported install manifest schema: {doc.get('schema') if isinstance(doc, dict) else None!r}")
+    profile = doc.get("profile")
+    if profile not in ("core", "full"):
+        raise RuntimeError(f"unsupported install profile: {profile!r}")
     if expected_profile and profile != expected_profile:
         raise RuntimeError(f"profile mismatch: {profile} != {expected_profile}")
     actual = manifest_files(root)
@@ -318,8 +322,12 @@ def recover_stale_staging(root: Path) -> None:
 def install(profile: str, install_root: Path, fail_point: str | None, skip_build: bool) -> dict:
     root = install_root.resolve()
     root.parent.mkdir(parents=True, exist_ok=True)
-    if root.exists() and any(root.iterdir()) and not (root / MANIFEST).is_file():
-        raise RuntimeError(f"refusing non-empty unmanaged install root: {root}")
+    if root.exists() and any(root.iterdir()):
+        if not (root / MANIFEST).is_file():
+            raise RuntimeError(f"refusing non-empty unmanaged install root: {root}")
+        # Never treat an unknown or damaged receipt as authorization to replace
+        # a prior installation. Validate before build, staging or recovery.
+        verify(root)
     recover_stale_staging(root)
     if not skip_build:
         if profile == "core":
