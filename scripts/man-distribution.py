@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "ab81f0406e3401f94f960c60eb87ff460763ded3",
+    "auto-ui": "bd0e0f38253c5fd0676c8ef729c8c030d372ae82",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -251,6 +251,93 @@ def installed_blueprints(gate: Gate) -> str:
     finally:
         spec.write_bytes(original)
     return "installed CLI reads unique marker from its own SDK, not development sources"
+
+
+def installed_ui_receipt_controls(gate: Gate, install: Path, fixture: Path) -> str:
+    """Freeze the selected UI installation through actual staging and swap."""
+    project = gate.scratch / "ui-receipt-project"
+    bundle = gate.scratch / "ui-receipt-delivery"
+    other = gate.scratch / "ui-receipt-other-install"
+    shutil.copytree(fixture, project)
+    shutil.copytree(install, other, ignore=shutil.ignore_patterns("target", ".git", "node_modules"))
+    # Distinguish the two receipt identities: checksums provide consistency,
+    # not a signature; this isolated test changes only the claimed UI SHA.
+    other_receipt = other / "install-manifest.json"
+    doc = json.loads(other_receipt.read_text(encoding="utf-8"))
+    doc["sources"]["auto-ui"] = "0123456789abcdef0123456789abcdef01234567"
+    other_receipt.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    gate.run("ui-receipt-other-verify", [sys.executable, str(MAN / "scripts/man-install.py"),
+             "verify", "--profile", "full", "--install-root", str(other)], gate.scratch)
+    auto = install / exe("auto")
+    command = [str(auto), "gen", "--delivery-root", str(bundle)]
+    other_env = {"AUTO_UI_SOURCE_ROOT": str(other / "sdk")}
+    gate.run("ui-receipt-other-baseline", command, project, extra=other_env, timeout=600)
+    manifest = json.loads((bundle / "delivery-manifest.json").read_text(encoding="utf-8"))
+    if (Path(manifest["producer"]["ui_source_root"]).resolve() != (other / "sdk").resolve()
+            or manifest["producer"]["ui_git_head"] != doc["sources"]["auto-ui"]):
+        raise RuntimeError("independent UI receipt identity was lost or borrowed from producer")
+    main = bundle / "app/src/main.rs"
+    manifest_path = bundle / "delivery-manifest.json"
+    for label, ui_install, extra in (("default", install, None),
+                                     ("explicit-same", install, {"AUTO_UI_SOURCE_ROOT": str(install / "sdk")}),
+                                     ("explicit-other", other, other_env)):
+        source = ui_install / "sdk/crates/auto-ui-compiler/src/ui_gen/vue.rs"
+        original = source.read_bytes(); old_main = main.read_bytes()
+        sentinel = old_main + b"\n// PLAN842_UI_RECEIPT_SENTINEL\n"; old_manifest = manifest_path.read_bytes()
+        log = gate.scratch / "logs" / f"ui-receipt-staged-drift-{label}.log"
+        log.parent.mkdir(exist_ok=True)
+        proc = None
+        try:
+            main.write_bytes(sentinel)
+            with log.open("w", encoding="utf-8") as output:
+                proc = subprocess.Popen(command, cwd=str(project), env=env(extra), stdout=output, stderr=subprocess.STDOUT)
+                deadline = time.monotonic() + 120; stage = None
+                while time.monotonic() < deadline and proc.poll() is None:
+                    stages = list(bundle.parent.glob("." + bundle.name + ".delivery-staging-*"))
+                    stage = next((p for p in stages if (p / "crates/auto-ui-compiler").is_dir() and not (p / "crates/auto-ui-compiler/src/ui_gen/vue.rs").exists()), None)
+                    if stage is not None: break
+                    time.sleep(0.001)
+                if stage is None: raise RuntimeError(f"{label}: did not reach UI staging before the file copy")
+                source.write_bytes(original + b"\n// PLAN842_UI_STAGED_DRIFT\n")
+                copied = stage / "crates/auto-ui-compiler/src/ui_gen/vue.rs"
+                while time.monotonic() < deadline and proc.poll() is None and not copied.is_file(): time.sleep(0.001)
+                if not copied.is_file(): raise RuntimeError(f"{label}: staged UI file not observed")
+                source.write_bytes(original)
+                code = proc.wait(timeout=120)
+            if code not in (1, 2) or "producer" not in log.read_text(encoding="utf-8", errors="replace").lower():
+                raise RuntimeError(f"{label}: copied UI drift accepted, exit={code}")
+            if main.read_bytes() != sentinel or manifest_path.read_bytes() != old_manifest:
+                raise RuntimeError(f"{label}: copied UI drift changed previous delivery")
+        finally:
+            if proc is not None and proc.poll() is None: proc.kill(); proc.wait(timeout=10)
+            source.write_bytes(original); main.write_bytes(old_main)
+    # Keep the changed UI receipt in place until the attempted swap, so the
+    # frozen receipt's final unchanged check must fail independently of bytes.
+    receipt_before = other_receipt.read_bytes(); old_main = main.read_bytes()
+    sentinel = old_main + b"\n// PLAN842_UI_RECEIPT_CHANGE\n"; old_manifest = manifest_path.read_bytes()
+    log = gate.scratch / "logs/ui-receipt-changed-during-copy.log"; proc = None
+    try:
+        main.write_bytes(sentinel)
+        with log.open("w", encoding="utf-8") as output:
+            proc = subprocess.Popen(command, cwd=str(project), env=env(other_env), stdout=output, stderr=subprocess.STDOUT)
+            deadline = time.monotonic() + 120; observed = False
+            while time.monotonic() < deadline and proc.poll() is None:
+                stages = list(bundle.parent.glob("." + bundle.name + ".delivery-staging-*"))
+                if any((p / "crates/auto-ui-compiler/src/ui_gen/vue.rs").is_file() for p in stages):
+                    other_receipt.write_bytes(receipt_before + b"\n"); observed = True; break
+                time.sleep(0.001)
+            if not observed: raise RuntimeError("UI receipt change did not reach staging")
+            code = proc.wait(timeout=120)
+        if code not in (1, 2) or "producer" not in log.read_text(encoding="utf-8", errors="replace").lower():
+            raise RuntimeError(f"UI receipt drift was accepted, exit={code}")
+        if main.read_bytes() != sentinel or manifest_path.read_bytes() != old_manifest:
+            raise RuntimeError("UI receipt change modified previous delivery")
+    finally:
+        if proc is not None and proc.poll() is None: proc.kill(); proc.wait(timeout=10)
+        other_receipt.write_bytes(receipt_before); main.write_bytes(old_main)
+    gate.run("ui-receipt-other-recovery", command, project, extra=other_env, timeout=600)
+    gate.run("ui-receipt-other-recovery-verify", [sys.executable, str(bundle / "verify.py")], bundle)
+    return "each selected UI receipt binds source identity, staged bytes and swap"
 
 
 def installed_rust_delivery(gate: Gate, install: Path, fixture: Path) -> str:
@@ -763,7 +850,8 @@ mod plan842_host_probe {
     gate.run("installed-recovery-successful-verify", [sys.executable, str(recovery_root / "verify.py")], recovery_root)
     if backup.exists():
         raise RuntimeError("successful retry did not collect the replaced transaction backup")
-    return "installed Rust delivery, locked build, source rejection and recovery passed"
+    ui_receipt_detail = installed_ui_receipt_controls(gate, install, fixture)
+    return "installed Rust delivery, locked build, source rejection and recovery passed; " + ui_receipt_detail
 
 
 def installed_ui(gate: Gate) -> str:
