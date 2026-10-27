@@ -318,9 +318,11 @@ mod plan842_host_probe {
 '''
     try:
         main_path.write_bytes(main_bytes + probe.encode("utf-8"))
-        gate.run("installed-rust-host-probe", ["cargo", "test", "--locked", "--bin",
+        host_probe = gate.run("installed-rust-host-probe", ["cargo", "test", "--locked", "--bin",
                  manifest["app"]["package"], "plan842_generated_host", "--", "--test-threads=1"],
                  bundle, timeout=1800)
+        if "test plan842_host_probe::plan842_generated_host ... ok" not in host_probe.stdout:
+            raise RuntimeError("generated host probe selected no passing test")
     finally:
         main_path.write_bytes(main_bytes)
     if main_path.read_bytes() != main_bytes:
