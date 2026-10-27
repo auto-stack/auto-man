@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "98119a4a2d3f6a9a5e90efc629dd45625b4e970e",
+    "auto-ui": "a038ca1ec47ceec8953778b496c981a1417d8836",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -454,6 +454,82 @@ mod plan842_host_probe {
         source_manifest.write_bytes(source_before)
         dev_main.write_bytes(dev_main_before)
         bundle_main.write_bytes(bundle_main_before)
+    # Cover every producer input class and set difference against the receipt,
+    # not just the four packages directly named by the generated workspace.
+    dev_main.write_bytes(dev_sentinel)
+    bundle_main.write_bytes(bundle_sentinel)
+    mutation_cases = (
+        ("language-crate", "sdk/crates/auto-ast/src/lib.rs", "changed", False),
+        ("extra-file", "sdk/crates/auto-ast/src/plan842-unlisted.rs", "extra", False),
+        ("missing-file", "sdk/crates/auto-ast/src/ast.rs", "missing", False),
+        ("root-input", "sdk/stdlib/auto/image.at", "changed", False),
+        ("root-lock", "sdk/Cargo.lock", "changed", False),
+        ("patch-source", "sdk/crates/patches/iced_widget/src/lib.rs", "changed", False),
+        ("dev-transitive", "sdk/crates/auto-val/src/lib.rs", "changed", True),
+    )
+    try:
+        for label, rel, mutation, dev in mutation_cases:
+            path = install / rel
+            held = gate.scratch / ("held-" + label)
+            original = path.read_bytes() if mutation != "extra" else None
+            if mutation == "extra":
+                if path.exists(): raise RuntimeError("extra-file control already exists")
+                path.write_bytes(b"unregistered")
+            elif mutation == "missing":
+                path.rename(held)
+            else:
+                path.write_bytes(original + b"\n# PLAN842_R3_TAMPER\n")
+            try:
+                failure = gate.run("installed-closure-" + label,
+                                   [str(auto), "gen"] if dev else command,
+                                   dev_project if dev else project,
+                                   extra=dev_env if dev else None, expect=(1, 2), timeout=600)
+                if "producer" not in (failure.stdout + failure.stderr).lower():
+                    raise RuntimeError(f"{label} lacked producer diagnostic")
+                if (dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous
+                        or bundle_main.read_bytes() != bundle_sentinel
+                        or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before):
+                    raise RuntimeError(f"{label} changed previous output")
+            finally:
+                if mutation == "extra": path.unlink()
+                elif mutation == "missing": held.rename(path)
+                else: path.write_bytes(original)
+
+        # Mutate a late copied package only after the staging transaction has
+        # begun. Its actual copied bytes must be checked before projection.
+        drift_source = install / "sdk/crates/auto-project-model/src/lib.rs"
+        drift_original = drift_source.read_bytes()
+        drift_log = gate.scratch / "logs/installed-closure-staged-drift.log"
+        process = None
+        try:
+            with drift_log.open("w", encoding="utf-8") as output:
+                process = subprocess.Popen(command, cwd=str(project), env=env(), stdout=output,
+                                           stderr=subprocess.STDOUT, text=True)
+                deadline = time.monotonic() + 120
+                observed = False
+                while time.monotonic() < deadline and process.poll() is None:
+                    stages = list(bundle.parent.glob("." + bundle.name + ".delivery-staging-*"))
+                    if any((stage / "crates/auto-lang").is_dir()
+                           and not (stage / "crates/auto-project-model").exists() for stage in stages):
+                        drift_source.write_bytes(drift_original + b"\n// PLAN842_STAGED_DRIFT\n")
+                        observed = True
+                        break
+                    time.sleep(0.005)
+                code = process.wait(timeout=120)
+            if not observed: raise RuntimeError("staging drift control did not reach its injection point")
+            if code not in (1, 2) or "producer" not in drift_log.read_text(encoding="utf-8").lower():
+                raise RuntimeError(f"staged source drift was not rejected: exit={code}")
+            if bundle_main.read_bytes() != bundle_sentinel or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before:
+                raise RuntimeError("staged source drift changed previous delivery")
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+            drift_source.write_bytes(drift_original)
+    finally:
+        dev_main.write_bytes(dev_main_before)
+        bundle_main.write_bytes(bundle_main_before)
+
     gate.run("installed-dev-sdk-recovered", [str(auto), "gen"], dev_project, extra=dev_env)
     gate.run("installed-delivery-sdk-recovered", command, project, timeout=600)
     gate.run("installed-delivery-sdk-recovered-verify", [sys.executable, str(bundle / "verify.py")], bundle)
