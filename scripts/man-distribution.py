@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "4903bef64532750d1597627b1197f3d2cac1effc",
+    "auto-ui": "82217b7592855cef033fc34c86b070b74ce7ce57",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -253,6 +253,52 @@ def installed_blueprints(gate: Gate) -> str:
     return "installed CLI reads unique marker from its own SDK, not development sources"
 
 
+def installed_rust_delivery(gate: Gate, install: Path, fixture: Path) -> str:
+    """Exercise installed SDK projection through the real CLI and consumer."""
+    project = gate.scratch / "installed-rust-project"
+    bundle = gate.scratch / "installed-rust-delivery"
+    shutil.copytree(fixture, project)
+    auto = install / exe("auto")
+    command = [str(auto), "gen", "--delivery-root", str(bundle)]
+    gate.run("installed-rust-delivery", command, project, timeout=600)
+    manifest = json.loads((bundle / "delivery-manifest.json").read_text(encoding="utf-8"))
+    if Path(manifest["producer"]["source_root"]).resolve() != (install / "sdk").resolve():
+        raise RuntimeError("installed delivery did not use its adjacent SDK")
+    source = install / "sdk/crates/auto-ui-dialect/src/lib.rs"
+    copied = bundle / "crates/auto-ui-dialect/src/lib.rs"
+    if source.read_bytes() != copied.read_bytes():
+        raise RuntimeError("delivered UI source differs from the installed SDK")
+    gate.run("installed-rust-fresh-lock", ["cargo", "generate-lockfile"], bundle, timeout=1800)
+    gate.run("installed-rust-locked-build", ["cargo", "build", "--locked"], bundle, timeout=3600)
+    gate.run("installed-rust-verify", [sys.executable, str(bundle / "verify.py")], bundle)
+
+    # Corrupt the actual installed input; restore it before checking recovery.
+    watched = [bundle / "delivery-manifest.json", bundle / "app/src/main.rs", bundle / "assets/avatar.png"]
+    before = {str(path.relative_to(bundle)): sha256(path) for path in watched}
+    sdk_manifest = install / "sdk/crates/auto-lang/Cargo.toml"
+    original = sdk_manifest.read_bytes()
+    expected = b'test-cases = ["auto-lang-core/test-cases"]'
+    altered = original.replace(expected, b'test-cases = ["plan842-invalid"]')
+    if original.count(expected) != 1 or altered == original:
+        raise RuntimeError("installed SDK shape or mutation did not match the control")
+    try:
+        sdk_manifest.write_bytes(altered)
+        failure = gate.run("installed-rust-bad-producer", command, project, timeout=600, expect=(1, 2))
+        if "producer" not in (failure.stdout + failure.stderr).lower():
+            raise RuntimeError("bad producer failed without its named diagnostic")
+        after = {str(path.relative_to(bundle)): sha256(path) for path in watched}
+        if before != after:
+            raise RuntimeError("failed delivery changed the prior artifact")
+    finally:
+        sdk_manifest.write_bytes(original)
+    gate.run("installed-rust-restored-install-verify",
+             [sys.executable, str(MAN / "scripts/man-install.py"), "verify",
+              "--profile", "full", "--install-root", str(install)], gate.scratch)
+    gate.run("installed-rust-recovery", command, project, timeout=600)
+    gate.run("installed-rust-recovery-verify", [sys.executable, str(bundle / "verify.py")], bundle)
+    return "installed Rust delivery, locked build, producer rejection and recovery passed"
+
+
 def installed_ui(gate: Gate) -> str:
     blueprint_detail = installed_blueprints(gate)
     install = gate.scratch / "install-a"
@@ -263,7 +309,10 @@ def installed_ui(gate: Gate) -> str:
     gate.run("installed-build", [str(auto), "build"], project, timeout=600)
     if not (project / "gen/front/vue/dist/index.html").is_file():
         raise RuntimeError("installed Vue dist missing")
-    return f"installed full CLI generates and builds real Vue app; {blueprint_detail}"
+    rust_detail = installed_rust_delivery(
+        gate, install, gate.scratch / "grp-a/auto-lang/test/fixtures/modularity/generated-ui-consumer/proj"
+    )
+    return f"installed full CLI generates and builds real Vue app; {blueprint_detail}; {rust_detail}"
 
 
 def relocate_core(gate: Gate) -> str:
