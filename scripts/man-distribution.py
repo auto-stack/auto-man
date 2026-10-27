@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "b6072a664e4b20d49724ad26ce92df23d9374dcb",
+    "auto-ui": "171454071b8e19e0287f549ceb4f5b2ee87e0087",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -427,6 +427,65 @@ mod plan842_host_probe {
                 raise RuntimeError(f"{case} changed old developer output")
     finally:
         dev_main.write_bytes(dev_main_before)
+
+    # Exercise Cargo graph semantics through both real generation entry points.
+    # This is an ordinary developer source, intentionally detached from a receipt.
+    graph_sdk = gate.scratch / "installed-dev-cargo-graph-sdk"
+    shutil.copytree(install / "sdk", graph_sdk, ignore=shutil.ignore_patterns("target", ".git", "node_modules"))
+    graph_env = {"AUTO_LANG_ROOT": str(graph_sdk), "AUTO_UI_SOURCE_ROOT": str(graph_sdk)}
+    graph_bundle = gate.scratch / "installed-dev-cargo-graph-delivery"
+    graph_command = [str(auto), "gen", "--delivery-root", str(graph_bundle)]
+    graph_delivery_env = {"AUTO_DELIVERY_SOURCE_ROOT": str(graph_sdk), "AUTO_UI_SOURCE_ROOT": str(graph_sdk)}
+    gate.run("installed-dev-graph-baseline", [str(auto), "gen"], dev_project, extra={**dev_env, **graph_env})
+    gate.run("installed-dev-graph-delivery-baseline", graph_command, dev_project, extra=graph_delivery_env)
+    graph_main = graph_bundle / "app/src/main.rs"
+    graph_manifest = graph_bundle / "delivery-manifest.json"
+    ast_manifest = graph_sdk / "crates/auto-ast/Cargo.toml"
+    ui_manifest = graph_sdk / "crates/auto-ui-runtime/Cargo.toml"
+    ast_original = ast_manifest.read_text(encoding="utf-8")
+    ui_original = ui_manifest.read_text(encoding="utf-8")
+    original_edge = 'auto-val = { path = "../auto-val", features = ["serde"] }'
+    if ast_original.count(original_edge) != 1:
+        raise RuntimeError("Cargo graph fixture does not match expected dependency")
+    ui_edge = 'auto-ui-compiler = { path = "../auto-ui-compiler"'
+    if ui_original.count(ui_edge) != 1:
+        raise RuntimeError("Cargo graph UI fixture does not match expected dependency")
+    bad_cases = {
+        "normal-cycle": (ast_manifest, ast_original.replace("[dependencies]", '[dependencies]\nauto-lang-core = { path = "../auto-lang-core" }', 1)),
+        "wrong-package": (ast_manifest, ast_original.replace(original_edge, original_edge.replace("../auto-val", "../auto-lex"))),
+        "wrong-version": (ast_manifest, ast_original.replace(original_edge, original_edge.replace('path = "../auto-val"', 'path = "../auto-val", version = "=9.9.9"'))),
+        "ui-wrong-package": (ui_manifest, ui_original.replace(ui_edge, ui_edge.replace("../auto-ui-compiler", "../auto-ast"))),
+    }
+    workspace_main = dev_workspace / dev_project.name / "src/main.rs"
+    try:
+        for case, (path, content) in bad_cases.items():
+            path.write_text(content, encoding="utf-8")
+            for suffix, command_line, extra, output_main, output_manifest in (
+                    ("workspace", [str(auto), "gen"], {**dev_env, **graph_env}, workspace_main, workspace_manifest),
+                    ("delivery", graph_command, graph_delivery_env, graph_main, graph_manifest)):
+                old_main = output_main.read_bytes()
+                sentinel = old_main + b"\n// PLAN842_CARGO_GRAPH_SENTINEL\n"
+                old_manifest = output_manifest.read_bytes()
+                try:
+                    output_main.write_bytes(sentinel)
+                    failure = gate.run("installed-dev-graph-" + case + "-" + suffix, command_line,
+                                       dev_project, extra=extra, expect=(1, 2), timeout=600)
+                    if "producer" not in (failure.stdout + failure.stderr).lower():
+                        raise RuntimeError(f"{case} {suffix} lacked producer diagnostic")
+                    if output_main.read_bytes() != sentinel or output_manifest.read_bytes() != old_manifest:
+                        raise RuntimeError(f"{case} {suffix} changed old output")
+                finally:
+                    output_main.write_bytes(old_main)
+            path.write_text(ast_original if path == ast_manifest else ui_original, encoding="utf-8")
+        # Both a renamed dependency and a cycle containing a dev edge are legal.
+        ast_manifest.write_text(ast_original.replace(original_edge, 'auto_val = { package = "auto-val", path = "../auto-val", features = ["serde"] }') + '\n[dev-dependencies]\nauto-lang-core = { path = "../auto-lang-core" }\n', encoding="utf-8")
+        gate.run("installed-dev-graph-legal-workspace", [str(auto), "gen"], dev_project, extra={**dev_env, **graph_env})
+        gate.run("installed-dev-graph-legal-delivery", graph_command, dev_project, extra=graph_delivery_env)
+        gate.run("installed-dev-graph-legal-cargo", ["cargo", "metadata", "--offline", "--format-version", "1"], dev_workspace, timeout=1800)
+    finally:
+        ast_manifest.write_text(ast_original, encoding="utf-8")
+        ui_manifest.write_text(ui_original, encoding="utf-8")
+    gate.run("installed-dev-graph-recovery", [str(auto), "gen"], dev_project, extra=dev_env)
 
     # Installed SDK discovery must reject a damaged or missing language source
     # without borrowing a sibling or the executable's build-time checkout.
