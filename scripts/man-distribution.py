@@ -397,6 +397,37 @@ mod plan842_host_probe {
         if workspace_manifest.read_bytes() != previous:
             raise RuntimeError(f"incomplete {key} changed the previous workspace")
 
+    # A developer source whose direct packages exist can still have a missing
+    # local dependency; reject it before changing either old output.
+    broken_lang = gate.scratch / "installed-dev-broken-transitive-lang"
+    (broken_lang / "crates").mkdir(parents=True)
+    (broken_lang / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    for name in ("auto-lang", "auto-lang-core", "a2r-std", "auto-media-core"):
+        package = broken_lang / "crates" / name
+        (package / "src").mkdir(parents=True)
+        dependency = '\n[dependencies]\nauto-val = { path = "../auto-val" }\n' if name == "auto-lang" else ""
+        (package / "Cargo.toml").write_text(f'[package]\nname = "{name}"\nversion = "0.1.0"\n' + dependency, encoding="utf-8")
+        (package / "src/lib.rs").write_text("", encoding="utf-8")
+    broken_ui = gate.scratch / "installed-dev-broken-transitive-ui"
+    package = broken_ui / "crates/auto-ui-runtime"
+    (package / "src").mkdir(parents=True)
+    (package / "Cargo.toml").write_text('[package]\nname = "auto-ui-runtime"\nversion = "0.2.0"\n[dependencies]\nauto-ui-compiler = { path = "../auto-ui-compiler" }\n', encoding="utf-8")
+    (package / "src/lib.rs").write_text("", encoding="utf-8")
+    dev_main = dev_workspace / dev_project.name / "src/main.rs"
+    dev_main_before = dev_main.read_bytes()
+    try:
+        dev_main.write_bytes(dev_main_before + b"\n// PLAN842_TRANSITIVE_SENTINEL\n")
+        for case, key, source in (("installed-dev-broken-transitive-lang", "AUTO_LANG_ROOT", broken_lang),
+                                  ("installed-dev-broken-transitive-ui", "AUTO_UI_SOURCE_ROOT", broken_ui)):
+            failure = gate.run(case, [str(auto), "gen"], dev_project,
+                               extra={**dev_env, key: str(source)}, expect=(1, 2))
+            if key not in failure.stdout + failure.stderr:
+                raise RuntimeError(f"{case} lacked named diagnostic")
+            if workspace_manifest.read_bytes() != previous or dev_main.read_bytes() != dev_main_before + b"\n// PLAN842_TRANSITIVE_SENTINEL\n":
+                raise RuntimeError(f"{case} changed old developer output")
+    finally:
+        dev_main.write_bytes(dev_main_before)
+
     # Installed SDK discovery must reject a damaged or missing language source
     # without borrowing a sibling or the executable's build-time checkout.
     dev_main = dev_workspace / dev_project.name / "src/main.rs"
