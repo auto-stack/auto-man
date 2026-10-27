@@ -87,10 +87,42 @@ fn autodesk_client_two_process_smoke() {
         "462 AppSession 落地"
     );
 
+    // ---- 真实首帧定位 "+" 按钮（Plan 842 T-13：布局由渲染端决定，
+    // 旧固定坐标 (60,40) 已随首帧布局漂移到按钮 quad 之外）----
+    let first = ph.composed(wid.0).expect("首帧 DrawList");
+    let label = first
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            DrawOp::Text { text, x, y, .. } if text == "+" => Some((*x, *y)),
+            _ => None,
+        })
+        .expect("首帧含 \"+\" 标签");
+    let quad = first
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            DrawOp::Quad { rect, .. } | DrawOp::QuadR { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .filter(|r| label.0 >= r.x && label.0 < r.x + r.w && label.1 >= r.y && label.1 < r.y + r.h)
+        .next_back()
+        .expect("\"+\" 标签所在按钮 quad");
+    let win_rect = {
+        let host = ph.session.host.as_ref().expect("宿主 ctx");
+        let vwin = host.wm.wins.get(&wid).expect("虚拟窗在 WM");
+        *vwin.rect.borrow()
+    };
+    // pointer_down 收宿主坐标（内部减窗口原点转 widget 本地）。
+    let click = (
+        quad.x + quad.w / 2.0 + win_rect.x,
+        quad.y + quad.h / 2.0 + win_rect.y,
+    );
+
     // ---- 协议点击 ×2 → 帧递增 ----
     for expect in 1..=2i64 {
         let injected = ph
-            .pointer_down(60.0, 40.0, MouseButton::Left)
+            .pointer_down(click.0, click.1, MouseButton::Left)
             .expect("窗内命中");
         server_end.send(&injected).unwrap();
         let mut seen = false;
