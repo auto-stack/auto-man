@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "a038ca1ec47ceec8953778b496c981a1417d8836",
+    "auto-ui": "b6072a664e4b20d49724ad26ce92df23d9374dcb",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -454,6 +454,33 @@ mod plan842_host_probe {
         source_manifest.write_bytes(source_before)
         dev_main.write_bytes(dev_main_before)
         bundle_main.write_bytes(bundle_main_before)
+    # Explicitly selecting the adjacent SDK must not reclassify an installation
+    # with a missing receipt as a free-standing development checkout.
+    install_receipt = install / "install-manifest.json"
+    held_receipt = gate.scratch / "held-install-manifest.json"
+    try:
+        dev_main.write_bytes(dev_sentinel)
+        bundle_main.write_bytes(bundle_sentinel)
+        install_receipt.rename(held_receipt)
+        for case, cmd, cwd, extra in (
+                ("installed-dev-no-receipt-root", [str(auto), "gen"], dev_project,
+                 {**dev_env, "AUTO_LANG_ROOT": str(install / "sdk"), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                ("installed-dev-no-receipt-crate", [str(auto), "gen"], dev_project,
+                 {**dev_env, "AUTO_LANG_CRATE": str(install / "sdk/crates/auto-lang"), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                ("installed-delivery-no-receipt-root", command, project,
+                 {"AUTO_DELIVERY_SOURCE_ROOT": str(install / "sdk"), "AUTO_UI_SOURCE_ROOT": str(UI)})):
+            failure = gate.run(case, cmd, cwd, extra=extra, expect=(1, 2))
+            if "producer" not in (failure.stdout + failure.stderr).lower():
+                raise RuntimeError(f"{case} lacked producer diagnostic")
+        if (dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous
+                or bundle_main.read_bytes() != bundle_sentinel
+                or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before):
+            raise RuntimeError("missing receipt changed old output")
+    finally:
+        if held_receipt.exists(): held_receipt.rename(install_receipt)
+        dev_main.write_bytes(dev_main_before)
+        bundle_main.write_bytes(bundle_main_before)
+
     # Cover every producer input class and set difference against the receipt,
     # not just the four packages directly named by the generated workspace.
     dev_main.write_bytes(dev_sentinel)
