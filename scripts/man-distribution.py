@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "eab3d85c3e7aa0af5ae58c08cdeb6a4d691c5691",
+    "auto-ui": "98119a4a2d3f6a9a5e90efc629dd45625b4e970e",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -396,6 +396,69 @@ mod plan842_host_probe {
             raise RuntimeError(f"incomplete {key} was not identified")
         if workspace_manifest.read_bytes() != previous:
             raise RuntimeError(f"incomplete {key} changed the previous workspace")
+
+    # Installed SDK discovery must reject a damaged or missing language source
+    # without borrowing a sibling or the executable's build-time checkout.
+    dev_main = dev_workspace / dev_project.name / "src/main.rs"
+    dev_main_before = dev_main.read_bytes()
+    dev_sentinel = dev_main_before + b"\n// PLAN842_R2_DEV_SENTINEL\n"
+    bundle_main = bundle / "app/src/main.rs"
+    bundle_main_before = bundle_main.read_bytes()
+    bundle_sentinel = bundle_main_before + b"\n// PLAN842_R2_DELIVERY_SENTINEL\n"
+    bundle_manifest_before = (bundle / "delivery-manifest.json").read_bytes()
+    lang_package = install / "sdk/crates/auto-lang"
+    held_lang = gate.scratch / "held-installed-auto-lang"
+    source_manifest = lang_package / "Cargo.toml"
+    source_before = source_manifest.read_bytes()
+    try:
+        dev_main.write_bytes(dev_sentinel)
+        bundle_main.write_bytes(bundle_sentinel)
+        source_manifest.write_text("[package", encoding="utf-8")
+        malformed = gate.run("installed-dev-malformed-sdk", [str(auto), "gen"], dev_project,
+                             extra=dev_env, expect=(1, 2))
+        if "producer" not in (malformed.stdout + malformed.stderr).lower():
+            raise RuntimeError("malformed installed SDK lacked producer diagnostic")
+        if dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous:
+            raise RuntimeError("malformed installed SDK changed old developer output")
+        source_manifest.write_bytes(source_before)
+        # A parseable manifest with changed bytes is still inconsistent with
+        # the installed receipt and must be rejected before writing output.
+        source_manifest.write_bytes(source_before + b"\n# tampered\n")
+        tampered = gate.run("installed-dev-tampered-sdk", [str(auto), "gen"], dev_project,
+                            extra=dev_env, expect=(1, 2))
+        if "producer" not in (tampered.stdout + tampered.stderr).lower():
+            raise RuntimeError("tampered installed SDK lacked producer diagnostic")
+        if dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous:
+            raise RuntimeError("tampered installed SDK changed old developer output")
+        tampered_delivery = gate.run("installed-delivery-tampered-explicit-sdk", command, project,
+                                    extra={"AUTO_DELIVERY_SOURCE_ROOT": str(install / "sdk")}, expect=(1, 2))
+        if "producer" not in (tampered_delivery.stdout + tampered_delivery.stderr).lower():
+            raise RuntimeError("tampered explicit SDK lacked producer diagnostic")
+        if bundle_main.read_bytes() != bundle_sentinel or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before:
+            raise RuntimeError("tampered explicit SDK changed old delivery")
+        source_manifest.write_bytes(source_before)
+        lang_package.rename(held_lang)
+        for case, cmd, cwd, extra in (
+                ("installed-dev-missing-sdk", [str(auto), "gen"], dev_project, dev_env),
+                ("installed-delivery-missing-sdk", command, project, None)):
+            failure = gate.run(case, cmd, cwd, extra=extra, expect=(1, 2))
+            if "producer" not in (failure.stdout + failure.stderr).lower():
+                raise RuntimeError(f"{case} lacked producer diagnostic")
+        if (dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != previous
+                or bundle_main.read_bytes() != bundle_sentinel
+                or (bundle / "delivery-manifest.json").read_bytes() != bundle_manifest_before):
+            raise RuntimeError("missing installed SDK changed old output")
+    finally:
+        if held_lang.exists():
+            held_lang.rename(lang_package)
+        source_manifest.write_bytes(source_before)
+        dev_main.write_bytes(dev_main_before)
+        bundle_main.write_bytes(bundle_main_before)
+    gate.run("installed-dev-sdk-recovered", [str(auto), "gen"], dev_project, extra=dev_env)
+    gate.run("installed-delivery-sdk-recovered", command, project, timeout=600)
+    gate.run("installed-delivery-sdk-recovered-verify", [sys.executable, str(bundle / "verify.py")], bundle)
+    gate.run("installed-sdk-recovered-install-verify", [sys.executable, str(MAN / "scripts/man-install.py"),
+             "verify", "--profile", "full", "--install-root", str(install)], gate.scratch)
 
     # A manifest alone cannot prove that a replacement is intact. A failed
     # retry must retain the complete transaction backup until a successful swap.
