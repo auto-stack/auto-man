@@ -381,6 +381,21 @@ mod plan842_host_probe {
         raise RuntimeError("incomplete UI root was not identified")
     if workspace_manifest.read_bytes() != previous:
         raise RuntimeError("incomplete UI root changed the previous workspace")
+    for key, source in (("AUTO_LANG_ROOT", install / "sdk"),
+                        ("AUTO_LANG_CRATE", install / "sdk/crates/auto-lang")):
+        gate.run("installed-dev-valid-" + key.lower(), [str(auto), "gen"], dev_project,
+                 extra={**dev_env, key: str(source)})
+    previous = workspace_manifest.read_bytes()
+    partial_lang = gate.scratch / "installed-partial-language-source"
+    (partial_lang / "crates/auto-lang").mkdir(parents=True)
+    (partial_lang / "crates/auto-lang/Cargo.toml").write_text("[package", encoding="utf-8")
+    for key in ("AUTO_LANG_ROOT", "AUTO_DELIVERY_SOURCE_ROOT"):
+        failure = gate.run("installed-dev-partial-" + key.lower(), [str(auto), "gen"], dev_project,
+                           extra={**dev_env, key: str(partial_lang)}, expect=(1, 2))
+        if key not in failure.stdout + failure.stderr:
+            raise RuntimeError(f"incomplete {key} was not identified")
+        if workspace_manifest.read_bytes() != previous:
+            raise RuntimeError(f"incomplete {key} changed the previous workspace")
 
     # A manifest alone cannot prove that a replacement is intact. A failed
     # retry must retain the complete transaction backup until a successful swap.
