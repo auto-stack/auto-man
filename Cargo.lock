@@ -1094,6 +1094,7 @@ dependencies = [
  "image",
  "kamadak-exif",
  "lazy_static",
+ "libloading",
  "log",
  "miette",
  "notify",
