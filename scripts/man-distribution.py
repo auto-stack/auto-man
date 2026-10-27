@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "533417e1c5d0bd171c83aeeae8b0dfdec783a41c",
+    "auto-ui": "eab3d85c3e7aa0af5ae58c08cdeb6a4d691c5691",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -364,7 +364,51 @@ mod plan842_host_probe {
               "--profile", "full", "--install-root", str(install)], gate.scratch)
     gate.run("installed-rust-recovery", command, project, timeout=600)
     gate.run("installed-rust-recovery-verify", [sys.executable, str(bundle / "verify.py")], bundle)
-    return "installed Rust delivery, locked build, producer rejection and recovery passed"
+    # Real developer generation must reject an existing but incomplete UI
+    # source before changing an already generated workspace.
+    dev_project = gate.scratch / "installed-dev-source-project"
+    dev_workspace = gate.scratch / "installed-dev-source-workspace"
+    partial_ui = gate.scratch / "installed-partial-ui-source"
+    shutil.copytree(fixture, dev_project)
+    (partial_ui / "crates/auto-ui-runtime").mkdir(parents=True)
+    dev_env = {"AUTO_RUST_WORKSPACE": str(dev_workspace)}
+    gate.run("installed-dev-source-baseline", [str(auto), "gen"], dev_project, extra=dev_env)
+    workspace_manifest = dev_workspace / "Cargo.toml"
+    previous = workspace_manifest.read_bytes()
+    failure = gate.run("installed-dev-source-partial", [str(auto), "gen"], dev_project,
+                       extra={**dev_env, "AUTO_UI_SOURCE_ROOT": str(partial_ui)}, expect=(1, 2))
+    if "AUTO_UI_SOURCE_ROOT" not in failure.stdout + failure.stderr:
+        raise RuntimeError("incomplete UI root was not identified")
+    if workspace_manifest.read_bytes() != previous:
+        raise RuntimeError("incomplete UI root changed the previous workspace")
+
+    # A manifest alone cannot prove that a replacement is intact. A failed
+    # retry must retain the complete transaction backup until a successful swap.
+    recovery_project = gate.scratch / "installed-recovery-project"
+    recovery_root = gate.scratch / "installed-recovery-delivery"
+    backup = gate.scratch / ".installed-recovery-delivery.delivery-old-999999-1"
+    shutil.copytree(fixture, recovery_project)
+    shutil.copytree(bundle, recovery_root)
+    shutil.copytree(bundle, backup)
+    (backup / ".delivery-swap.marker").write_text("pid=999999\n", encoding="utf-8")
+    backup_manifest = (backup / "delivery-manifest.json").read_bytes()
+    backup_app = (backup / "app/Cargo.toml").read_bytes()
+    (recovery_root / "app/Cargo.toml").write_bytes(b"corrupt replacement")
+    pac = recovery_project / "pac.at"
+    pac_bytes = pac.read_bytes()
+    pac.write_bytes(pac_bytes + b'\nrust_sidecar {\n    modules: ["glue:missing.rs"]\n}\n')
+    recovery_command = [str(auto), "gen", "--delivery-root", str(recovery_root)]
+    gate.run("installed-recovery-failed-retry", recovery_command, recovery_project, expect=(1, 2))
+    if ((backup / "delivery-manifest.json").read_bytes() != backup_manifest
+            or (backup / "app/Cargo.toml").read_bytes() != backup_app
+            or (recovery_root / "app/Cargo.toml").read_bytes() != b"corrupt replacement"):
+        raise RuntimeError("failed retry did not preserve the recovery backup and root")
+    pac.write_bytes(pac_bytes)
+    gate.run("installed-recovery-successful-retry", recovery_command, recovery_project)
+    gate.run("installed-recovery-successful-verify", [sys.executable, str(recovery_root / "verify.py")], recovery_root)
+    if backup.exists():
+        raise RuntimeError("successful retry did not collect the replaced transaction backup")
+    return "installed Rust delivery, locked build, source rejection and recovery passed"
 
 
 def installed_ui(gate: Gate) -> str:
