@@ -843,6 +843,7 @@ dependencies = [
  "auto-package-resolver",
  "auto-project-model",
  "auto-toolchain-core",
+ "auto-ui-compiler",
  "auto-ui-tools",
  "auto-val",
  "base64 0.22.1",

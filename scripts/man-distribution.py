@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "90eb734796aaa234feb09f9fbaf818304a31fa94",
+    "auto-ui": "5655ec65a6fd45a53725f53514cb4065c472648f",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -264,17 +264,83 @@ def installed_rust_delivery(gate: Gate, install: Path, fixture: Path) -> str:
     manifest = json.loads((bundle / "delivery-manifest.json").read_text(encoding="utf-8"))
     if Path(manifest["producer"]["source_root"]).resolve() != (install / "sdk").resolve():
         raise RuntimeError("installed delivery did not use its adjacent SDK")
+    install_manifest = json.loads((install / "install-manifest.json").read_text(encoding="utf-8"))
+    if (manifest["producer"]["git_head"] != install_manifest["sources"]["auto-lang"]
+            or manifest["producer"]["ui_git_head"] != install_manifest["sources"]["auto-ui"]):
+        raise RuntimeError("delivery producer revisions do not match the installed sources")
+    dialect_entries = [entry for entry in manifest["crates"] if entry["name"] == "auto-ui-dialect"]
+    if len(dialect_entries) != 1 or dialect_entries[0].get("origin_repo") != "auto-ui":
+        raise RuntimeError("delivery UI crate owner is missing or incorrect")
+    generated = (bundle / "app/src/main.rs").read_text(encoding="utf-8")
+    app_manifest = (bundle / "app/Cargo.toml").read_text(encoding="utf-8")
+    if "auto_lang::" in generated or 'auto-lang = {' in app_manifest:
+        raise RuntimeError("generated Rust app still depends on the old auto-lang facade")
+    if "auto_ui_runtime::ui::desktop_protocol" not in generated:
+        raise RuntimeError("generated desktop entry does not use the UI runtime owner")
     source = install / "sdk/crates/auto-ui-dialect/src/lib.rs"
     copied = bundle / "crates/auto-ui-dialect/src/lib.rs"
     if source.read_bytes() != copied.read_bytes():
         raise RuntimeError("delivered UI source differs from the installed SDK")
     gate.run("installed-rust-fresh-lock", ["cargo", "generate-lockfile"], bundle, timeout=1800)
     gate.run("installed-rust-locked-build", ["cargo", "build", "--locked"], bundle, timeout=3600)
+    # Run the actual generated initializer in a fresh test process. Restore
+    # the exact source before checking/reusing the delivery artifact.
+    main_path = bundle / "app/src/main.rs"
+    main_bytes = main_path.read_bytes()
+    probe = r'''
+#[cfg(test)]
+mod plan842_host_probe {
+    use std::sync::Arc;
+    use auto_lang_core::vm::host_capabilities::{
+        clear_process_default_frame_provider, process_default_frame_provider,
+        set_process_default_frame_provider, FrameProvider,
+    };
+    struct Fake;
+    impl FrameProvider for Fake {
+        fn begin_ms(&self) -> i64 { 17 }
+        fn present_ms(&self) -> i64 { 31 }
+    }
+    #[test]
+    fn plan842_generated_host() {
+        clear_process_default_frame_provider();
+        assert!(process_default_frame_provider().is_none());
+        super::install_generated_ui_host();
+        assert!(process_default_frame_provider().is_some(), "UI default missing");
+        clear_process_default_frame_provider();
+        auto_lang_core::install_ui_host_capabilities();
+        assert!(process_default_frame_provider().is_some(), "SDK hook missing");
+        set_process_default_frame_provider(Arc::new(Fake));
+        super::install_generated_ui_host();
+        let current = process_default_frame_provider().unwrap();
+        assert_eq!((current.begin_ms(), current.present_ms()), (17, 31));
+    }
+}
+'''
+    try:
+        main_path.write_bytes(main_bytes + probe.encode("utf-8"))
+        gate.run("installed-rust-host-probe", ["cargo", "test", "--locked", "--bin",
+                 manifest["app"]["package"], "plan842_generated_host", "--", "--test-threads=1"],
+                 bundle, timeout=1800)
+    finally:
+        main_path.write_bytes(main_bytes)
+    if main_path.read_bytes() != main_bytes:
+        raise RuntimeError("generated host probe failed to restore the source")
+    tree = gate.run("installed-rust-tree", ["cargo", "tree", "--locked", "--edges", "normal,build,dev", "--prefix", "none"], bundle)
+    if any(line.startswith("auto-lang v") for line in tree.stdout.splitlines()):
+        raise RuntimeError("generated app dependency closure still includes auto-lang")
     gate.run("installed-rust-verify", [sys.executable, str(bundle / "verify.py")], bundle)
 
     # Corrupt the actual installed input; restore it before checking recovery.
     watched = [bundle / "delivery-manifest.json", bundle / "app/src/main.rs", bundle / "assets/avatar.png"]
     before = {str(path.relative_to(bundle)): sha256(path) for path in watched}
+    for key in ("AUTO_DELIVERY_SOURCE_ROOT", "AUTO_UI_SOURCE_ROOT"):
+        missing = gate.scratch / "missing-explicit-source"
+        failure = gate.run("installed-rust-invalid-" + key.lower(), command, project,
+                           extra={key: str(missing)}, timeout=600, expect=(1, 2))
+        if key not in (failure.stdout + failure.stderr):
+            raise RuntimeError(f"invalid {key} did not receive a named diagnostic")
+        if before != {str(path.relative_to(bundle)): sha256(path) for path in watched}:
+            raise RuntimeError(f"invalid {key} changed the prior artifact")
     sdk_manifest = install / "sdk/crates/auto-lang/Cargo.toml"
     original = sdk_manifest.read_bytes()
     expected = b'test-cases = ["auto-lang-core/test-cases"]'

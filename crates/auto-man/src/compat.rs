@@ -169,8 +169,8 @@ impl UiOps for CompatUiOps {
 
     fn create_jet_project(&self, name: &str) -> AutoResult<()> {
         // 原 Automan::create_jet 身体（JetProjectConfig 全流程;UI 脚手架
-        // owner=auto-lang ui_gen::jet 兼容面——本 compat 层职责)。
-        use auto_lang::ui_gen::jet::{JetProjectConfig, ProjectGenerator};
+        // owner=auto-ui-compiler ui_gen::jet——本 compat 层职责)。
+        use auto_ui_compiler::ui_gen::jet::{JetProjectConfig, ProjectGenerator};
 
         let path = Path::new(name);
         if path.is_file() {
@@ -222,4 +222,24 @@ impl UiOps for CompatUiOps {
 #[ctor::ctor]
 fn auto_install_compat_ui_ops() {
     install_default_ui_ops();
+}
+
+#[cfg(test)]
+mod plan842_tests {
+    use super::{CompatUiOps, UiOps};
+
+    #[test]
+    fn jet_scaffold_uses_ui_owner_and_preserves_existing_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("Plan842App");
+        let project_name = project.to_str().unwrap();
+        CompatUiOps.create_jet_project(project_name).unwrap();
+        let settings = project.join("settings.gradle.kts");
+        let manifest = project.join("app/src/main/AndroidManifest.xml");
+        let before = std::fs::read(&settings).unwrap();
+        assert!(!before.is_empty());
+        assert!(manifest.is_file(), "实际脚手架缺 Android manifest");
+        assert!(CompatUiOps.create_jet_project(project_name).is_err());
+        assert_eq!(std::fs::read(&settings).unwrap(), before);
+    }
 }
