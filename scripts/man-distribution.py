@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "171454071b8e19e0287f549ceb4f5b2ee87e0087",
+    "auto-ui": "ab81f0406e3401f94f960c60eb87ff460763ded3",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
@@ -442,8 +442,12 @@ mod plan842_host_probe {
     graph_manifest = graph_bundle / "delivery-manifest.json"
     ast_manifest = graph_sdk / "crates/auto-ast/Cargo.toml"
     ui_manifest = graph_sdk / "crates/auto-ui-runtime/Cargo.toml"
+    val_manifest = graph_sdk / "crates/auto-val/Cargo.toml"
     ast_original = ast_manifest.read_text(encoding="utf-8")
     ui_original = ui_manifest.read_text(encoding="utf-8")
+    val_original = val_manifest.read_text(encoding="utf-8")
+    if val_original.count('version = "0.1.0"') != 1:
+        raise RuntimeError("Cargo graph value package version fixture changed")
     original_edge = 'auto-val = { path = "../auto-val", features = ["serde"] }'
     if ast_original.count(original_edge) != 1:
         raise RuntimeError("Cargo graph fixture does not match expected dependency")
@@ -455,6 +459,7 @@ mod plan842_host_probe {
         "wrong-package": (ast_manifest, ast_original.replace(original_edge, original_edge.replace("../auto-val", "../auto-lex"))),
         "wrong-version": (ast_manifest, ast_original.replace(original_edge, original_edge.replace('path = "../auto-val"', 'path = "../auto-val", version = "=9.9.9"'))),
         "ui-wrong-package": (ui_manifest, ui_original.replace(ui_edge, ui_edge.replace("../auto-ui-compiler", "../auto-ast"))),
+        "invalid-path-only-package-version": (val_manifest, val_original.replace('version = "0.1.0"', 'version = "bogus"', 1)),
     }
     workspace_main = dev_workspace / dev_project.name / "src/main.rs"
     try:
@@ -476,7 +481,7 @@ mod plan842_host_probe {
                         raise RuntimeError(f"{case} {suffix} changed old output")
                 finally:
                     output_main.write_bytes(old_main)
-            path.write_text(ast_original if path == ast_manifest else ui_original, encoding="utf-8")
+            path.write_text({ast_manifest: ast_original, ui_manifest: ui_original, val_manifest: val_original}[path], encoding="utf-8")
         # Both a renamed dependency and a cycle containing a dev edge are legal.
         ast_manifest.write_text(ast_original.replace(original_edge, 'auto_val = { package = "auto-val", path = "../auto-val", features = ["serde"] }') + '\n[dev-dependencies]\nauto-lang-core = { path = "../auto-lang-core" }\n', encoding="utf-8")
         gate.run("installed-dev-graph-legal-workspace", [str(auto), "gen"], dev_project, extra={**dev_env, **graph_env})
@@ -485,7 +490,50 @@ mod plan842_host_probe {
     finally:
         ast_manifest.write_text(ast_original, encoding="utf-8")
         ui_manifest.write_text(ui_original, encoding="utf-8")
+        val_manifest.write_text(val_original, encoding="utf-8")
     gate.run("installed-dev-graph-recovery", [str(auto), "gen"], dev_project, extra=dev_env)
+
+    # Windows permits alternative spellings of the same installed SDK. They
+    # must use the frozen receipt through every explicit source entry point.
+    if os.name == "nt":
+        sdk_alias = install / "SDK"
+        if not os.path.samefile(sdk_alias, install / "sdk"):
+            raise RuntimeError("SDK alias fixture is not the same filesystem directory")
+        alias_env = {"AUTO_LANG_ROOT": str(sdk_alias), "AUTO_UI_SOURCE_ROOT": str(sdk_alias)}
+        gate.run("installed-sdk-alias-valid-workspace", [str(auto), "gen"], dev_project, extra={**dev_env, **alias_env})
+        gate.run("installed-sdk-alias-valid-delivery", command, project,
+                 extra={"AUTO_DELIVERY_SOURCE_ROOT": str(sdk_alias), "AUTO_UI_SOURCE_ROOT": str(sdk_alias)}, timeout=600)
+        alias_doc = json.loads((bundle / "delivery-manifest.json").read_text(encoding="utf-8"))
+        if (alias_doc["producer"]["git_head"] != install_manifest["sources"]["auto-lang"] or
+                alias_doc["producer"]["ui_git_head"] != install_manifest["sources"]["auto-ui"]):
+            raise RuntimeError("aliased installed source lost its receipt identity")
+        dev_main = dev_workspace / dev_project.name / "src/main.rs"
+        old_dev = dev_main.read_bytes(); dev_sentinel = old_dev + b"\n// PLAN842_SDK_ALIAS_SENTINEL\n"
+        old_bundle = (bundle / "app/src/main.rs").read_bytes(); bundle_sentinel = old_bundle + b"\n// PLAN842_SDK_ALIAS_SENTINEL\n"
+        old_workspace_manifest = workspace_manifest.read_bytes()
+        old_bundle_manifest = (bundle / "delivery-manifest.json").read_bytes()
+        altered_source = install / "sdk/crates/auto-ast/src/lib.rs"
+        old_source = altered_source.read_bytes()
+        try:
+            dev_main.write_bytes(dev_sentinel); (bundle / "app/src/main.rs").write_bytes(bundle_sentinel)
+            altered_source.write_bytes(old_source + b"\n// PLAN842_SDK_ALIAS_TAMPER\n")
+            for case, cmd, cwd, extra in (
+                    ("lang-root", [str(auto), "gen"], dev_project, {**dev_env, "AUTO_LANG_ROOT": str(sdk_alias), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                    ("lang-crate", [str(auto), "gen"], dev_project, {**dev_env, "AUTO_LANG_CRATE": str(sdk_alias / "crates/auto-lang"), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                    ("ui-root", [str(auto), "gen"], dev_project, {**dev_env, "AUTO_LANG_ROOT": str(graph_sdk), "AUTO_UI_SOURCE_ROOT": str(sdk_alias)}),
+                    ("delivery-root", command, project, {"AUTO_DELIVERY_SOURCE_ROOT": str(sdk_alias), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                    ("delivery-ui-root", command, project, {"AUTO_DELIVERY_SOURCE_ROOT": str(graph_sdk), "AUTO_UI_SOURCE_ROOT": str(sdk_alias)})):
+                failure = gate.run("installed-sdk-alias-tampered-" + case, cmd, cwd, extra=extra, expect=(1, 2), timeout=600)
+                if "producer" not in (failure.stdout + failure.stderr).lower():
+                    raise RuntimeError(f"SDK alias {case} lacked producer diagnostic")
+                if (dev_main.read_bytes() != dev_sentinel or workspace_manifest.read_bytes() != old_workspace_manifest
+                        or (bundle / "app/src/main.rs").read_bytes() != bundle_sentinel
+                        or (bundle / "delivery-manifest.json").read_bytes() != old_bundle_manifest):
+                    raise RuntimeError(f"SDK alias {case} changed old output")
+        finally:
+            altered_source.write_bytes(old_source); dev_main.write_bytes(old_dev); (bundle / "app/src/main.rs").write_bytes(old_bundle)
+        gate.run("installed-sdk-alias-recovered", [str(auto), "gen"], dev_project, extra=dev_env)
+        previous = workspace_manifest.read_bytes()
 
     # Installed SDK discovery must reject a damaged or missing language source
     # without borrowing a sibling or the executable's build-time checkout.
@@ -558,7 +606,11 @@ mod plan842_host_probe {
                 ("installed-dev-no-receipt-crate", [str(auto), "gen"], dev_project,
                  {**dev_env, "AUTO_LANG_CRATE": str(install / "sdk/crates/auto-lang"), "AUTO_UI_SOURCE_ROOT": str(UI)}),
                 ("installed-delivery-no-receipt-root", command, project,
-                 {"AUTO_DELIVERY_SOURCE_ROOT": str(install / "sdk"), "AUTO_UI_SOURCE_ROOT": str(UI)})):
+                 {"AUTO_DELIVERY_SOURCE_ROOT": str(install / "sdk"), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                ("installed-dev-no-receipt-alias", [str(auto), "gen"], dev_project,
+                 {**dev_env, "AUTO_LANG_ROOT": str(install / ("SDK" if os.name == "nt" else "sdk")), "AUTO_UI_SOURCE_ROOT": str(UI)}),
+                ("installed-delivery-no-receipt-alias", command, project,
+                 {"AUTO_DELIVERY_SOURCE_ROOT": str(install / ("SDK" if os.name == "nt" else "sdk")), "AUTO_UI_SOURCE_ROOT": str(UI)})):
             failure = gate.run(case, cmd, cwd, extra=extra, expect=(1, 2))
             if "producer" not in (failure.stdout + failure.stderr).lower():
                 raise RuntimeError(f"{case} lacked producer diagnostic")
