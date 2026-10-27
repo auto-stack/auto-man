@@ -204,7 +204,8 @@ fn serve_rust(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, Stri
     // 共享 workspace 根重写（成员表+相对路径锚点按实际落点重算；serve 面无
     // generate_rust_ui 前置，必须自行 ensure——陈旧根的坏 path dep 会毒化
     // 整个 workspace 的 cargo 解析）。
-    let ws_dir = auto_api_gen::rust_workspace::ensure_shared_workspace(project_dir);
+    let ws_dir = auto_api_gen::rust_workspace::try_ensure_shared_workspace(project_dir)
+        .map_err(|e| format!("shared workspace producer 预检失败: {e}"))?;
     // 真实生成链（734 strict 门；失败=Err 硬传播，不落旧产物）。
     crate::api_gen::generate_api(project_dir, "rust")
         .map_err(|e| format!("Failed to generate Rust backend: {e}"))?;

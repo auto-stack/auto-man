@@ -21,7 +21,7 @@ DOWN = GROUP / "auto-down"
 FIXED = {
     "auto-man": "a8373e660f47ce1c0e90722c5240359155b81409",
     "auto-lang": "b69da4dde32d1e7226f836e4086c3ebe03ad7ba1",
-    "auto-ui": "5655ec65a6fd45a53725f53514cb4065c472648f",
+    "auto-ui": "c759cbb5c4df7eedb606ae95e3c33f7f12dd7a71",
     "auto-down": "c39ac7f9dacdc769fc4a5ad3b98ec896240b28e8",
 }
 SCRUB = {
