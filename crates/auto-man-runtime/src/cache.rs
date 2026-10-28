@@ -125,9 +125,6 @@ impl BuildCache {
     }
 
     /// Check if any transpilation is needed
-    pub fn needs_transpilation(&self, auto_files: &[String]) -> bool {
-        auto_files.iter().any(|f| self.is_dirty(f))
-    }
 
     /// Get list of dirty (modified) files
     pub fn get_dirty_files(&self, files: &[String]) -> Vec<String> {

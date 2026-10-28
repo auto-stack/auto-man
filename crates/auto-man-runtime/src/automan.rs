@@ -52,18 +52,6 @@ impl Automan {
         Self::create_by_template(name, "app")
     }
 
-    pub fn create_capp(name: &str) -> AutoResult<()> {
-        Self::create_by_template(name, "capp")
-    }
-
-    pub fn create_lib(name: &str) -> AutoResult<()> {
-        Self::create_by_template(name, "lib")
-    }
-
-    pub fn create_clib(name: &str) -> AutoResult<()> {
-        Self::create_by_template(name, "clib")
-    }
-
     /// Create a new Jetpack Compose Android project
     pub fn create_jet(name: &str) -> AutoResult<()> {
         // UI 脚手架经 seam（JetProjectConfig 流程 owner=auto-ui-tools/compat）。
@@ -346,9 +334,6 @@ impl Automan {
     }
 
     /// VM native window title from pac.at `title: "..."`.
-    pub fn pac_window_title(&self) -> Option<String> {
-        self.pac.title.as_ref().map(|t| t.to_string())
-    }
 
     /// PLAN-015：VM 窗展示标题——AUTO_LOCALE（缺省 zh）zh 链优先 pac
     /// `title_zh:`，否则回落 `title`；en 链恒 `title`。未声明 title_zh 时
@@ -413,9 +398,6 @@ impl Automan {
     /// PR-6: Return the effective scenario as an Option for APIs that take
     /// override (collect_module_imports etc.). Always Some since we resolve
     /// from CLI override or pac.at.
-    pub fn scenario_override(&self) -> Option<auto_lang_core::session::CompilerSession> {
-        Some(self.effective_scenario())
-    }
 
     /// Resolve which backend to use:
     /// 1. --render CLI override (any valid BackendType)

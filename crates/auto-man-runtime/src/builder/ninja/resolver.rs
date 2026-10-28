@@ -185,38 +185,6 @@ impl CompilerResolver {
     }
 
     /// 获取编译器版本信息
-    pub fn get_compiler_version(kind: super::config::CompilerKind) -> AutoResult<Option<String>> {
-        use crate::builder::ninja::config::CompilerKind;
-
-        let (compiler, version_flag) = match kind {
-            CompilerKind::MSVC => ("cl", "/?"),
-            CompilerKind::GCC => ("gcc", "--version"),
-            CompilerKind::Clang => ("clang", "--version"),
-            CompilerKind::GHS => ("ccarm", "--version"),
-            CompilerKind::IAR => ("iccarm", "--version"),
-            CompilerKind::Targeting => ("tcpp", "--version"),
-            CompilerKind::Hightec => ("gcc", "--version"),
-            CompilerKind::TICLang => ("tiarmclang", "--version"),
-        };
-
-        let result = std::process::Command::new(compiler)
-            .arg(version_flag)
-            .output();
-
-        match result {
-            Ok(output) => {
-                if output.status.success() {
-                    let version_str = String::from_utf8_lossy(&output.stdout).to_string();
-                    // 提取第一行作为版本信息
-                    let first_line = version_str.lines().next().unwrap_or("");
-                    Ok(Some(first_line.to_string()))
-                } else {
-                    Ok(None)
-                }
-            }
-            Err(_) => Ok(None),
-        }
-    }
 
     /// 查找系统中的可用编译器
     ///

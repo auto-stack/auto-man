@@ -743,9 +743,6 @@ impl ToolClient {
     }
 
     /// 宿主进程 id（诊断/日志用途）。
-    pub fn host_pid(&self) -> u32 {
-        self.proc.id()
-    }
 
     /// 日志流（stderr）快照——控制流之外的独立通道。
     pub fn logs(&self) -> String {

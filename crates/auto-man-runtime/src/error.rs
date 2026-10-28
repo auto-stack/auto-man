@@ -37,7 +37,6 @@ pub enum AutoManError {
 }
 
 /// Result type for AutoMan operations
-pub type AutoManResult<T> = Result<T, AutoManError>;
 
 #[cfg(test)]
 mod tests {

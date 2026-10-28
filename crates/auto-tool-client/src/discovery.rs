@@ -310,27 +310,12 @@ fn workspace_root(spec: &DiscoverySpec) -> Option<PathBuf> {
 
 /// 缺 UI 能力负控辅助：对已发现工具请求表外操作应由宿主 `UnknownOperation`
 /// 拒绝且零副作用（M815-A 窄工具无 generate/build/run）。
-pub fn assert_no_ui_fallback_error(err: &DiscoveryError) -> bool {
-    matches!(err, DiscoveryError::CapabilityMissing { .. })
-}
 
 /// 版本错负控辅助。
-pub fn assert_version_error(err: &DiscoveryError) -> bool {
-    matches!(err, DiscoveryError::VersionMismatch { .. })
-}
 
 /// 缺件负控辅助。
-pub fn assert_missing_tool(err: &DiscoveryError) -> bool {
-    matches!(
-        err,
-        DiscoveryError::NotFound { .. } | DiscoveryError::EnvPathMissing { .. }
-    )
-}
 
 /// 收尾失败负控辅助（R1-01）。
-pub fn assert_teardown_failed(err: &DiscoveryError) -> bool {
-    matches!(err, DiscoveryError::TeardownFailed { .. })
-}
 
 // 编译期钉住 ErrorKind 路径可被 discovery 消费方引用（版本/能力拒绝语义）。
 #[allow(dead_code)]
