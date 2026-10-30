@@ -513,7 +513,7 @@ fn scan_auto_dir(t: &Target, dir: &Path, files: &mut Vec<AutoStr>) {
 
 /// Plan 328: Generate Axum HTTP server code from #[api] endpoints.
 fn generate_api_server(t: &Target) -> Result<(), String> {
-    use auto_lang_core::api::targets::AxumGenerator;
+    use auto_web::api::AxumGenerator;
     use auto_lang_core::api::targets::TauriGenerator;
     use auto_lang_core::api::ApiExtractor;
     use auto_lang_core::api::ApiModule; // Plan 328 IPC

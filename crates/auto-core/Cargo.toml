@@ -14,7 +14,12 @@ path = "../auto/src/main.rs"
 name = "plan816_cli_driver"
 path = "../auto/tests/plan816_cli_driver.rs"
 
+[[test]]
+name = "plan890_web_consumers"
+path = "../auto/tests/plan890_web_consumers.rs"
+
 [dependencies]
+auto-web = { version = "=0.1.0", path = "../../../auto-web/crates/auto-web" }
 clap = { workspace = true }
 auto-lang-core = { path = "../../../auto-lang/crates/auto-lang-core" }
 auto-val = { path = "../../../auto-lang/crates/auto-val" }

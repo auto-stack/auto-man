@@ -12,6 +12,7 @@ default-run = "auto"
 # auto-lang 兼容大包与 auto-man compat 门面退出本 crate 闭包。
 
 [dependencies]
+auto-web = { version = "=0.1.0", path = "../../../auto-web/crates/auto-web" }
 clap = { workspace = true }
 auto-lang-core = { path = "../../../auto-lang/crates/auto-lang-core" }
 # PLAN-036 T-03（D4）：编译壳装配点——cmd_autodesk --autodesk-shell 缺省编译轨

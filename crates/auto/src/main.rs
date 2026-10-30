@@ -1007,6 +1007,7 @@ fn install_ui_host_capabilities() {
 }
 
 fn real_main(cli: Cli) -> Result<()> {
+    auto_web::install_http_service_host_if_absent();
     // PLAN-816 T-05：UI 宿主装配先行（ui-extra 形态；见函数注记）。
     #[cfg(feature = "ui-extra")]
     install_ui_host_capabilities();

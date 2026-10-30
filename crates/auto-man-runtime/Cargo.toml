@@ -14,6 +14,7 @@ edition = "2021"
 # 类型单源在本包，compat 纯 re-export。
 
 [dependencies]
+auto-web = { version = "=0.1.0", path = "../../../auto-web/crates/auto-web" }
 # 语言 adapter（814 M814-A：纯 SDK——parse/compile/VM/trans/config）
 auto-lang-core = { path = "../../../auto-lang/crates/auto-lang-core" }
 auto-project-model = { path = "../../../auto-lang/crates/auto-project-model" }

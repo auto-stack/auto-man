@@ -13,6 +13,8 @@ use crate::AutoResult;
 /// 原样打印。执行体与外层 `auto_lang::run_with_path` 同构：
 /// `execute_autovm_with_path` + 32MB 栈。
 pub fn run_language_file(path: &str) -> AutoResult<String> {
+    auto_web::install_http_service_host_if_absent();
+    let launch = auto_lang_core::vm::host_capabilities::http_service::current_http_service_launch();
     // 旧入口每次覆盖前值，同进程串行运行不残留（PLAN-816 T-03 R2-02）。
     auto_lang_core::set_script_args(Vec::new());
     let code =
@@ -22,17 +24,22 @@ pub fn run_language_file(path: &str) -> AutoResult<String> {
         .stack_size(32 * 1024 * 1024)
         .name("auto-run-language-file".into())
         .spawn(move || -> Result<String, String> {
-            auto_lang_core::block_on_autovm_local(async {
-                auto_lang_core::execute_autovm_with_path(&code, true, Some(&path_owned))
-                    .await
-                    .map(|(r, stdout, _, _)| {
-                        if !stdout.is_empty() {
-                            println!("{stdout}");
-                        }
-                        r
-                    })
-                    .map_err(|e| e.to_string())
-            })
+            auto_lang_core::block_on_autovm_local(
+                auto_lang_core::vm::host_capabilities::http_service::with_http_service_launch_async(
+                    launch,
+                    async {
+                        auto_lang_core::execute_autovm_with_path(&code, true, Some(&path_owned))
+                            .await
+                            .map(|(r, stdout, _, _)| {
+                                if !stdout.is_empty() {
+                                    println!("{stdout}");
+                                }
+                                r
+                            })
+                            .map_err(|e| e.to_string())
+                    },
+                ),
+            )
         })
         .map_err(|e| format!("Failed to spawn language thread: {e}"))?;
     match handle.join() {
