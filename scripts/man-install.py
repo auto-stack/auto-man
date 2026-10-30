@@ -34,6 +34,7 @@ ROOT_INPUTS = [
     "stdlib/auto/image.vm.at",
     "docs/schema/aura.at",
 ]
+ROOT_INPUT_DIRS = ['stdlib/auto']
 SCRUB = {
     "AUTO_LANG_ROOT", "AUTO_MAN_ROOT", "AUTO_UI_ROOT", "AUTO_DOWN_ROOT",
     "AUTO_UI_TOOL_BIN", "AUTO_RUST_WORKSPACE", "AUTO_LANG_CRATE",
@@ -198,6 +199,8 @@ def stage_sources(stage: Path, profile: str) -> dict:
     for manifest in sdk.glob("crates/*/Cargo.toml"):
         projection_edits.extend(project_missing_optional(manifest, installed))
 
+    for rel in ROOT_INPUT_DIRS:
+        clean_tree(LANG / rel, sdk / rel)
     for rel in ROOT_INPUTS:
         target = sdk / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -237,7 +240,7 @@ def stage_sources(stage: Path, profile: str) -> dict:
         shutil.copy2(license_root / "LICENSE", target / "LICENSE")
     return {"sdk_layout": "combined-crates", "packages": packages,
             "projection_edits": projection_edits, "shared_targets": shared_targets,
-            "root_inputs": ROOT_INPUTS + ["vendor/autodown-test-parser", "crates/autoui-skill"]}
+            "root_inputs": ROOT_INPUTS + ROOT_INPUT_DIRS + ["vendor/autodown-test-parser", "crates/autoui-skill"]}
 
 
 def manifest_files(root: Path) -> dict[str, dict]:
