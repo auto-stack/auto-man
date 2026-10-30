@@ -25,6 +25,7 @@ GROUP = MAN.parent
 LANG = GROUP / "auto-lang"
 UI = GROUP / "auto-ui"
 DOWN = GROUP / "auto-down"
+WEB = GROUP / "auto-web"
 MANIFEST = "install-manifest.json"
 ROOT_INPUTS = [
     "stdlib/assembly-providers.json",
@@ -37,7 +38,7 @@ SCRUB = {
     "AUTO_LANG_ROOT", "AUTO_MAN_ROOT", "AUTO_UI_ROOT", "AUTO_DOWN_ROOT",
     "AUTO_UI_TOOL_BIN", "AUTO_RUST_WORKSPACE", "AUTO_LANG_CRATE",
     "AUTO_DELIVERY_SOURCE_ROOT", "AUTO_UI_SOURCE_ROOT", "CARGO_TARGET_DIR",
-    "RUSTC_WRAPPER",
+    "RUSTC_WRAPPER", "AUTO_WEB_ROOT",
 }
 
 
@@ -66,7 +67,12 @@ def sha256(path: Path) -> str:
 
 def clean_tree(src: Path, dst: Path) -> None:
     def ignore(_dir, names):
-        return {name for name in names if name in {".git", "target", "__pycache__"}}
+        skipped = {name for name in names if name in {".git", "target", "__pycache__", "node_modules"}}
+        for name in set(names) - skipped:
+            path = Path(_dir) / name
+            if path.is_symlink() or path.is_junction():
+                raise RuntimeError(f'linked source input is forbidden: {path}')
+        return skipped
     shutil.copytree(src, dst, ignore=ignore)
 
 
@@ -101,7 +107,7 @@ def metadata_package_dirs(profile: str) -> set[Path]:
 
 
 def repo_for(path: Path) -> tuple[str, Path]:
-    for name, root in (("auto-man", MAN), ("auto-lang", LANG), ("auto-ui", UI), ("auto-down", DOWN)):
+    for name, root in (("auto-man", MAN), ("auto-lang", LANG), ("auto-ui", UI), ("auto-down", DOWN), ("auto-web", WEB)):
         try:
             path.relative_to(root)
             return name, root
@@ -114,6 +120,7 @@ def rewrite_manifest(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     text = text.replace("../../../auto-lang/crates/", "../")
     text = text.replace("../../../auto-ui/crates/", "../")
+    text = text.replace("../../../auto-web/crates/", "../")
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
@@ -178,9 +185,16 @@ def stage_sources(stage: Path, profile: str) -> dict:
         shutil.copy2(shared / "build.rs", sdk / "crates/auto/build.rs")
         test_target = sdk / "crates/auto/tests"
         test_target.mkdir(parents=True)
-        shutil.copy2(shared / "tests/plan816_cli_driver.rs", test_target / "plan816_cli_driver.rs")
-        shared_targets = ["crates/auto/src", "crates/auto/build.rs",
-                          "crates/auto/tests/plan816_cli_driver.rs"]
+        shared_targets = ["crates/auto/src", "crates/auto/build.rs"]
+        core_manifest = tomllib.load((sdk / 'crates/auto-core/Cargo.toml').open('rb'))
+        for test in core_manifest.get('test', []):
+            target = (sdk / 'crates/auto-core' / test['path']).resolve()
+            if not target.is_relative_to(sdk.resolve()):
+                raise RuntimeError('Core shared test target escapes SDK')
+            relative = target.relative_to(sdk.resolve())
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(MAN / relative, target)
+            shared_targets.append(relative.as_posix())
     for manifest in sdk.glob("crates/*/Cargo.toml"):
         projection_edits.extend(project_missing_optional(manifest, installed))
 
@@ -189,10 +203,12 @@ def stage_sources(stage: Path, profile: str) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(LANG / rel, target)
     clean_tree(LANG / "vendor/autodown-test-parser", sdk / "vendor/autodown-test-parser")
-    clean_tree(LANG / "crates/autoui-skill", sdk / "crates/autoui-skill")
+    clean_tree(MAN / "crates/autoui-skill", sdk / "crates/autoui-skill")
     lock = MAN / "core/Cargo.lock" if profile == "core" else MAN / "Cargo.lock"
     shutil.copy2(lock, sdk / "Cargo.lock")
     workspace = (MAN / "Cargo.toml").read_text(encoding="utf-8")
+    # Web packages inherit these fixed package fields; Man's workspace did not
+    # previously need them. They describe the Web producer, not the CLI version.
     members_start = workspace.index("members = [")
     members_end = workspace.index("]\ndefault-members", members_start) + 1
     member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down"}))
@@ -204,15 +220,18 @@ def stage_sources(stage: Path, profile: str) -> dict:
     if profile == "core":
         workspace = workspace.replace('exclude = ["crates/auto-core"]\n', "")
         workspace = workspace.split("[patch.crates-io]", 1)[0].rstrip() + "\n"
+    workspace += '\n[workspace.package]\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\n'
     (sdk / "Cargo.toml").write_text(workspace, encoding="utf-8", newline="\n")
     run(["cargo", "generate-lockfile"], sdk)
     if profile == "full":
         clean_tree(DOWN, sdk / "auto-down")
         for rel in ("packages/blueprints", "packages/widgets"):
             clean_tree(LANG / rel, sdk / rel)
-    license_repos = ("auto-lang", "auto-man") if profile == "core" else ("auto-lang", "auto-man", "auto-ui")
+    license_repos = ["auto-lang", "auto-man"] if profile == "core" else ["auto-lang", "auto-man", "auto-ui"]
+    if any(p['source_repo'] == 'auto-web' for p in packages):
+        license_repos.append('auto-web')
     for repo in license_repos:
-        license_root = {"auto-lang": LANG, "auto-man": MAN, "auto-ui": UI}[repo]
+        license_root = {"auto-lang": LANG, "auto-man": MAN, "auto-ui": UI, "auto-web": WEB}[repo]
         target = stage / "licenses" / repo
         target.mkdir(parents=True, exist_ok=True)
         shutil.copy2(license_root / "LICENSE", target / "LICENSE")
@@ -223,8 +242,16 @@ def stage_sources(stage: Path, profile: str) -> dict:
 
 def manifest_files(root: Path) -> dict[str, dict]:
     files = {}
-    for path in sorted(root.rglob("*"), key=lambda p: p.as_posix()):
-        if path.is_file() and path.name != MANIFEST:
+    for directory, names, filenames in os.walk(root, followlinks=False):
+        names[:] = sorted(name for name in names if name not in {'target', '.git', 'node_modules', '__pycache__'})
+        for name in (*names, *filenames):
+            path = Path(directory) / name
+            if path.is_symlink() or path.is_junction():
+                raise RuntimeError(f'linked install input is forbidden: {path}')
+        for name in sorted(filenames):
+            path = Path(directory) / name
+            if path == root / MANIFEST:
+                continue
             files[path.relative_to(root).as_posix()] = {
                 "bytes": path.stat().st_size,
                 "sha256": sha256(path),
@@ -262,12 +289,24 @@ def verify(root: Path, expected_profile: str | None = None) -> dict:
                          "sdk/crates/auto/src/main.rs", "sdk/crates/auto/build.rs"):
             if required not in actual:
                 raise RuntimeError(f"Core required input missing: {required}")
-        if set(doc["sources"]) != {"auto-man", "auto-lang"}:
-            raise RuntimeError(f"Core source identity must contain only Man/lang: {doc['sources']}")
+        owners = {"auto-man", "auto-lang"}
+        if any(p.startswith('sdk/crates/auto-web/') for p in actual):
+            owners.add('auto-web')
+            if 'licenses/auto-web/LICENSE' not in actual:
+                raise RuntimeError('Web source license missing')
+        if set(doc["sources"]) != owners:
+            raise RuntimeError(f"Core source identity differs from actual owners {owners}: {doc['sources']}")
     else:
         for required in (exe("auto"), exe("auto-ui-tool"), "sdk/crates/auto-ui-tools/Cargo.toml"):
             if required not in actual:
                 raise RuntimeError(f"full profile required input missing: {required}")
+        owners = {'auto-man', 'auto-lang', 'auto-ui', 'auto-down'}
+        if 'sdk/crates/auto-web/Cargo.toml' in actual:
+            owners.add('auto-web')
+            if 'licenses/auto-web/LICENSE' not in actual:
+                raise RuntimeError('Web source license missing')
+        if set(doc['sources']) != owners:
+            raise RuntimeError(f'full source identity differs from actual owners {owners}')
     return {"profile": profile, "files": len(actual), "sources": doc["sources"]}
 
 
@@ -320,34 +359,20 @@ def recover_stale_staging(root: Path) -> None:
 
 
 def install(profile: str, install_root: Path, fail_point: str | None, skip_build: bool) -> dict:
-    root = install_root.resolve()
-    root.parent.mkdir(parents=True, exist_ok=True)
-    if root.exists() and any(root.iterdir()):
-        if not (root / MANIFEST).is_file():
-            raise RuntimeError(f"refusing non-empty unmanaged install root: {root}")
-        # Never treat an unknown or damaged receipt as authorization to replace
-        # a prior installation. Validate before build, staging or recovery.
-        verify(root)
-    recover_stale_staging(root)
-    if not skip_build:
-        if profile == "core":
-            run(["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
-                 "-p", "auto", "--no-default-features", "--features", "core"], MAN)
-        else:
-            run(["cargo", "build", "--locked", "-p", "auto"], MAN)
-            run(["cargo", "build", "--locked", "-p", "auto-ui-tools"], UI)
-    sources = {"auto-man": head(MAN), "auto-lang": head(LANG)}
-    if profile == "full":
-        sources.update({"auto-ui": head(UI), "auto-down": head(DOWN)})
-    stage = unique_sibling(root, "staging")
-    backup = None
-    try:
-        stage.mkdir()
-        (stage / ".man-staging.marker").write_text(
-            json.dumps({"schema": "man-staging/1", "pid": os.getpid()}) + "\n", encoding="utf-8")
-        if fail_point == "prepare":
-            raise RuntimeError("injected prepare failure")
+    def prepare(stage):
+        if not skip_build:
+            if profile == "core":
+                run(["cargo", "build", "--locked", "--manifest-path", "core/Cargo.toml",
+                     "-p", "auto", "--no-default-features", "--features", "core"], MAN)
+            else:
+                run(["cargo", "build", "--locked", "-p", "auto"], MAN)
+                run(["cargo", "build", "--locked", "-p", "auto-ui-tools"], UI)
+        sources = {"auto-man": head(MAN), "auto-lang": head(LANG)}
+        if profile == "full":
+            sources.update({"auto-ui": head(UI), "auto-down": head(DOWN)})
         source_receipt = stage_sources(stage, profile)
+        if any(p['source_repo'] == 'auto-web' for p in source_receipt['packages']):
+            sources['auto-web'] = head(WEB)
         binary_root = MAN / "core/target/debug" if profile == "core" else MAN / "target/debug"
         shutil.copy2(binary_root / exe("auto"), stage / exe("auto"))
         if profile == "full":
@@ -358,7 +383,34 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
             "files": manifest_files(stage),
         }
         (stage / MANIFEST).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        verify(stage, profile)
+    return install_payload(install_root, prepare, lambda path: verify(path, profile), fail_point,
+                           verify_existing=verify)
+
+
+def install_payload(install_root: Path, prepare, verify_payload, fail_point=None, *, verify_existing=None) -> dict:
+    """Man-owned admission/staging/swap/recovery, also consumed by Web's tool artifact.
+
+    Callbacks supply the domain payload and its strict receipt validation; the
+    transaction and live/unknown staging-owner policy have exactly one source.
+    """
+    root = install_root.resolve()
+    root.parent.mkdir(parents=True, exist_ok=True)
+    if root.exists() and any(root.iterdir()):
+        if not (root / MANIFEST).is_file():
+            raise RuntimeError(f"refusing non-empty unmanaged install root: {root}")
+        (verify_existing or verify_payload)(root)
+    recover_stale_staging(root)
+    stage = unique_sibling(root, "staging")
+    backup = None
+    swapped = False
+    try:
+        stage.mkdir()
+        (stage / ".man-staging.marker").write_text(
+            json.dumps({"schema": "man-staging/1", "pid": os.getpid()}) + "\n", encoding="utf-8")
+        if fail_point == "prepare":
+            raise RuntimeError("injected prepare failure")
+        prepare(stage)
+        verify_payload(stage)
         if fail_point == "verify":
             raise RuntimeError("injected verify failure")
         if root.exists():
@@ -368,11 +420,17 @@ def install(profile: str, install_root: Path, fail_point: str | None, skip_build
         if fail_point == "swap":
             raise RuntimeError("injected swap failure")
         os.replace(stage, root)
-        result = verify(root, profile)
+        swapped = True
+        result = verify_payload(root)
         result.update({"install_root": str(root), "backup_root": str(backup) if backup else None,
                        "manifest": str(root / MANIFEST)})
         return result
     except Exception:
+        # A post-swap failure must also restore the old usable installation.
+        # Preserve the failed new payload for diagnosis, rather than deleting it.
+        if swapped and root.exists():
+            failed = unique_sibling(root, "failed")
+            os.replace(root, failed)
         if backup and backup.exists() and not root.exists():
             (backup / ".man-backup.marker").unlink(missing_ok=True)
             os.replace(backup, root)
