@@ -450,14 +450,11 @@ rule lib
 
         // run ninja to build
         let host = super::runner::resolve_ninja_host()?;
-        let mut child = std::process::Command::new(&host.program)
-            .args(["-C", build_path.to_astr().as_str()])
-            .spawn()
-            .map_err(|e| format!("failed to spawn {}: {}", host.program, e))?;
-
-        let status = child
-            .wait()
-            .map_err(|e| format!("failed to wait for {}: {}", host.program, e))?;
+        let status = crate::builder::run_build_command(
+            [host.program.as_str(), "-C", build_path.to_astr().as_str()],
+            None,
+        )
+        .map_err(|e| format!("failed to execute {}: {}", host.program, e))?;
 
         println!("ninja build finished with status: {}", status);
 

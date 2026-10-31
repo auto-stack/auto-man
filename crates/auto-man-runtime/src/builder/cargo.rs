@@ -109,10 +109,7 @@ impl Builder for CargoBuilder {
         }
 
         let dir = self.path.parent();
-        let status = std::process::Command::new("cargo")
-            .arg("build")
-            .current_dir(dir.path())
-            .status()?;
+        let status = super::run_build_command(["cargo", "build"], Some(dir.path()))?;
 
         if !status.success() {
             return Err(format!("Cargo build failed with status: {}", status).into());

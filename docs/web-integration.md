@@ -25,6 +25,13 @@ frozen minima, resource groups and conditions. The language four-owner gate bind
 source/lock/resource/tool identity and actual selected/passed IDs, including
 consumer execution; list-only or internally consistent omissions cannot certify it.
 
+Cargo/Ninja build execution preserves its argv, working directory, inherited
+environment/console streams and original exit status. On Windows it owns the
+compiler Job and explicitly terminates remaining owned auxiliaries after the
+build root exits; cleanup errors propagate. Other platforms retain their
+foreground process group and terminal signal behavior. Workload descendants
+are never admitted through the compiler-preparation exception.
+
 Reviewed implementation cohort: language29cf44480, Webe01232b, UI9aad12c,
 Man cb4ab3d, Downc3464d0. Rebased/docs descendant mappings and the actual final
 landed cohort, real frozen gates and recovery/guard status live in

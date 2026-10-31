@@ -12,6 +12,58 @@ use crate::{Pac, Target};
 use auto_val::{AutoPath, AutoStr};
 use std::collections::HashMap;
 
+/// Build tools inherit the caller's console and environment. On Windows their
+/// compiler descendants (including MSVC auxiliaries) belong to the same owned
+/// Job and are closed after the original root status has been collected. Unix
+/// keeps the original foreground process group / Ctrl+C behavior.
+fn run_build_command<I, S>(
+    argv: I,
+    cwd: Option<&std::path::Path>,
+) -> std::io::Result<std::process::ExitStatus>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<std::ffi::OsString>,
+{
+    use auto_tool_execution::{ExecutionSpec, StdioPolicy};
+    let mut spec = ExecutionSpec::new(argv);
+    spec.cwd = cwd.map(std::path::Path::to_path_buf);
+    spec.stdin = StdioPolicy::Inherit;
+    spec.stdout = StdioPolicy::Inherit;
+    spec.stderr = StdioPolicy::Inherit;
+    #[cfg(windows)]
+    {
+        spec.tree_scope = auto_tool_execution::TreeScope::ProcessTree;
+    }
+    let mut child = auto_tool_execution::spawn(&spec).map_err(|error| match error {
+        auto_tool_execution::ExecutionError::Spawn { source, .. } => source,
+        other => std::io::Error::other(other.to_string()),
+    })?;
+    let status = child.wait()?;
+    #[cfg(windows)]
+    child.terminate()?;
+    Ok(status)
+}
+
+#[cfg(test)]
+mod build_command_tests {
+    #[test]
+    fn build_command_preserves_nonzero_exit_status() {
+        #[cfg(windows)]
+        let argv = vec!["cmd", "/C", "exit", "23"];
+        #[cfg(not(windows))]
+        let argv = vec!["sh", "-c", "exit 23"];
+        let status = super::run_build_command(argv, None).unwrap();
+        assert_eq!(status.code(), Some(23));
+        assert!(!status.success());
+    }
+
+    #[test]
+    fn build_command_preserves_missing_program_error() {
+        let error = super::run_build_command(["__plan890_missing_compiler__"], None).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+}
+
 pub trait Builder {
     fn build(&mut self, pac: &mut Pac) -> AutoResult<()>;
     fn setup(&mut self, pac: &mut Pac) -> AutoResult<()>;
