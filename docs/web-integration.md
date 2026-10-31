@@ -39,3 +39,7 @@ landed cohort, real frozen gates and recovery/guard status live in
 Original SDK217/two ignored, historical45 distribution and14Core recovery proofs
 retain their original source bounds; a current aggregate requires actual T-12 proof.
 No remote publication or new management/CLI API is implied.
+
+## 最终交付记录（2026-10-31）
+
+r7冻结四仓门与发行已通过，实际合入、主干rebase及用户免追加测试范围，统一见语言仓 `docs/plans/archive/890-auto-web-independent-repository-delivery.md`。历史producer pins只标识实际执行来源，不冒称后续主干更新已重测。
