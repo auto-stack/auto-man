@@ -9,7 +9,10 @@ edition = "2021"
 test-http-e2e = ["auto-api-gen/test-http-e2e"]
 
 [dependencies]
-auto-lang = { path = "../../../auto-lang/crates/auto-lang", features = ["ui-iced"] }
+# PLAN-900：facade default=[] 零 UI——本 crate 仅消费 auto_lang::config 纯语言面
+#（UI 能力经 auto-ui 直连：cmd_ui/cmd_watch 用 auto_ui_compiler，host 装配
+# 经 auto_ui_runtime::install_ui_host_capabilities）。
+auto-lang = { path = "../../../auto-lang/crates/auto-lang", default-features = false }
 # PLAN-780: light static project-model (probe adapter only — no
 # production read path consumes it yet; see src/project_model_adapter.rs)
 auto-project-model = { path = "../../../auto-lang/crates/auto-project-model" }
