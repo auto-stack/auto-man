@@ -179,3 +179,7 @@ If you encounter issues:
 3. Check dependency versions and compatibility
 4. Verify device support for your target hardware
 
+
+## Web consumer and transaction owner
+
+[PLAN-890 integration](web-integration.md) links the canonical Web domain and central actual delivery receipt. Man remains the generic installer/CLI/process owner.
