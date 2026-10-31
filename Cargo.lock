@@ -618,6 +618,7 @@ dependencies = [
 name = "auto-cache"
 version = "0.1.0"
 dependencies = [
+ "auto-tool-execution",
  "bincode",
  "blake3",
  "chrono",
