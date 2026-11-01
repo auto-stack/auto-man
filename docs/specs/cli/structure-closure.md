@@ -10,7 +10,7 @@
 
 | 模块 | 职责 |
 |---|---|
-| `main.rs`（~950行） | `main`/`real_main` 纯分派 + 既有小命令臂 + 2个CLI解析测试mod |
+| `main.rs`（1050行） | `main`/`real_main` 纯分派 + 既有小命令臂 + 2个CLI解析测试mod |
 | `cli_spec.rs` | clap面（Cli/Commands/子枚举）、FULL_VERSION、println_logo/init_logger——只声明不编排 |
 | `diag.rs` | to_miette_err/format_error_json/format_success_json/output_success——机器诊断唯一格式化来源 |
 | `cmd_build.rs` | build编排（strict穿进程登记、端口解析注入、scan/build） |
@@ -21,7 +21,7 @@
 | `cmd_req.rs` | serve（前台/stdio/detach经auto_tool_execution）/req 编排 |
 | `cmd_wizard.rs` | wizard脚手架（模板include_str路径随迁） |
 
-既有10模块（cmd_service/cmd_ui/cmd_watch/cmd_docs/cmd_a2c_stdlib/cmd_stdlib/
+既有9模块（cmd_service/cmd_ui/cmd_watch/cmd_docs/cmd_a2c_stdlib/cmd_stdlib/
 cmd_bp/cmd_autodesk/tool_ui_ops）职责不变，复用不重造。
 
 ## 2. owner与不变量
