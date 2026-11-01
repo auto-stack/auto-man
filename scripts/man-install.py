@@ -165,6 +165,14 @@ def stage_sources(stage: Path, profile: str) -> dict:
             packages.append({"name": source.name, "source_repo": repo,
                              "source_path": rel.as_posix(), "installed_path": f"auto-down/{rel.as_posix()}"})
             continue
+        if rel.parts[0] == "vendor":
+            # PLAN-901 vendored snapshot crates (standalone [workspace], no
+            # cross-repo deps) enter the metadata graph via auto-test-case;
+            # the tree is staged wholesale below — record the mapping and
+            # skip the crate projection (D-906-1 root cause on this leg).
+            packages.append({"name": source.name, "source_repo": repo,
+                             "source_path": rel.as_posix(), "installed_path": rel.as_posix()})
+            continue
         if rel.parts[0] != "crates":
             raise RuntimeError(f"non-crate package input requires explicit mapping: {source}")
         target = sdk / rel
@@ -214,14 +222,25 @@ def stage_sources(stage: Path, profile: str) -> dict:
     # previously need them. They describe the Web producer, not the CLI version.
     members_start = workspace.index("members = [")
     members_end = workspace.index("]\ndefault-members", members_start) + 1
-    member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down"}))
+    # Vendored snapshot crates are standalone workspace roots reached by path
+    # dependency: never members, always excluded (as the language root does).
+    vendored = sorted({p["installed_path"] for p in packages if p["installed_path"].startswith("vendor/")})
+    vendor_list = ", ".join(f'"{path}"' for path in vendored)
+    member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down" and not p["installed_path"].startswith("vendor/")}))
     workspace = workspace[:members_start] + f"members = [{member_list}]" + workspace[members_end:]
+    if vendored:
+        if 'exclude = ["crates/auto-core"]' in workspace:
+            workspace = workspace.replace('exclude = ["crates/auto-core"]', f'exclude = ["crates/auto-core", {vendor_list}]', 1)
+        else:
+            workspace = workspace.replace(f"members = [{member_list}]", f"members = [{member_list}]\nexclude = [{vendor_list}]", 1)
     default_member = "crates/auto-core" if profile == "core" else "crates/auto"
     workspace = workspace.replace('default-members = ["crates/auto"]',
                                   f'default-members = ["{default_member}"]')
     workspace = workspace.replace("../auto-lang/crates/patches/", "crates/patches/")
     if profile == "core":
         workspace = workspace.replace('exclude = ["crates/auto-core"]\n', "")
+        if vendored:
+            workspace = workspace.replace(f'exclude = ["crates/auto-core", {vendor_list}]\n', f'exclude = [{vendor_list}]\n', 1)
         workspace = workspace.split("[patch.crates-io]", 1)[0].rstrip() + "\n"
     workspace += '\n[workspace.package]\nversion = "0.1.0"\nedition = "2021"\nlicense = "MIT"\n'
     (sdk / "Cargo.toml").write_text(workspace, encoding="utf-8", newline="\n")
