@@ -208,6 +208,13 @@ fn serve_rust(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, Stri
     build_context
         .write_context_file()
         .map_err(|e| format!("generated build context 记录失败: {e}"))?;
+    // PLAN-910：服务运行期间持有 target 根 lease（清理器拒绝活 pid 持有的根；
+    // 服务退出/被杀 → lease 释放或留 dead-pid 过期件，清理器报告并忽略）。
+    let _target_lease = auto_web::rust_workspace::generated_build::TargetLease::acquire(
+        &build_context.target_root,
+        "serve_rust",
+    )
+    .map_err(|e| format!("target lease 获取失败: {e}"))?;
     let cargo_toml = backend_dir.join("Cargo.toml");
     if !cargo_toml.exists() {
         return Err(format!(
