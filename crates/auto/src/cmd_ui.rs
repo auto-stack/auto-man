@@ -15,7 +15,7 @@ use std::path::Path;
 use auto_ui_compiler::ui_gen::{VueGenerator, WidgetCategory, WidgetRegistry};
 use miette::Result;
 
-use crate::UiAction;
+use crate::cli_spec::UiAction;
 
 /// PascalCase a kebab/lower widget key (`button` -> `Button`).
 fn pascal_case(name: &str) -> String {

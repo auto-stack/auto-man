@@ -18,7 +18,7 @@ use auto_ui_compiler::ui_gen::bp::{BlueprintPackage, BlueprintRegistry};
 use auto_ui_compiler::ui_gen::WidgetRegistry;
 use miette::{miette, Result};
 
-use crate::{BpAction, OutputFormat};
+use crate::cli_spec::{BpAction, OutputFormat};
 
 /// Entry point dispatched from main. `format` is the global `--format` flag
 /// (it also carries diagnostics semantics on other subcommands — `bp list`
