@@ -66,7 +66,7 @@ ui-extra = [
     "dep:shell-pack",
 ]
 python = ["auto-lang-core/python"]
-with-file-history = ["auto-lang-core/with-file-history"]
+# with-file-history alias removed (fix-cli-stale-feat): auto-lang-core dropped the dead feature (auto-lang PLAN-901); the stale alias blocked dependency resolution outright.
 autodown = ["ui-extra", "auto-ui-runtime/autodown"]
 
 # PLAN-617 T-19/T-20: `video` 元素的 VM 原生命中播放面（libmpv DLL 运行时加载）。
