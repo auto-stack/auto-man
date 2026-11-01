@@ -13,6 +13,10 @@ edition = "2021"
 # M814-B 门残留（vue_run_compat/rust_ui_vm_compat），Pac/Target/Automan
 # 类型单源在本包，compat 纯 re-export。
 
+[features]
+# PLAN-906：auto-man 的 test-http-e2e 经此转到 auto-web（Web e2e 矩阵 owner）。
+test-http-e2e = ["auto-web/test-http-e2e"]
+
 [dependencies]
 auto-web = { version = "=0.1.0", path = "../../../auto-web/crates/auto-web" }
 # 语言 adapter（814 M814-A：纯 SDK——parse/compile/VM/trans/config）

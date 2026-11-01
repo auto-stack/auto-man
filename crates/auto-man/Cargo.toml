@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# PLAN-729 T-06: 生成文件 handler 的实编 wire e2e（串行真 TCP；与 auto-lang
-# 同名 feature 同语义）。
-test-http-e2e = ["auto-api-gen/test-http-e2e"]
+# PLAN-729 T-06: 生成文件 handler 的实编 wire e2e（串行真 TCP）。
+# PLAN-906：auto-api-gen 退役 auto-web 依赖与同名 feature 转发——改经
+# auto-man-runtime 转到真实 owner auto-web/test-http-e2e（语义不变）。
+test-http-e2e = ["auto-man-runtime/test-http-e2e"]
 
 [dependencies]
 # PLAN-900：facade default=[] 零 UI——本 crate 仅消费 auto_lang::config 纯语言面
