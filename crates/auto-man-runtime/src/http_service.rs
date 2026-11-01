@@ -74,22 +74,6 @@ pub fn serve_project(
     }
 }
 
-/// 以项目目录为锚解析 rust workspace 落点（resolve 序的 CWD 无关镜像）：
-/// 项目在框架仓内（向上找到含 crates/auto-lang 的仓根）→ 共享
-/// `<repo>/examples/rust-workspace`；仓外项目 → `<project>/rust-workspace`。
-fn resolve_workspace_anchored(project_dir: &Path) -> PathBuf {
-    let mut dir = project_dir.to_path_buf();
-    for _ in 0..10 {
-        if dir.join("crates").join("auto-lang").exists() {
-            return dir.join("examples").join("rust-workspace");
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    project_dir.join("rust-workspace")
-}
-
 // ============================================================================
 // VM 轨：进程内 VM 网络服务
 // ============================================================================
@@ -196,24 +180,34 @@ fn serve_vm(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
 // ============================================================================
 
 fn serve_rust(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String> {
-    // workspace 落点以**项目目录**为锚（CWD 无关）：get_rust_workspace_dir
-    // 从进程 CWD 走锚点是 legacy 语义，`auto service` 可从任意目录启动。
-    // 走 env 档（resolve 序第一档，设置即权威）让 ensure/generate/cargo run
-    // 三方一致。
-    if std::env::var_os("AUTO_RUST_WORKSPACE").is_none() {
-        let anchored = resolve_workspace_anchored(project_dir);
-        std::env::set_var("AUTO_RUST_WORKSPACE", &anchored);
-    }
-    // 共享 workspace 根重写（成员表+相对路径锚点按实际落点重算；serve 面无
+    // PLAN-910：workspace 落点由共享单源 `resolve_rust_workspace_dir` 以
+    // **项目目录**为锚解析（CWD 无关）——本处原有的重复推断器与
+    // AUTO_RUST_WORKSPACE 强制设置已退役，ensure/generate/cargo run 三方
+    // 天然一致。
+    // 共享 workspace 根确保（成员表+相对路径锚点按实际落点重算；serve 面无
     // generate_rust_ui 前置，必须自行 ensure——陈旧根的坏 path dep 会毒化
-    // 整个 workspace 的 cargo 解析）。
+    // 整个 workspace 的 cargo 解析；写前比较，未变不重写）。
     let ws_dir = auto_web::rust_workspace::try_ensure_shared_workspace(project_dir)
         .map_err(|e| format!("shared workspace producer 预检失败: {e}"))?;
     // 真实生成链（734 strict 门；失败=Err 硬传播，不落旧产物）。
     auto_web::generate_api(project_dir, "rust")
         .map_err(|e| format!("Failed to generate Rust backend: {e}"))?;
-    let back_name = auto_web::rust_workspace::back_member_name(project_dir);
+    let back_name = auto_web::rust_workspace::generated_build::member_dir_name(
+        project_dir,
+        auto_web::rust_workspace::generated_build::MemberRole::Back,
+    );
     let backend_dir = ws_dir.join(&back_name);
+    // PLAN-910：受管生成构建上下文——target 根 + flags 经 env 钉住，与 UI
+    // 构建路径同源（同 producer 兼容工程共用受管缓存根，另一 worktree 隔离）。
+    let build_context = auto_web::rust_workspace::generated_build::GeneratedBuildContext::resolve(
+        project_dir,
+        &ws_dir,
+        auto_web::rust_workspace::WorkspaceRequirements::Service,
+    )
+    .map_err(|e| format!("generated build context 解析失败: {e}"))?;
+    build_context
+        .write_context_file()
+        .map_err(|e| format!("generated build context 记录失败: {e}"))?;
     let cargo_toml = backend_dir.join("Cargo.toml");
     if !cargo_toml.exists() {
         return Err(format!(
@@ -248,6 +242,9 @@ fn serve_rust(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, Stri
     ]);
     spec.cwd = Some(ws_dir.clone());
     spec.env = vec![("AUTO_HTTP_SERVICE_JSON".into(), service_json.into())];
+    for (key, value) in build_context.cargo_env() {
+        spec.env.push((key.into(), value.into()));
+    }
     spec.stdin = auto_tool_execution::StdioPolicy::Null;
     spec.stdout = auto_tool_execution::StdioPolicy::Piped;
     spec.stderr = auto_tool_execution::StdioPolicy::Inherit;
