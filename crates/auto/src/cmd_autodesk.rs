@@ -128,10 +128,27 @@ fn run_client_entry(args: &[String]) -> Result<(), String> {
         .ok_or("--app386=<name> 必填（孵化 App 名 = <app-root>/<name>）")?
         .clone();
 
-    // App 源装载（AUTO_386_APP_ROOT > ./examples/ui）。
+    // App 源装载（AUTO_386_APP_ROOT > ./examples/ui > 组内兄弟
+    // auto-ui/examples/ui）。PLAN-007 T-03：教学语料 owner=auto-ui。
     let root = std::env::var("AUTO_386_APP_ROOT").unwrap_or_else(|_| "examples/ui".to_string());
-    let app_dir = std::path::Path::new(&root).join(&app_name);
-    let path = app_dir.join("src/front/app.at");
+    let mut app_dir = std::path::PathBuf::from(&root).join(&app_name);
+    let mut path = app_dir.join("src/front/app.at");
+    if !path.is_file() {
+        if let Ok(cwd) = std::env::current_dir() {
+            let sibling = cwd.ancestors().find_map(|a| {
+                let c = a.join("auto-ui").join("examples").join("ui");
+                if c.join(&app_name).join("src/front/app.at").is_file() {
+                    Some(c)
+                } else {
+                    None
+                }
+            });
+            if let Some(c) = sibling {
+                app_dir = c.join(&app_name);
+                path = app_dir.join("src/front/app.at");
+            }
+        }
+    }
     let src =
         std::fs::read_to_string(&path).map_err(|e| format!("装载 {}: {e}", path.display()))?;
     let component = auto_ui_runtime::build_dynamic_component(&src, Some(&path.to_string_lossy()))

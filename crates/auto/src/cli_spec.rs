@@ -469,7 +469,7 @@ pub(crate) enum Commands {
         gallery: bool,
         #[arg(
             long,
-            help = "Plan 465: apps directory for the desktop registry (default <workspace>/examples/ui)"
+            help = "Plan 465: apps directory for the desktop registry (default <workspace>/examples/ui; corpus owner auto-ui since PLAN-007)"
         )]
         apps: Option<String>,
         #[arg(long, action = clap::ArgAction::SetTrue, help = "Plan 547: explicitly select Rust merged in-process mode (already the default for --render=rust)")]
