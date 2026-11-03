@@ -169,9 +169,10 @@ class ThemeStagingTests(unittest.TestCase):
         pkg = self.write_theme_pkg(self.root / 'c', drop='themes.at')
         with self.assertRaisesRegex(RuntimeError, 'missing'):
             installer.verify_official_theme_manifest(pkg)
-        pkg = self.write_theme_pkg(self.root / 'd', extra='sneaky.txt')
-        with self.assertRaisesRegex(RuntimeError, 'unregistered theme file'):
-            installer.verify_official_theme_manifest(pkg)
+        # 清单外文件（如源包 README）在 staging 核验中合法——快照纯度归 UI
+        # 发布原语；安装后多件由 verify() 全树对账拒绝。
+        pkg = self.write_theme_pkg(self.root / 'd', extra='README.md')
+        installer.verify_official_theme_manifest(pkg)
         pkg = self.write_theme_pkg(self.root / 'e')
         (pkg / 'theme-package.json').unlink()
         with self.assertRaisesRegex(RuntimeError, 'unreadable'):

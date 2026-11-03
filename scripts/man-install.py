@@ -59,8 +59,10 @@ def verify_official_theme_manifest(theme_dir: Path) -> dict:
     """PLAN-036：官方主题包自描述清单核验（staging 换装前具名拒绝坏包）。
 
     owner/package/version/schema 必须等于官方身份常量；files[] 逐文件存在且
-    sha256 相符；包目录内不得有清单未登记文件。任何不符 = RuntimeError
-    （install_payload 事务随后保旧回滚，旧安装字节不动）。
+    sha256 相符。源包目录可携带清单外文件（如 README.md——快照纯度是 UI
+    发布原语的契约，不在这里强加）；安装后的多件/篡改由 verify() 全树
+    hash 对账具名拒绝。任何不符 = RuntimeError（install_payload 事务随后
+    保旧回滚，旧安装字节不动）。
     """
     manifest_path = theme_dir / "theme-package.json"
     try:
@@ -81,7 +83,6 @@ def verify_official_theme_manifest(theme_dir: Path) -> dict:
     files = doc.get("files")
     if not isinstance(files, list) or not files:
         raise RuntimeError("theme manifest files[] must be a non-empty array")
-    listed = set()
     for entry in files:
         rel = str(entry.get("path", ""))
         if not rel or rel.startswith("/") or "\\" in rel or ".." in rel:
@@ -93,14 +94,8 @@ def verify_official_theme_manifest(theme_dir: Path) -> dict:
         if actual != entry.get("sha256"):
             raise RuntimeError(
                 f"theme file hash mismatch: {rel} expected {entry.get('sha256')} actual {actual}")
-        listed.add(rel)
-    for path in sorted(theme_dir.rglob("*")):
-        if path.is_file() and path.name != "theme-package.json":
-            rel = path.relative_to(theme_dir).as_posix()
-            if rel not in listed:
-                raise RuntimeError(f"unregistered theme file: {rel}")
     return {"owner": OFFICIAL_THEME_OWNER, "package": OFFICIAL_THEME_PACKAGE,
-            "version": OFFICIAL_THEME_VERSION, "files": len(listed) + 1}
+            "version": OFFICIAL_THEME_VERSION, "files": len(files) + 1}
 
 
 def run(cmd: list[str], cwd: Path, timeout: int = 7200) -> None:
