@@ -101,5 +101,100 @@ class InstallTransactionTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): self.verify(self.root)
 
 
+class ThemeStagingTests(unittest.TestCase):
+    """PLAN-036：官方主题包 staging 核验与 Core/full profile 反控（真实文件系统）。"""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.seq = 0
+
+    def write_theme_pkg(self, base, *, version='0.2.0', tamper=None, extra=None, drop=None):
+        pkg = base / 'sdk/packages/themes'
+        pkg.mkdir(parents=True)
+        bodies = {'pac.at': 'name: "themes"\nversion: "0.2.0"\n',
+                  'themes.at': 'pub theme Auto { }\npub theme Solarized { extend "Auto" { } }\n'}
+        for name, body in bodies.items():
+            (pkg / name).write_text(body)
+        entries = [{'path': name, 'sha256': installer.sha256(pkg / name)} for name in sorted(bodies)]
+        if drop:  # 清单仍登记、文件已消失 = 缺件态
+            (pkg / drop).unlink()
+        for name in (tamper or ()):  # 内容改、清单 hash 不改 = 篡改态
+            (pkg / name).write_text('tampered-content\n')
+        if extra:
+            (pkg / extra).write_text('unregistered\n')
+        manifest = {'owner': 'auto-ui', 'package': 'themes', 'version': version, 'schema': 1,
+                    'files': entries}
+        (pkg / 'theme-package.json').write_text(json.dumps(manifest))
+        return pkg
+
+    def make_install(self, profile, *, theme=True, **theme_kwargs):
+        self.seq += 1
+        root = self.root / f'inst-{profile}-theme-{int(theme)}-{self.seq}'
+        (root / 'sdk/crates/auto-core').mkdir(parents=True)
+        (root / 'sdk/crates/auto/src').mkdir(parents=True)
+        (root / 'auto.exe').write_bytes(b'')
+        (root / 'sdk/crates/auto-core/Cargo.toml').write_text('[package]\n')
+        (root / 'sdk/crates/auto/src/main.rs').write_text('fn main() {}\n')
+        (root / 'sdk/crates/auto/build.rs').write_text('fn main() {}\n')
+        if profile == 'full':
+            (root / 'sdk/crates/auto-ui-tools').mkdir(parents=True)
+            (root / 'sdk/crates/auto-ui-tools/Cargo.toml').write_text('[package]\n')
+            (root / 'auto-ui-tool.exe').write_bytes(b'')
+        if theme:
+            self.write_theme_pkg(root, **theme_kwargs)
+        sources = (['auto-man', 'auto-lang'] if profile == 'core'
+                   else ['auto-man', 'auto-lang', 'auto-ui', 'auto-down'])
+        doc = {'schema': 'man-install/1', 'profile': profile,
+               'sources': {name: 'head' for name in sources},
+               'files': installer.manifest_files(root)}
+        (root / installer.MANIFEST).write_text(json.dumps(doc))
+        return root
+
+    def test_official_theme_manifest_accepts_self_consistent_package(self):
+        pkg = self.write_theme_pkg(self.root)
+        result = installer.verify_official_theme_manifest(pkg)
+        self.assertEqual(result['package'], 'themes')
+        self.assertEqual(result['version'], '0.2.0')
+        self.assertEqual(result['files'], 3)
+
+    def test_theme_manifest_named_rejections(self):
+        pkg = self.write_theme_pkg(self.root / 'a', version='0.3.0')
+        with self.assertRaisesRegex(RuntimeError, 'version'):
+            installer.verify_official_theme_manifest(pkg)
+        pkg = self.write_theme_pkg(self.root / 'b', tamper=('themes.at',))
+        with self.assertRaisesRegex(RuntimeError, 'hash mismatch'):
+            installer.verify_official_theme_manifest(pkg)
+        pkg = self.write_theme_pkg(self.root / 'c', drop='themes.at')
+        with self.assertRaisesRegex(RuntimeError, 'missing'):
+            installer.verify_official_theme_manifest(pkg)
+        pkg = self.write_theme_pkg(self.root / 'd', extra='sneaky.txt')
+        with self.assertRaisesRegex(RuntimeError, 'unregistered theme file'):
+            installer.verify_official_theme_manifest(pkg)
+        pkg = self.write_theme_pkg(self.root / 'e')
+        (pkg / 'theme-package.json').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'unreadable'):
+            installer.verify_official_theme_manifest(pkg)
+
+    def test_full_verify_requires_theme_and_core_rejects_themes(self):
+        full = self.make_install('full', theme=True)
+        self.assertEqual(installer.verify(full, 'full')['profile'], 'full')
+        full_missing = self.make_install('full', theme=False)
+        with self.assertRaisesRegex(RuntimeError, 'full profile required input missing'):
+            installer.verify(full_missing, 'full')
+        core = self.make_install('core', theme=False)
+        self.assertEqual(installer.verify(core, 'core')['profile'], 'core')
+        core_with = self.make_install('core', theme=True)
+        with self.assertRaisesRegex(RuntimeError, 'UI source/tool in Core install'):
+            installer.verify(core_with, 'core')
+        # 安装后篡改主题文件 → 全树 hash 对账具名拒绝（verify 免费覆盖）。
+        self.write_theme_pkg(self.root / 'post', extra=None)
+        planted = self.make_install('full', theme=True)
+        (planted / 'sdk/packages/themes/themes.at').write_text('mutated\n')
+        with self.assertRaisesRegex(RuntimeError, 'install content mismatch'):
+            installer.verify(planted, 'full')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -42,6 +42,8 @@ python scripts/man-install.py verify --profile full --install-root /path/to/auto
 
 Full builds `auto` in Man and `auto-ui-tool` in AutoUI, and installs both with the combined SDK and licenses. `auto gen`, `auto build`, and UI run consume the real installed tool. Missing or mismatched tools are errors, not a fallback to Core behavior.
 
+The combined SDK carries the official UI theme package at `sdk/packages/themes/` (PLAN-036): a verified fixed snapshot of `auto-ui/packages/themes` (the single editable source), staged only after its self-describing `theme-package.json` passes identity and per-file SHA256 checks, and recorded under `source_closure.root_inputs`. Consumers read the installed snapshot instead of copying a dev checkout; corrupt, tampered, wrong-version, or missing theme files are named verification errors that keep the previous installation. Core installs carry no theme assets, and their verification rejects any `sdk/packages/themes` content by name.
+
 ## Upgrade and backup
 
 Run the same install command with the desired new fixed sources and the existing managed install root. Preparation and verification happen in a unique staging directory. Only after verification is the previous installation moved to a sibling named like:

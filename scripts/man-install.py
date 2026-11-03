@@ -47,6 +47,62 @@ def exe(name: str) -> str:
     return name + (".exe" if os.name == "nt" else "")
 
 
+# PLAN-036：官方主题包身份（与 auto-ui tools 侧常量同步；版本升级须与
+# auto-ui/packages/themes 的 pac/manifest 同步）。
+OFFICIAL_THEME_OWNER = "auto-ui"
+OFFICIAL_THEME_PACKAGE = "themes"
+OFFICIAL_THEME_VERSION = "0.2.0"
+OFFICIAL_THEME_SCHEMA = 1
+
+
+def verify_official_theme_manifest(theme_dir: Path) -> dict:
+    """PLAN-036：官方主题包自描述清单核验（staging 换装前具名拒绝坏包）。
+
+    owner/package/version/schema 必须等于官方身份常量；files[] 逐文件存在且
+    sha256 相符；包目录内不得有清单未登记文件。任何不符 = RuntimeError
+    （install_payload 事务随后保旧回滚，旧安装字节不动）。
+    """
+    manifest_path = theme_dir / "theme-package.json"
+    try:
+        doc = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"theme manifest unreadable: {manifest_path}: {e}") from e
+    if not isinstance(doc, dict):
+        raise RuntimeError(f"theme manifest is not an object: {manifest_path}")
+    for field, expected in (("owner", OFFICIAL_THEME_OWNER),
+                            ("package", OFFICIAL_THEME_PACKAGE),
+                            ("version", OFFICIAL_THEME_VERSION)):
+        if doc.get(field) != expected:
+            raise RuntimeError(
+                f"theme manifest field mismatch: {field}={doc.get(field)!r} expected {expected!r}")
+    if doc.get("schema") != OFFICIAL_THEME_SCHEMA:
+        raise RuntimeError(
+            f"theme manifest schema mismatch: {doc.get('schema')!r} expected {OFFICIAL_THEME_SCHEMA}")
+    files = doc.get("files")
+    if not isinstance(files, list) or not files:
+        raise RuntimeError("theme manifest files[] must be a non-empty array")
+    listed = set()
+    for entry in files:
+        rel = str(entry.get("path", ""))
+        if not rel or rel.startswith("/") or "\\" in rel or ".." in rel:
+            raise RuntimeError(f"theme manifest path escape: {rel!r}")
+        target = theme_dir / rel
+        if not target.is_file():
+            raise RuntimeError(f"theme file missing: {rel}")
+        actual = sha256(target)
+        if actual != entry.get("sha256"):
+            raise RuntimeError(
+                f"theme file hash mismatch: {rel} expected {entry.get('sha256')} actual {actual}")
+        listed.add(rel)
+    for path in sorted(theme_dir.rglob("*")):
+        if path.is_file() and path.name != "theme-package.json":
+            rel = path.relative_to(theme_dir).as_posix()
+            if rel not in listed:
+                raise RuntimeError(f"unregistered theme file: {rel}")
+    return {"owner": OFFICIAL_THEME_OWNER, "package": OFFICIAL_THEME_PACKAGE,
+            "version": OFFICIAL_THEME_VERSION, "files": len(listed) + 1}
+
+
 def run(cmd: list[str], cwd: Path, timeout: int = 7200) -> None:
     env = {k: v for k, v in os.environ.items() if k not in SCRUB}
     proc = subprocess.run(cmd, cwd=str(cwd), env=env, timeout=timeout)
@@ -249,6 +305,12 @@ def stage_sources(stage: Path, profile: str) -> dict:
         clean_tree(DOWN, sdk / "auto-down")
         for rel in ("packages/blueprints", "packages/widgets"):
             clean_tree(LANG / rel, sdk / rel)
+        # PLAN-036：官方主题包随 Full SDK 发行（唯一编辑源 = auto-ui/packages/
+        # themes；staging 内先按自描述清单核验身份与逐文件 sha256，坏包具名
+        # 拒绝并由事务保旧回滚）。Core 恒不携带主题（verify 另有具名反控）。
+        themes_dst = sdk / "packages" / "themes"
+        clean_tree(UI / "packages" / "themes", themes_dst)
+        verify_official_theme_manifest(themes_dst)
     license_repos = ["auto-lang", "auto-man"] if profile == "core" else ["auto-lang", "auto-man", "auto-ui"]
     if any(p['source_repo'] == 'auto-web' for p in packages):
         license_repos.append('auto-web')
@@ -257,9 +319,12 @@ def stage_sources(stage: Path, profile: str) -> dict:
         target = stage / "licenses" / repo
         target.mkdir(parents=True, exist_ok=True)
         shutil.copy2(license_root / "LICENSE", target / "LICENSE")
+    root_inputs = ROOT_INPUTS + ROOT_INPUT_DIRS + ["vendor/autodown-test-parser", "crates/autoui-skill"]
+    if profile == "full":
+        root_inputs.append("sdk/packages/themes")
     return {"sdk_layout": "combined-crates", "packages": packages,
             "projection_edits": projection_edits, "shared_targets": shared_targets,
-            "root_inputs": ROOT_INPUTS + ROOT_INPUT_DIRS + ["vendor/autodown-test-parser", "crates/autoui-skill"]}
+            "root_inputs": root_inputs}
 
 
 def manifest_files(root: Path) -> dict[str, dict]:
@@ -304,6 +369,7 @@ def verify(root: Path, expected_profile: str | None = None) -> dict:
         forbidden = [p for p in actual if p.startswith("sdk/crates/auto-ui")
                      or p.startswith("sdk/crates/auto-lang/") or p.startswith("sdk/crates/shell-pack")
                      or p.startswith("licenses/auto-ui/") or p == "sdk/crates/auto/Cargo.toml"
+                     or p.startswith("sdk/packages/themes")
                      or p == exe("auto-ui-tool")]
         if forbidden:
             raise RuntimeError(f"UI source/tool in Core install: {forbidden}")
@@ -319,7 +385,8 @@ def verify(root: Path, expected_profile: str | None = None) -> dict:
         if set(doc["sources"]) != owners:
             raise RuntimeError(f"Core source identity differs from actual owners {owners}: {doc['sources']}")
     else:
-        for required in (exe("auto"), exe("auto-ui-tool"), "sdk/crates/auto-ui-tools/Cargo.toml"):
+        for required in (exe("auto"), exe("auto-ui-tool"), "sdk/crates/auto-ui-tools/Cargo.toml",
+                         "sdk/packages/themes/theme-package.json"):
             if required not in actual:
                 raise RuntimeError(f"full profile required input missing: {required}")
         owners = {'auto-man', 'auto-lang', 'auto-ui', 'auto-down'}
