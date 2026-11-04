@@ -1738,7 +1738,15 @@ impl Automan {
                     // Plan 061:统一契约定位(本地 back/ 或外部后端项目)
                     let api_path = auto_lang_core::config::resolve_back_api(&root_dir)
                         .unwrap_or_else(|| root_dir.join("src/back/api.at"));
-                    if api_path.exists() {
+                    // PLAN-046 F-2: a UI project (src/front/) must also boot
+                    // the VM renderer + MCP — the old server-only path joined
+                    // the HTTP server thread forever, so the UI/MCP never
+                    // started (029/031-image-viewer reproduced). Delegate to
+                    // the UI arm's VM+VM split mode, which starts the AutoVM
+                    // HTTP backend AND the iced UI + MCP session. Pure
+                    // backend contracts (no front/) keep the server-only arm.
+                    let is_ui_project = root_dir.join("src").join("front").is_dir();
+                    if api_path.exists() && !is_ui_project {
                         eprintln!(
                             "[AutoVM] Starting HTTP server from {} (module flattening enabled)",
                             api_path.display()
@@ -1759,6 +1767,31 @@ impl Automan {
                             .expect("spawn VM server thread");
                         let _ = handle.join();
                         Ok(())
+                    } else if is_ui_project && api_path.exists() {
+                        struct RestoreVmSplit(Option<std::ffi::OsString>, Option<std::ffi::OsString>);
+                        impl Drop for RestoreVmSplit {
+                            fn drop(&mut self) {
+                                match &self.0 {
+                                    Some(v) => std::env::set_var("AUTO_VM_MERGE", v),
+                                    None => std::env::remove_var("AUTO_VM_MERGE"),
+                                }
+                                match &self.1 {
+                                    Some(v) => std::env::set_var("AUTO_BACKEND_IMPL", v),
+                                    None => std::env::remove_var("AUTO_BACKEND_IMPL"),
+                                }
+                            }
+                        }
+                        let _restore = RestoreVmSplit(
+                            std::env::var_os("AUTO_VM_MERGE"),
+                            std::env::var_os("AUTO_BACKEND_IMPL"),
+                        );
+                        // VM+VM split: AutoVM HTTP backend + iced UI + MCP.
+                        std::env::set_var("AUTO_VM_MERGE", "0");
+                        std::env::set_var("AUTO_BACKEND_IMPL", "vm");
+                        {
+                            let req = self.gen_request_run()?;
+                            crate::ui_ops::current().vm_run(&root_dir, args, &req)
+                        }
                     } else {
                         Err("AutoVM server mode requires an api.at contract (local src/back/ or pac.at back.project external backend)".into())
                     }
