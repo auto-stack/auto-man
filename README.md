@@ -7,6 +7,11 @@ AutoMan owns the `auto` command, package/build management, language-service adap
 
 The executable is **`auto`**, not `am`. The old single-crate `cargo install --path .` and `am` instructions are retained only as [legacy documentation](docs/legacy-am.md); they are not current installation commands.
 
+The matched AutoOS basic-app SDK and its dependency-lock integration are tracked
+by [auto-os/PLAN-054](../auto-os/docs/plans/054-basic-apps-unified-assembly.md).
+This integration updates the root lock for the selected framework sources;
+the plan owns its cross-repository verification and delivery receipt.
+
 ## Install
 
 See [Installation, versions, upgrade, and recovery](docs/installation.md) for fixed-source acquisition and complete instructions. From a matched source group, the managed entry points are:
