@@ -433,6 +433,11 @@ pub(crate) enum Commands {
         render_queue: bool,
         #[arg(
             long,
+            help = "PLAN-063: desktop compositor endpoint pipe for `--render=desktop` (queue family; endpoint must already be running)"
+        )]
+        desktop_endpoint: Option<String>,
+        #[arg(
+            long,
             help = "Backend server mode: vm (AutoVM HTTP) or rust (a2r, default)"
         )]
         server: Option<String>,

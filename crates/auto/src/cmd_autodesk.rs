@@ -218,12 +218,14 @@ fn read_manifest_render(app_dir: &std::path::Path) -> Option<String> {
 /// rqhost 形态；`--rq-host` 参数面预留未实现——desktop 形态归 PLAN-030
 /// 线）。缺省（render 缺席）= vm 轨合法。PLAN-690 T-04：`remote` 入列
 /// （PLAN-683 的 headless iced 宿主轨——vm 前端目标 + DisplayList v2
-/// 帧载荷；main.rs Run 臂经 AUTO_VM_RENDER 透传分岔）。
+/// 帧载荷；main.rs Run 臂经 AUTO_VM_RENDER 透传分岔）。PLAN-063 T-02：
+/// `desktop` 入列（虚拟桌面合成器底座——cmd_run gate 臂另行要求
+/// --desktop-endpoint 在场；本表只定前端目标值域）。
 pub fn rqhost_gate_validate(render: Option<&str>, args: &[String]) -> Result<(), String> {
     if let Some(r) = render {
-        if !matches!(r, "vm" | "rust" | "remote") {
+        if !matches!(r, "vm" | "rust" | "remote" | "desktop") {
             return Err(format!(
-                "--render-queue 仅支持 vm/rust/remote 前端目标（当前 --render={r}）"
+                "--render-queue 仅支持 vm/rust/remote/desktop 前端目标（当前 --render={r}）"
             ));
         }
     }
@@ -264,6 +266,8 @@ mod tests {
         assert!(rqhost_gate_validate(Some("rust"), &[]).is_ok());
         // PLAN-690 T-04：remote 前端目标入列（headless iced 宿主轨）。
         assert!(rqhost_gate_validate(Some("remote"), &[]).is_ok());
+        // PLAN-063 T-02：desktop 底座入列（端点要求由 cmd_run gate 臂核）。
+        assert!(rqhost_gate_validate(Some("desktop"), &[]).is_ok());
         for bad in ["vue", "tauri", "jet", "arkts"] {
             let err = rqhost_gate_validate(Some(bad), &[]).unwrap_err();
             assert!(err.contains(bad), "报错含目标名: {err}");

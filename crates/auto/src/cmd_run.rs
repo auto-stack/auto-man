@@ -89,6 +89,7 @@ pub(crate) struct ProjectArgs {
     pub(crate) front_port: Option<String>,
     pub(crate) render: Option<String>,
     pub(crate) render_queue: bool,
+    pub(crate) desktop_endpoint: Option<String>,
     pub(crate) server: Option<String>,
     pub(crate) no_merge: bool,
     pub(crate) scene: Option<String>,
@@ -110,6 +111,7 @@ pub(crate) fn run_project(ai_mode: bool, a: ProjectArgs) -> miette::Result<()> {
         front_port,
         render,
         render_queue,
+        desktop_endpoint,
         server,
         no_merge,
         scene,
@@ -169,7 +171,15 @@ if let Some(p) = port {
     })?;
 }
 if let Some(ref b) = render {
-    am.set_render(b.clone());
+    // PLAN-063 T-02：desktop 是底座声明不是前端目标（BackendType 无
+    // 底座变体）——前端归一 vm（与 PLAN-690 `remote`→Vm 别名同律）；
+    // 底座选择经下方 -q/底座 gate 的 env 通道（AUTO_VM_RENDER）。
+    let frontend = if b.eq_ignore_ascii_case("desktop") {
+        "vm"
+    } else {
+        b.as_str()
+    };
+    am.set_render(frontend.to_string());
 }
 if let Some(ref s) = scene {
     am.set_scene(s.clone());
@@ -460,7 +470,21 @@ if let Some(n) = am.pac_name() {
 // 前端 = 出界显式报错（--rq-host 预留未实现）。
 // PLAN-816 T-05：-q 渲染队列=桌面协议域（ui-extra）——Core
 // 形态具名失败（stub 内实现）。
-if render_queue {
+// PLAN-031 T-06 / PLAN-063 T-02：queue 族底座 gate（`-q` = rqhost 底座
+// 语义糖；`--render=remote|desktop` = 显式底座声明同族生效——remote 缺
+// -q 不再静默直渲染；desktop 连接在先的虚拟桌面合成器端点，不代孵）。
+let base_desktop = render
+    .as_deref()
+    .map(|r| r.trim().eq_ignore_ascii_case("desktop"))
+    .unwrap_or(false);
+let base_remote = render
+    .as_deref()
+    .map(|r| {
+        let l = r.trim().to_lowercase();
+        l == "remote" || l == "rq" || l == "rqhost"
+    })
+    .unwrap_or(false);
+if render_queue || base_remote || base_desktop {
     cmd_autodesk::rqhost_gate_validate(render.as_deref(), &args).map_err(|e| {
         if ai_mode {
             eprintln!("{}", format_error_json(&AutoError::Msg(e.clone())));
@@ -468,40 +492,57 @@ if render_queue {
         }
         miette::miette!("{e}")
     })?;
-    #[cfg(feature = "ui-extra")]
-    auto_ui_runtime::ui::desktop_protocol::rqhost::ensure_rqhost_ready().map_err(
-        |e| {
-            if ai_mode {
-                eprintln!("{}", format_error_json(&AutoError::Msg(e.clone())));
-                std::process::exit(1);
-            }
-            miette::miette!("{e}")
-        },
-    )?;
-    // Core 形态在上方 rqhost_gate_validate 已具名返回；此块
-    // 仅 ui-extra 编译（桌面协议面）。
-    #[cfg(feature = "ui-extra")]
-    {
-        let wellknown = auto_ui_runtime::ui::desktop_protocol::rqhost::wellknown_pipe();
-        std::env::set_var("AUTO_RQHOST_PIPE", &wellknown);
-        args = cmd_autodesk::rqhost_injected_args(&wellknown, &args);
-        // PLAN-683（remote 模式）：pac `desktop_render: remote` /
-        // `--render=remote` → vm 轨分岔信号（AUTO_VM_RENDER env——
-        // AUTO_RQHOST_PIPE 同位缝；run_vm_rqhost_client 消费）。
-        let render_mode =
-            auto_ui_runtime::ui::desktop_protocol::coverage::RenderMode::resolve(
-                render.as_deref(),
-                am.pac_desktop_render().as_deref(),
-            );
-        if render_mode
-            == auto_ui_runtime::ui::desktop_protocol::coverage::RenderMode::Remote
+    if base_desktop {
+        // PLAN-063 T-02：desktop 底座 = 连接在先的虚拟桌面合成器端点
+        //（不孵化——rqhost ensure/spawn 分支不进入；端点缺席 = 具名
+        // 报错提示先启动桌面）。env 通道 = AUTO_VM_RENDER +
+        // AUTO_DESKTOP_ENDPOINT（run_vm_rqhost_client::resolve_vm_rq_base
+        // 消费；纯 std env，无需 ui-extra 符号——Core 形态已在上方
+        // rqhost_gate_validate 具名失败，不落此臂）。
+        let endpoint = desktop_endpoint.clone().ok_or_else(|| {
+            miette::miette!(
+                "--render=desktop 需要 --desktop-endpoint <pipe>（虚拟桌面合成器端点）——请先启动虚拟桌面"
+            )
+        })?;
+        std::env::set_var("AUTO_VM_RENDER", "desktop");
+        std::env::set_var("AUTO_DESKTOP_ENDPOINT", &endpoint);
+        println!("  render-queue: desktop compositor endpoint ({endpoint})");
+    } else {
+        #[cfg(feature = "ui-extra")]
+        auto_ui_runtime::ui::desktop_protocol::rqhost::ensure_rqhost_ready().map_err(
+            |e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&AutoError::Msg(e.clone())));
+                    std::process::exit(1);
+                }
+                miette::miette!("{e}")
+            },
+        )?;
+        // Core 形态在上方 rqhost_gate_validate 已具名返回；此块
+        // 仅 ui-extra 编译（桌面协议面）。
+        #[cfg(feature = "ui-extra")]
         {
-            std::env::set_var("AUTO_VM_RENDER", "remote");
-            println!(
-                "  render-queue: remote mode (headless iced host, DisplayList v2)"
-            );
+            let wellknown = auto_ui_runtime::ui::desktop_protocol::rqhost::wellknown_pipe();
+            std::env::set_var("AUTO_RQHOST_PIPE", &wellknown);
+            args = cmd_autodesk::rqhost_injected_args(&wellknown, &args);
+            // PLAN-683（remote 模式）：pac `desktop_render: remote` /
+            // `--render=remote` → vm 轨分岔信号（AUTO_VM_RENDER env——
+            // AUTO_RQHOST_PIPE 同位缝；run_vm_rqhost_client 消费）。
+            let render_mode =
+                auto_ui_runtime::ui::desktop_protocol::coverage::RenderMode::resolve(
+                    render.as_deref(),
+                    am.pac_desktop_render().as_deref(),
+                );
+            if render_mode
+                == auto_ui_runtime::ui::desktop_protocol::coverage::RenderMode::Remote
+            {
+                std::env::set_var("AUTO_VM_RENDER", "remote");
+                println!(
+                    "  render-queue: remote mode (headless iced host, DisplayList v2)"
+                );
+            }
+            println!("  render-queue: rqhost shared compositor ({wellknown})");
         }
-        println!("  render-queue: rqhost shared compositor ({wellknown})");
     }
 }
 if !ai_mode {
