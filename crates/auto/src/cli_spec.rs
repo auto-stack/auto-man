@@ -512,6 +512,22 @@ pub(crate) enum Commands {
         )]
         back_port: Option<String>,
     },
+    /// PLAN-1006: 导出 Rust 服务成员为可迁移交付包（export-only；不启动监听、
+    /// 不复用 UI gen 路由）。薄接线到 auto-web 公开导出库接口。
+    #[command(
+        about = "Export the project's generated Rust service member into a relocatable delivery bundle (PLAN-1006)"
+    )]
+    ServiceExport {
+        #[arg(short, long)]
+        dir: Option<String>,
+        #[arg(long, help = "Delivery bundle output root (created and managed by the exporter)")]
+        delivery_root: String,
+        #[arg(
+            long,
+            help = "Project-relative plain file to include in the bundle resources/ (repeatable)"
+        )]
+        resource: Vec<String>,
+    },
     #[command(about = "Run all #[test] functions in the project", alias = "t")]
     Test {
         #[arg(short, long, help = "Source file or directory to test")]

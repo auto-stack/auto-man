@@ -35,6 +35,7 @@ mod cmd_autodesk {
 mod cmd_bp;
 mod cmd_docs;
 mod cmd_service;
+mod cmd_service_export;
 mod cmd_stdlib;
 // PLAN-816 T-05：runtime ui_ops seam 的工具进程实现（I-TOOL 五操作臂）。
 #[cfg(feature = "ui-extra")]
@@ -317,6 +318,18 @@ fn real_main(cli: Cli) -> Result<()> {
                 http_config,
                 http_config_inline,
                 back_port,
+            });
+        }
+        // PLAN-1006 T-04: Web 生成成员独立交付公开入口（export-only，不监听）。
+        Some(Commands::ServiceExport {
+            dir,
+            delivery_root,
+            resource,
+        }) => {
+            return cmd_service_export::cmd_service_export(cmd_service_export::ExportArgs {
+                dir,
+                delivery_root,
+                resource,
             });
         }
         Some(Commands::Run {
@@ -961,6 +974,38 @@ mod cli_service_tests {
             }
             _ => panic!("expected Service"),
         }
+    }
+
+    #[test]
+    fn service_export_command_shape() {
+        let cli = parse(&[
+            "service-export",
+            "--dir",
+            "proj",
+            "--delivery-root",
+            "bundle",
+            "--resource",
+            "notes.txt",
+            "--resource",
+            "seed.json",
+        ]);
+        match cli.command {
+            Some(super::Commands::ServiceExport {
+                dir,
+                delivery_root,
+                resource,
+            }) => {
+                assert_eq!(dir.as_deref(), Some("proj"));
+                assert_eq!(delivery_root, "bundle");
+                assert_eq!(resource, vec!["notes.txt", "seed.json"]);
+            }
+            _ => panic!("expected ServiceExport"),
+        }
+    }
+
+    #[test]
+    fn service_export_delivery_root_is_required() {
+        assert!(Cli::try_parse_from(["auto", "service-export"]).is_err());
     }
 
     #[test]
