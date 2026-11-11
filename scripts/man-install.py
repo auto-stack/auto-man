@@ -224,6 +224,15 @@ def stage_sources(stage: Path, profile: str) -> dict:
             packages.append({"name": source.name, "source_repo": repo,
                              "source_path": rel.as_posix(), "installed_path": rel.as_posix()})
             continue
+        if rel.parts[0] == "experimental":
+            # PLAN-944 (2026-11-06) made ace-semantics-contract a non-optional
+            # path dependency of auto-lang-core; it is a standalone workspace
+            # at a non-crates layout. Same treatment as vendored snapshots:
+            # record the mapping, stage the tree wholesale below, exclude it
+            # from the projected sdk workspace members (fix-989-sdk-staging).
+            packages.append({"name": source.name, "source_repo": repo,
+                             "source_path": rel.as_posix(), "installed_path": rel.as_posix()})
+            continue
         if rel.parts[0] != "crates":
             raise RuntimeError(f"non-crate package input requires explicit mapping: {source}")
         target = sdk / rel
@@ -265,6 +274,8 @@ def stage_sources(stage: Path, profile: str) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(LANG / rel, target)
     clean_tree(LANG / "vendor/autodown-test-parser", sdk / "vendor/autodown-test-parser")
+    for rel in sorted({p["installed_path"] for p in packages if p["installed_path"].startswith("experimental/")}):
+        clean_tree(LANG / rel, sdk / rel)
     clean_tree(MAN / "crates/autoui-skill", sdk / "crates/autoui-skill")
     lock = MAN / "core/Cargo.lock" if profile == "core" else MAN / "Cargo.lock"
     shutil.copy2(lock, sdk / "Cargo.lock")
@@ -275,9 +286,10 @@ def stage_sources(stage: Path, profile: str) -> dict:
     members_end = workspace.index("]\ndefault-members", members_start) + 1
     # Vendored snapshot crates are standalone workspace roots reached by path
     # dependency: never members, always excluded (as the language root does).
-    vendored = sorted({p["installed_path"] for p in packages if p["installed_path"].startswith("vendor/")})
+    vendored = sorted({p["installed_path"] for p in packages
+                       if p["installed_path"].startswith(("vendor/", "experimental/"))})
     vendor_list = ", ".join(f'"{path}"' for path in vendored)
-    member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down" and not p["installed_path"].startswith("vendor/")}))
+    member_list = ", ".join(f'"{path}"' for path in sorted({p["installed_path"] for p in packages if p["source_repo"] != "auto-down" and not p["installed_path"].startswith(("vendor/", "experimental/"))}))
     workspace = workspace[:members_start] + f"members = [{member_list}]" + workspace[members_end:]
     if vendored:
         if 'exclude = ["crates/auto-core"]' in workspace:
