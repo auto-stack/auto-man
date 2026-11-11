@@ -5,7 +5,7 @@ use miette::{MietteHandlerOpts, Result};
 use serde_json::json;
 use std::path::PathBuf;
 
-use cli_spec::{Cli, Commands, DeviceAction, OutputFormat, init_logger, println_logo};
+use cli_spec::{init_logger, println_logo, Cli, Commands, DeviceAction, OutputFormat};
 use diag::{format_error_json, format_success_json, output_success, to_miette_err};
 
 mod cmd_a2c_stdlib;
@@ -49,7 +49,6 @@ mod tool_ui_ops;
 // stdio/退出码零改；复用既有 cmd 模块与 tool_ui_ops，不造第二工具
 // 发现或 owned 进程设施。
 mod cli_spec;
-mod diag;
 mod cmd_build;
 mod cmd_env;
 mod cmd_req;
@@ -57,12 +56,11 @@ mod cmd_run;
 mod cmd_test;
 mod cmd_trans;
 mod cmd_wizard;
+mod diag;
 
 fn load_am_config() -> Option<auto_man_runtime::AmConfig> {
     auto_man_runtime::load_am_config()
 }
-
-
 
 fn main() -> Result<()> {
     // PLAN-816 T-03: 安装管理服务的 UI seam（runtime 编排的 UI 臂经 compat
@@ -387,12 +385,15 @@ fn real_main(cli: Cli) -> Result<()> {
             filter,
             report,
         }) => {
-            cmd_test::test_ui(ai_mode, cmd_test::TestUiArgs {
-                dir,
-                headed,
-                filter,
-                report,
-            })?;
+            cmd_test::test_ui(
+                ai_mode,
+                cmd_test::TestUiArgs {
+                    dir,
+                    headed,
+                    filter,
+                    report,
+                },
+            )?;
         }
         Some(Commands::Clean { dir }) => {
             if !ai_mode {
@@ -945,7 +946,6 @@ fn real_main(cli: Cli) -> Result<()> {
             auto_lang_core::autovm_repl::main_loop().map_err(|e| miette::miette!("{}", e))?;
         }
     }
-
 
     Ok(())
 }

@@ -97,7 +97,6 @@ pub(crate) fn init_logger() {
     .unwrap();
 }
 
-
 #[derive(Subcommand, Debug)]
 pub(crate) enum CacheCommands {
     #[command(about = "Show cache statistics")]
@@ -520,7 +519,10 @@ pub(crate) enum Commands {
     ServiceExport {
         #[arg(short, long)]
         dir: Option<String>,
-        #[arg(long, help = "Delivery bundle output root (created and managed by the exporter)")]
+        #[arg(
+            long,
+            help = "Delivery bundle output root (created and managed by the exporter)"
+        )]
         delivery_root: String,
         #[arg(
             long,
