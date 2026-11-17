@@ -146,9 +146,16 @@ fn real_main(cli: Cli) -> Result<()> {
 
     // Determine AI mode: -ai flag or --format json
     let ai_mode = cli.ai || matches!(cli.format, Some(OutputFormat::Json));
-    // PLAN-982（982/RUST）：把 A2R 渲染器装进运行时（项目构建面用）。
+    // PLAN-982：桥与 A2R 渲染器在**启动时**装配（幂等）——`AUTO_CONFIG_ENGINE=ace`
+    // 或 `AUTO_ACE_RUST=ace` 因此在没有 `AUTO_ACE_CANDIDATE` 时也能工作；未安装时
+    // `config_engine` 仍会可观测地落到 legacy（`ace` 则具名拒绝）。
     #[cfg(feature = "ace-candidate")]
-    crate::ace_candidate::install_rust_renderer();
+    {
+        if let Err(message) = auto_lang_ace_host::install() {
+            eprintln!("auto.ace/install-failed: {message}");
+        }
+        crate::ace_candidate::install_rust_renderer();
+    }
     // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
     // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。
     if let Some(command) = candidate_unsupported_command(cli.command.as_ref()) {
@@ -831,7 +838,18 @@ fn real_main(cli: Cli) -> Result<()> {
                 }
                 miette::miette!("Failed to read file: {}", e)
             })?;
-            let args = auto_val::Obj::new();
+            // PLAN-982（EXEC）：stdin 的**CLI 侧替代**——管道输入在这条命令上
+            // 预读并作为 `stdin` 文本文档参数注入（不触碰 ACE 的 ISA；脚本侧
+            // 的通用 stdin 读取仍具名未支持）。
+            let mut args = auto_val::Obj::new();
+            if !<std::io::Stdin as std::io::IsTerminal>::is_terminal(&std::io::stdin()) {
+                use std::io::Read;
+                let mut input = String::new();
+                let _ = std::io::stdin().read_to_string(&mut input);
+                if !input.is_empty() {
+                    args.set("stdin", auto_val::Value::Str(input.into()));
+                }
+            }
             // PLAN-982 E7（B-CONFIG-R F-982B-02）：`auto config` 也走**显式引擎
             // 选择**（桥已装 ⇒ ACE），不再直接调旧求值边——否则 legacy 会在这条
             // 路径上静默发生而不进观测计数。
