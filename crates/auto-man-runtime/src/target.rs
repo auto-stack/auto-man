@@ -62,17 +62,35 @@ impl TargetEffects for Target {
             return Ok(());
         }
 
-        // PLAN-982 982/RUST：项目构建面也遵守显式引擎选择——A2R 选中但这条
-        // （多文件/写盘）路径尚未迁移时**具名拒绝**，绝不静默用旧转译。
+        // PLAN-982 982/RUST：项目构建面也遵守显式引擎选择。单模块工程走 A2R
+        // 渲染器（`rust/src/` 三件套）；**多模块仍具名拒绝**（跨模块 `use` 与
+        // crate 边界尚未迁移），绝不静默用旧转译。
         if self.lang.as_str() == "rust" && crate::rust_engine::ace_a2r_selected() {
             crate::rust_engine::write_proof_if_requested();
-            return Err(format!(
-                "ace.rust/project-unsupported: the A2R candidate leg does not serve the \
-                 multi-file project transpiler yet ({} file(s) to rust); unset \
-                 AUTO_ACE_RUST to use the legacy transpiler",
-                self.autos.len()
-            )
-            .into());
+            if self.autos.len() > 1 {
+                return Err(format!(
+                    "ace.rust/project-multi-unsupported: the A2R candidate leg does not serve \
+                     multi-module project transpilation yet ({} files to rust); unset \
+                     AUTO_ACE_RUST to use the legacy transpiler",
+                    self.autos.len()
+                )
+                .into());
+            }
+            let path = &self.autos[0];
+            let source = std::fs::read_to_string(path.as_str())
+                .map_err(|e| format!("Failed to read Auto file '{}': {}", path.as_str(), e))?;
+            let module = AutoPath::new(path.as_str()).basename().as_str().to_string();
+            let files = crate::rust_engine::render_files(&source, &module, "main")
+                .map_err(|(code, message)| format!("{code}: {message}"))?;
+            crate::rust_engine::note_ace_a2r_dispatch();
+            std::fs::create_dir_all("rust/src")
+                .map_err(|e| format!("Failed to create dir 'rust/src': {e}"))?;
+            for (name, text) in files {
+                let target = format!("rust/src/{name}");
+                std::fs::write(&target, text)
+                    .map_err(|e| format!("Failed to write '{target}': {e}"))?;
+            }
+            return Ok(());
         }
 
         // Multi-file Rust project: use transpile_rust_project() for cross-module support
@@ -526,10 +544,10 @@ fn scan_auto_dir(t: &Target, dir: &Path, files: &mut Vec<AutoStr>) {
 
 /// Plan 328: Generate Axum HTTP server code from #[api] endpoints.
 fn generate_api_server(t: &Target) -> Result<(), String> {
-    use auto_web::api::AxumGenerator;
     use auto_lang_core::api::targets::TauriGenerator;
     use auto_lang_core::api::ApiExtractor;
-    use auto_lang_core::api::ApiModule; // Plan 328 IPC
+    use auto_lang_core::api::ApiModule;
+    use auto_web::api::AxumGenerator; // Plan 328 IPC
 
     // Collect #[api] endpoints from all .at source files
     let mut combined_module = ApiModule::new("api".to_string());

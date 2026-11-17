@@ -54,6 +54,52 @@ pub fn note_legacy_dispatch() {
     LEGACY_DISPATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
+/// A2R 文件渲染器（由 `auto` crate 在启动时注入宿主驱动）。
+///
+/// 参数：`(source, module, entry)`；返回 `(文件名, 文本)` 列表或 `(code, message)`。
+/// 运行时 crate 不能依赖 `auto-lang-ace-host`（分层），因此用**注册**而不是直接调用。
+pub type RustRenderer = fn(&str, &str, &str) -> Result<Vec<(String, String)>, (String, String)>;
+
+static RENDERER: std::sync::Mutex<Option<RustRenderer>> = std::sync::Mutex::new(None);
+
+/// 安装渲染器（幂等；返回是否首次安装）。
+pub fn install_renderer(renderer: RustRenderer) -> bool {
+    let mut slot = RENDERER.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_some() {
+        return false;
+    }
+    *slot = Some(renderer);
+    true
+}
+
+/// 是否已安装渲染器（默认构建没有 ⇒ 项目面保持旧路径/具名拒绝）。
+pub fn renderer_installed() -> bool {
+    RENDERER.lock().map(|slot| slot.is_some()).unwrap_or(false)
+}
+
+/// 通过安装的渲染器渲染一个单模块工程（未安装 ⇒ 具名错误，不静默）。
+pub fn render_files(
+    source: &str,
+    module: &str,
+    entry: &str,
+) -> Result<Vec<(String, String)>, (String, String)> {
+    let renderer = *RENDERER
+        .lock()
+        .map_err(|_| {
+            (
+                "ace.rust/renderer-poisoned".to_string(),
+                "the A2R renderer registry is poisoned".to_string(),
+            )
+        })?
+        .as_ref()
+        .ok_or_else(|| {
+            (
+                "ace.rust/renderer-unavailable".to_string(),
+                "no A2R renderer is installed in this build".to_string(),
+            )
+        })?;
+    renderer(source, module, entry)
+}
 /// 回执文件名（测试钩子）：写 `{engine, a2r_dispatches, legacy_dispatches}`。
 pub const RUST_PROOF_ENV: &str = "AUTO_ACE_RUST_PROOF";
 

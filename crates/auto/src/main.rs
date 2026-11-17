@@ -146,6 +146,9 @@ fn real_main(cli: Cli) -> Result<()> {
 
     // Determine AI mode: -ai flag or --format json
     let ai_mode = cli.ai || matches!(cli.format, Some(OutputFormat::Json));
+    // PLAN-982（982/RUST）：把 A2R 渲染器装进运行时（项目构建面用）。
+    #[cfg(feature = "ace-candidate")]
+    crate::ace_candidate::install_rust_renderer();
     // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
     // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。
     if let Some(command) = candidate_unsupported_command(cli.command.as_ref()) {

@@ -344,6 +344,23 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
     }
 }
 
+/// PLAN-982（982/RUST）：把宿主 A2R 驱动注册成运行时可见的渲染器。
+///
+/// 运行时 crate 不能依赖 `auto-lang-ace-host`（分层），因此由这里在启动时注入。
+/// 幂等：重复调用只装一次。
+pub(crate) fn install_rust_renderer() {
+    auto_man_runtime::rust_engine::install_renderer(|source, module, entry| {
+        auto_lang_ace_host::rust_transpile::transpile_scalar_source(source, module, entry)
+            .map(|fileset| {
+                fileset
+                    .files
+                    .into_iter()
+                    .map(|f| (f.name, f.text))
+                    .collect()
+            })
+            .map_err(|e| (e.code.to_string(), e.message))
+    });
+}
 /// Console grants the candidate leg requests (explicit, per run).
 fn console_grants() -> Vec<String> {
     vec!["console.stdout".to_string(), "console.stderr".to_string()]
