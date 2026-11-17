@@ -195,3 +195,30 @@ fn p982_a2r_collections_family_builds_cold_and_runs() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// scheduler 家族：**具名拒绝**而不是吐出编译不过的产物（本轮实测：缺
+/// `A2xStr`/`a2x_sched_*` 前导时 rustc 直接 E0425；提供者框架的 seed 装配路径
+/// 才带这些前导）。这条用例把"拒绝"钉住，防止把不可构建的 file set 当成功。
+#[test]
+fn p982_a2r_scheduler_family_is_refused_by_name() {
+    let source = r#"
+task Q {
+    on {
+        n int -> {
+            reply(n + 1)
+        }
+    }
+}
+fn main() int {
+    let h = Task.spawn("Q", 16)
+    let v = await h.ask(41)
+    return v + 1
+}
+"#;
+    let err = transpile_with_profile(source, "p982-sched", "main", TranspileProfile::Scheduler)
+        .expect_err("the uncached driver refuses the scheduler family");
+    assert_eq!(err.code, "ace.rust/profile-unsupported", "{err}");
+    assert!(
+        err.message.contains("prelude seed"),
+        "the refusal names the missing capability: {err}"
+    );
+}
