@@ -28,7 +28,78 @@ output_success(ai_mode, &c);
     Ok(())
 }
 
+/// A2R 候选腿（`AUTO_ACE_RUST` 选中时）：读源 → 宿主驱动渲染 → 把
+/// `generated.rs`（降级后的程序）作为单文件输出；失败**具名**且不回退旧路径。
+#[cfg(feature = "ace-candidate")]
+fn rust_via_a2r(ai_mode: bool, path: String) -> miette::Result<()> {
+    let source = std::fs::read_to_string(&path).map_err(|e| {
+        let err = auto_lang_core::error::AutoError::Io(format!("Failed to read file: {e}"));
+        if ai_mode {
+            eprintln!("{}", format_error_json(&err));
+            std::process::exit(1);
+        }
+        to_miette_err(err)
+    })?;
+    auto_man_runtime::rust_engine::note_ace_a2r_dispatch();
+    let module = std::path::Path::new(&path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "trans".to_string());
+    match auto_lang_ace_host::rust_transpile::transpile_scalar_source(&source, &module, "main") {
+        Ok(fileset) => {
+            // 单文件面：输出降级后的程序（三件套中的 generated.rs）。
+            let generated = fileset
+                .files
+                .iter()
+                .find(|f| f.name == "generated.rs")
+                .map(|f| f.text.clone())
+                .unwrap_or_default();
+            output_success(ai_mode, &generated);
+            Ok(())
+        }
+        Err(err) => {
+            let message = format!("{}: {}", err.code, err.message);
+            if ai_mode {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "error",
+                        "code": err.code,
+                        "message": err.message,
+                    })
+                );
+                std::process::exit(1);
+            }
+            Err(miette::miette!("{message}"))
+        }
+    }
+}
+
+/// 无桥构建：A2R 被显式选中也没有实现 ⇒ **具名拒绝**，不静默回退旧路径。
+#[cfg(not(feature = "ace-candidate"))]
+fn rust_via_a2r(ai_mode: bool, _path: String) -> miette::Result<()> {
+    let message = "AUTO_ACE_RUST selects A2R but this build has no ACE host \
+                   (`ace-candidate` off); refusing instead of falling back to the legacy transpiler";
+    if ai_mode {
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "status": "error",
+                "code": "ace.rust/executor-unavailable",
+                "message": message,
+            })
+        );
+        std::process::exit(1);
+    }
+    Err(miette::miette!("ace.rust/executor-unavailable: {message}"))
+}
 pub(crate) fn rust(ai_mode: bool, path: String) -> miette::Result<()> {
+    // PLAN-982 982/RUST：显式引擎选择。A2R 选中时走宿主驱动（无缓存、确定性
+    // FileSet），并把**真实派发**记进观测；未选中时行为与旧路径完全一致。
+    if auto_man_runtime::rust_engine::ace_a2r_selected() {
+        return rust_via_a2r(ai_mode, path);
+    }
+    auto_man_runtime::rust_engine::note_legacy_dispatch();
 let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
     if ai_mode {
         eprintln!("{}", format_error_json(&e));
