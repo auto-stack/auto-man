@@ -62,6 +62,19 @@ impl TargetEffects for Target {
             return Ok(());
         }
 
+        // PLAN-982 982/RUST：项目构建面也遵守显式引擎选择——A2R 选中但这条
+        // （多文件/写盘）路径尚未迁移时**具名拒绝**，绝不静默用旧转译。
+        if self.lang.as_str() == "rust" && crate::rust_engine::ace_a2r_selected() {
+            crate::rust_engine::write_proof_if_requested();
+            return Err(format!(
+                "ace.rust/project-unsupported: the A2R candidate leg does not serve the \
+                 multi-file project transpiler yet ({} file(s) to rust); unset \
+                 AUTO_ACE_RUST to use the legacy transpiler",
+                self.autos.len()
+            )
+            .into());
+        }
+
         // Multi-file Rust project: use transpile_rust_project() for cross-module support
         if self.lang.as_str() == "rust" && self.autos.len() > 1 {
             return transpile_rust_project_multi(self);

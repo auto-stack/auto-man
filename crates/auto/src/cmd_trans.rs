@@ -194,6 +194,15 @@ TransTarget::Rust { output, merge } => {
         auto_man_runtime::rust_engine::write_proof_if_requested();
     }
     if merge {
+        // PLAN-982 982/RUST：merge 面尚无 A2R 实现（单文件合并需要重写模块
+        // 边界），显式选中 A2R 时**具名拒绝**，不静默落回旧合并器。
+        if auto_man_runtime::rust_engine::ace_a2r_selected() {
+            auto_man_runtime::rust_engine::write_proof_if_requested();
+            return Err(miette::miette!(
+                "ace.rust/merge-unsupported: the A2R candidate leg has no merged single-file \
+                 output yet; unset AUTO_ACE_RUST to use the legacy merger"
+            ));
+        }
         let merged = auto_lang_core::trans_rust_merged(path.as_str()).map_err(|e| {
             if ai_mode {
                 eprintln!("{}", format_error_json(&e));

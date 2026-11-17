@@ -169,3 +169,33 @@ fn p982_rust_legacy_proof_receipt_counts_the_legacy_dispatch() {
     assert_eq!(value["legacy_dispatches"], 1);
     assert_eq!(value["a2r_dispatches"], 0);
 }
+/// **merge 面**在 A2R 选中时具名拒绝（无静默旧合并器）：退出非零 + `ace.rust/merge-unsupported`。
+#[test]
+fn p982_rust_merge_surface_refuses_under_a2r() {
+    let project = project("merge", SRC);
+    let out = Command::new(auto_exe())
+        .args([
+            "trans",
+            "--path",
+            project.script.to_str().unwrap(),
+            "rust",
+            "--merge",
+            "--output",
+            project.dir.join("merged.rs").to_str().unwrap(),
+        ])
+        .current_dir(&project.dir)
+        .env("AUTO_ACE_RUST", "ace")
+        .env_remove("AUTO_ACE_CANDIDATE")
+        .output()
+        .expect("run auto trans");
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(!out.status.success(), "merge under A2R must fail by name");
+    assert!(
+        stderr.contains("ace.rust/merge-unsupported"),
+        "stderr must name the boundary, got: {stderr}"
+    );
+    assert!(
+        !project.dir.join("merged.rs").exists(),
+        "a refused merge must not write the output file"
+    );
+}
