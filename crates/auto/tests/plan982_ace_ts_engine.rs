@@ -102,3 +102,23 @@ fn p982_ts_renderer_registry_serves_a_runnable_file_set() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// `AUTO_ACE_TS_PROOF` 回执：**真实计数**（a2js 派发数 + 引擎名），与 RUST 的
+/// `AUTO_ACE_RUST_PROOF` 对齐。
+#[test]
+fn p982_ts_proof_receipt_reports_real_dispatch_counts() {
+    let dir = scratch("proof");
+    let path = dir.join("ts-proof.json");
+    std::env::remove_var("AUTO_ACE_TS");
+    auto_man_runtime::script_engine::note_a2js_dispatch();
+    std::env::set_var("AUTO_ACE_TS", "ace");
+    std::env::set_var("AUTO_ACE_TS_PROOF", path.to_str().unwrap());
+    auto_man_runtime::script_engine::write_proof_if_requested();
+    std::env::remove_var("AUTO_ACE_TS_PROOF");
+    std::env::remove_var("AUTO_ACE_TS");
+
+    let text = std::fs::read_to_string(&path).expect("the proof receipt is written");
+    assert!(text.contains("auto.plan982.ts.proof/1"), "schema: {text}");
+    assert!(text.contains("\"engine\":\"ace\""), "engine: {text}");
+    assert!(text.contains("\"a2js_dispatches\""), "counters: {text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

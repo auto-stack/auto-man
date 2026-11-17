@@ -143,6 +143,7 @@ impl TargetEffects for Target {
                 // 注册的 A2JS 渲染器（产物写进 `ts/src/`）；多模块与未装渲染器都
                 // **具名拒绝**，绝不静默回退到旧 `trans_typescript`。
                 if crate::script_engine::ace_a2js_selected() {
+                    crate::script_engine::write_proof_if_requested();
                     if self.autos.len() > 1 {
                         return Err(format!(
                             "ace.ts/project-multi-unsupported: the A2X script leg does not serve \
@@ -160,6 +161,7 @@ impl TargetEffects for Target {
                         .map_err(|(code, message)| format!("{code}: {message}"))?;
                     std::fs::create_dir_all("ts/src")
                         .map_err(|e| format!("Failed to create dir 'ts/src': {e}"))?;
+                    crate::script_engine::note_a2js_dispatch();
                     for (name, text) in files {
                         let target = format!("ts/src/{name}");
                         std::fs::write(&target, text)

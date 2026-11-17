@@ -32,6 +32,53 @@ pub fn engine_name() -> &'static str {
     }
 }
 
+/// 回执路径环境变量（与 `AUTO_ACE_RUST_PROOF` 对齐）。
+pub const TS_PROOF_ENV: &str = "AUTO_ACE_TS_PROOF";
+
+static A2JS_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LEGACY_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 记一次 A2JS 派发。
+pub fn note_a2js_dispatch() {
+    A2JS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 记一次旧转译派发。
+pub fn note_legacy_dispatch() {
+    LEGACY_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 真实计数：(a2js 派发数, legacy 派发数, 引擎名)。
+pub fn observation() -> (u64, u64, &'static str) {
+    (
+        A2JS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed),
+        LEGACY_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed),
+        engine_name(),
+    )
+}
+
+/// 若 `AUTO_ACE_TS_PROOF` 指定了路径，写一份**真实计数**回执（原子替换）。
+pub fn write_proof_if_requested() {
+    let Some(path) = std::env::var_os(TS_PROOF_ENV) else {
+        return;
+    };
+    let (ace, legacy, engine) = observation();
+    let payload = serde_json::json!({
+        "schema": "auto.plan982.ts.proof/1",
+        "engine": engine,
+        "a2js_dispatches": ace,
+        "legacy_dispatches": legacy,
+    });
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+    let tmp = format!("{}.tmp", path.to_string_lossy());
+    if std::fs::write(&tmp, payload.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
 /// 安装渲染器（幂等；返回是否首次安装）。
 pub fn install_renderer(renderer: ScriptRenderer) -> bool {
     let mut slot = RENDERER.lock().unwrap_or_else(|e| e.into_inner());
