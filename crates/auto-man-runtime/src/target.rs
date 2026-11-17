@@ -139,6 +139,34 @@ impl TargetEffects for Target {
                     info!("Generated {}", rs_path);
                 }
             } else if self.lang.as_str() == "ts" || self.lang.as_str() == "typescript" {
+                // PLAN-982（982/WEBTARGET）：`ts` 目标也遵守显式引擎选择。单模块走
+                // 注册的 A2JS 渲染器（产物写进 `ts/src/`）；多模块与未装渲染器都
+                // **具名拒绝**，绝不静默回退到旧 `trans_typescript`。
+                if crate::script_engine::ace_a2js_selected() {
+                    if self.autos.len() > 1 {
+                        return Err(format!(
+                            "ace.ts/project-multi-unsupported: the A2X script leg does not serve \
+                             multi-module projects yet ({} files to ts); unset AUTO_ACE_TS to use \
+                             the legacy transpiler",
+                            self.autos.len()
+                        )
+                        .into());
+                    }
+                    let source = std::fs::read_to_string(path.as_str()).map_err(|e| {
+                        format!("Failed to read Auto file '{}': {}", path.as_str(), e)
+                    })?;
+                    let module = AutoPath::new(path.as_str()).basename().as_str().to_string();
+                    let files = crate::script_engine::render_files(&source, &module, "main")
+                        .map_err(|(code, message)| format!("{code}: {message}"))?;
+                    std::fs::create_dir_all("ts/src")
+                        .map_err(|e| format!("Failed to create dir 'ts/src': {e}"))?;
+                    for (name, text) in files {
+                        let target = format!("ts/src/{name}");
+                        std::fs::write(&target, text)
+                            .map_err(|e| format!("Failed to write '{target}': {e}"))?;
+                    }
+                    return Ok(());
+                }
                 // TypeScript transpilation via a2ts
                 let ts_path = path.as_str().replace(".at", ".ts");
                 let result = crate::trans_typescript(path.as_str());

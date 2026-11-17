@@ -155,6 +155,7 @@ fn real_main(cli: Cli) -> Result<()> {
             eprintln!("auto.ace/install-failed: {message}");
         }
         crate::ace_candidate::install_rust_renderer();
+        crate::ace_candidate::install_script_renderer();
     }
     // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
     // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。

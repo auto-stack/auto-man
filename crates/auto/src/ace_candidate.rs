@@ -361,6 +361,22 @@ pub(crate) fn install_rust_renderer() {
             .map_err(|e| (e.code.to_string(), e.message))
     });
 }
+/// PLAN-982（982/WEBTARGET）：把 A2JS 驱动注册成 `ts` 目标可见的渲染器。
+///
+/// 与 `install_rust_renderer` 同一理由（运行时 crate 不能依赖宿主桥）。
+pub(crate) fn install_script_renderer() {
+    auto_man_runtime::script_engine::install_renderer(|source, module, entry| {
+        auto_lang_ace_host::script_transpile::transpile_scalar_source(source, module, entry)
+            .map(|fileset| {
+                fileset
+                    .files
+                    .into_iter()
+                    .map(|f| (f.name, f.text))
+                    .collect()
+            })
+            .map_err(|e| (e.code.to_string(), e.message))
+    });
+}
 /// Console grants the candidate leg requests (explicit, per run).
 fn console_grants() -> Vec<String> {
     vec!["console.stdout".to_string(), "console.stderr".to_string()]
