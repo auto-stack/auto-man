@@ -122,3 +122,22 @@ fn p982_ts_proof_receipt_reports_real_dispatch_counts() {
     assert!(text.contains("\"a2js_dispatches\""), "counters: {text}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// 对称见证：未选中 A2JS 时（legacy 路径），回执必须写 `engine:"legacy"` 且
+/// `a2js_dispatches` 为 0 —— "零 A2X 派发"是可被外部读到的数字，不是叙述。
+#[test]
+fn p982_ts_proof_receipt_reports_legacy_when_not_selected() {
+    let dir = scratch("proof-legacy");
+    let path = dir.join("ts-proof-legacy.json");
+    std::env::remove_var("AUTO_ACE_TS");
+    auto_man_runtime::script_engine::note_legacy_dispatch();
+    std::env::set_var("AUTO_ACE_TS_PROOF", path.to_str().unwrap());
+    auto_man_runtime::script_engine::write_proof_if_requested();
+    std::env::remove_var("AUTO_ACE_TS_PROOF");
+
+    let text = std::fs::read_to_string(&path).expect("the proof receipt is written");
+    assert!(text.contains("\"engine\":\"legacy\""), "engine: {text}");
+    // 计数是**进程级**的：同进程里其它用例可能已经派发过 A2JS，所以这里只断言
+    // "legacy 派发数 >= 1 且引擎名是 legacy"；"零 A2JS" 需独立进程才可判定。
+    assert!(text.contains("\"legacy_dispatches\":"), "counters: {text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -142,8 +142,10 @@ impl TargetEffects for Target {
                 // PLAN-982（982/WEBTARGET）：`ts` 目标也遵守显式引擎选择。单模块走
                 // 注册的 A2JS 渲染器（产物写进 `ts/src/`）；多模块与未装渲染器都
                 // **具名拒绝**，绝不静默回退到旧 `trans_typescript`。
+                // 回执在**分支入口**就写：未选中引擎时也留下 `engine:"legacy"` 与
+                // 真实 legacy 派发数（"零 a2js 派发"因此可被外部见证）。
+                crate::script_engine::write_proof_if_requested();
                 if crate::script_engine::ace_a2js_selected() {
-                    crate::script_engine::write_proof_if_requested();
                     if self.autos.len() > 1 {
                         return Err(format!(
                             "ace.ts/project-multi-unsupported: the A2X script leg does not serve \
@@ -171,6 +173,7 @@ impl TargetEffects for Target {
                 }
                 // TypeScript transpilation via a2ts
                 let ts_path = path.as_str().replace(".at", ".ts");
+                crate::script_engine::note_legacy_dispatch();
                 let result = crate::trans_typescript(path.as_str());
                 match result {
                     Ok(msg) => info!("{}", msg),
