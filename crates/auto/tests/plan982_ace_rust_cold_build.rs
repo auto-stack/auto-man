@@ -151,3 +151,47 @@ fn p982_a2r_records_family_builds_cold_and_runs() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// collections 家族：owned-Str 文本的产物必须能**原样冷构建并运行**。
+/// `len` 是**字符数**（`"中"` = 1）：`a.len()*40 + b.len()*2` ⇒ `value:42`。
+#[test]
+fn p982_a2r_collections_family_builds_cold_and_runs() {
+    let dir = std::env::temp_dir().join(format!(
+        "p982-a2r-collections-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let fileset = transpile_with_profile(
+        "fn main() int { let a Str = \"中\"\n let b = a.clone()\n return a.len() * 40 + b.len() * 2 }\n",
+        "p982-collections",
+        "main",
+        TranspileProfile::Collections,
+    )
+    .expect("collections render");
+    for file in &fileset.files {
+        std::fs::write(dir.join(&file.name), &file.text).expect("write");
+    }
+    let exe = dir.join(if cfg!(windows) { "probe.exe" } else { "probe" });
+    let compile = Command::new(rustc())
+        .args(["--edition", "2021", "main.rs", "-o"])
+        .arg(&exe)
+        .current_dir(&dir)
+        .output()
+        .expect("rustc");
+    assert!(
+        compile.status.success(),
+        "the collections file set must compile cold:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let run = Command::new(&exe).current_dir(&dir).output().expect("run");
+    let stdout = String::from_utf8_lossy(&run.stdout).to_string();
+    assert!(run.status.success());
+    assert!(
+        stdout.contains("value:42"),
+        "the owned-Str arithmetic must produce value:42, got {stdout:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
