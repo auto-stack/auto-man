@@ -91,20 +91,19 @@ impl Templates {
     pub fn copy(template: &str, path: &str) -> Result<(), AutoError> {
         let path = Path::new(path);
         let pac_name = path.file_name().unwrap().to_str().unwrap();
+        // PLAN-982（982/TEMPLATE）：**事务式物化**——先把整族渲染进内存，
+        // 任何一个文件失败都还没落盘（round 63 把用户模板改成这个顺序，
+        // 本轮把嵌入族补齐），再统一写盘。
+        let mut rendered: Vec<(String, String)> = Vec::new();
         for planned in plan_template_family(template, pac_name) {
             let sub_path = planned.output_rel;
             // F-816-B-R1-05：框架诊断/模板进度走 stderr——stdout 在
-            // `--format json` 下必须只承载机器输出（内容保持 803 冻结
-            // 臂原样，仅换流）。
+            // `--format json` 下必须只承载机器输出。
             eprintln!("Copying {}", sub_path);
-            let (dir, _) = split_last(sub_path.as_ref(), '/');
-            // 创建对应的文件夹
-            create_dir_all(path.join(dir))?;
             // 模板原始字节（未求值）
-            let code = String::from_utf8(planned.bytes.to_vec()).unwrap();
-            // PLAN-982（982/TEMPLATE）：配置文件（`pac.at`）的求值可以走 ACE
-            // 引擎（`AUTO_ACE_TEMPLATE=ace`）；其余文件仍按旧模板内插处理
-            // （它们不是配置文档，ACE 的文档面不适用）。
+            let code = String::from_utf8_lossy(&planned.bytes).to_string();
+            // 配置文件（`pac.at`）的求值可以走 ACE 引擎（`AUTO_ACE_TEMPLATE=ace`）；
+            // 其余文件仍按旧模板内插（它们不是配置文档）。
             let code = if sub_path.ends_with("pac.at")
                 && crate::template_engine::ace_template_selected()
             {
@@ -119,14 +118,20 @@ impl Templates {
                 // 替换模板中的 ${name} 为 pac_name（旧模板内插）
                 let mut interp = AutoInterpreter::new();
                 interp.set_global("name", Value::from(pac_name));
-                let auto_code = interp.eval_template("", &code);
-                let result = auto_code.unwrap();
-                result.repr().to_string()
+                interp
+                    .eval_template("", &code)
+                    .map_err(|e| format!("template `{sub_path}`: {e:?}"))?
+                    .repr()
+                    .to_string()
             };
-            // 创建文件
+            rendered.push((sub_path, code));
+        }
+        rendered.sort_by(|a, b| a.0.cmp(&b.0));
+        for (sub_path, code) in rendered {
+            let (dir, _) = split_last(sub_path.as_ref(), '/');
+            create_dir_all(path.join(dir))?;
             let mut f = File::create(path.join(sub_path))?;
             eprintln!("code: {}", code);
-            // 写入文件
             f.write_all(code.as_bytes())?;
         }
         Ok(())
