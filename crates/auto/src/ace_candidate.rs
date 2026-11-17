@@ -32,7 +32,8 @@
 //!   1. validates the project configuration document next to (or above) the
 //!      script through the SDK config owner, recording the resolved values;
 //!   2. executes the script through the ACE door (console lane) and re-emits
-//!      the captured streams so observable behaviour matches;
+//!      the captured streams (their content matches the legacy leg's output;
+//!      the trailing spacing is printed separately to match it too);
 //!   3. records one identity line covering both legs, the script input size
 //!      and a run timestamp, and checks that both legs name one SDK
 //!      package+version **and** that the engine which actually served the run

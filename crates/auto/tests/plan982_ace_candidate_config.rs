@@ -255,7 +255,13 @@ fn p982_a_dual_projects_are_isolated() {
 fn p982_a_bad_config_refuses_before_any_write() {
     // Two distinct failure kinds, both through the same SDK config owner:
     // a document that cannot be parsed and a document that cannot be evaluated.
-    for project_name in ["bad-config", "bad-eval"] {
+    // The expected diagnostic substring pins WHICH kind failed, so a regression
+    // back to parse-only coverage stays red.
+    for (project_name, expected_kind) in [
+        ("bad-config", "Expected term"),
+        ("bad-eval", "Undefined variable"),
+    ] {
+        let expected_kind: &str = expected_kind;
         let project = fixture(project_name);
         let script = project.join("main.at");
         let before = snapshot(&project);
@@ -279,6 +285,11 @@ fn p982_a_bad_config_refuses_before_any_write() {
 
         let receipt = run.receipt.expect("the refusal is recorded with identity");
         assert_eq!(receipt["refusal"]["code"], "ace.config/invalid");
+        let detail = receipt["config"]["error"].as_str().unwrap_or_default();
+        assert!(
+            detail.contains(expected_kind),
+            "the {project_name} refusal keeps its own failure kind ({expected_kind}): {detail}"
+        );
         assert_eq!(
             receipt["execution"]["outcome"], "not-started",
             "the execution leg never starts after a {project_name} configuration"
