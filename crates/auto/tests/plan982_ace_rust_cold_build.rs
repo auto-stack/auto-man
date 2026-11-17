@@ -12,7 +12,9 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use auto_lang_ace_host::rust_transpile::transpile_scalar_source;
+use auto_lang_ace_host::rust_transpile::{
+    transpile_scalar_source, transpile_with_profile, TranspileProfile,
+};
 
 const SRC: &str = r#"
 fn add(a int, b int) int { return a + b }
@@ -104,4 +106,48 @@ fn p982_a2r_cold_build_is_reproducible() {
         observed[0], observed[1],
         "two cold builds of the same source must behave identically"
     );
+}
+/// 家族覆盖：records 家族的产物同样必须**原样冷构建并运行**（不是只有 scalar
+/// 能编译）。`main` 返回常量 7 ⇒ 运行输出 `value:7`。
+#[test]
+fn p982_a2r_records_family_builds_cold_and_runs() {
+    let dir = std::env::temp_dir().join(format!(
+        "p982-a2r-records-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let fileset = transpile_with_profile(
+        "type point { x int; y int }\n\nfn main() int {\n    return 7\n}\n",
+        "p982-records",
+        "main",
+        TranspileProfile::Records,
+    )
+    .expect("records render");
+    for file in &fileset.files {
+        std::fs::write(dir.join(&file.name), &file.text).expect("write");
+    }
+    let exe = dir.join(if cfg!(windows) { "probe.exe" } else { "probe" });
+    let compile = Command::new(rustc())
+        .args(["--edition", "2021", "main.rs", "-o"])
+        .arg(&exe)
+        .current_dir(&dir)
+        .output()
+        .expect("rustc");
+    assert!(
+        compile.status.success(),
+        "the records file set must compile cold:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let run = Command::new(&exe).current_dir(&dir).output().expect("run");
+    let stdout = String::from_utf8_lossy(&run.stdout).to_string();
+    assert!(run.status.success());
+    assert!(
+        stdout.contains("value:7"),
+        "records entry returning 7 must print value:7, got {stdout:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
