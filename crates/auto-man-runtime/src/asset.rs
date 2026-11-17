@@ -35,16 +35,31 @@ impl Templates {
             let (dir, _) = split_last(sub_path.as_ref(), '/');
             // 创建对应的文件夹
             create_dir_all(path.join(dir))?;
-            // 创建文件
-            let mut f = File::create(path.join(sub_path))?;
             // 模板原始字节（未求值）
             let code = String::from_utf8(planned.bytes.to_vec()).unwrap();
-            // 替换模板中的 ${name} 为 pac_name
-            let mut interp = AutoInterpreter::new();
-            interp.set_global("name", Value::from(pac_name));
-            let auto_code = interp.eval_template("", &code);
-            let result = auto_code.unwrap();
-            let code = result.repr();
+            // PLAN-982（982/TEMPLATE）：配置文件（`pac.at`）的求值可以走 ACE
+            // 引擎（`AUTO_ACE_TEMPLATE=ace`）；其余文件仍按旧模板内插处理
+            // （它们不是配置文档，ACE 的文档面不适用）。
+            let code = if sub_path.ends_with("pac.at")
+                && crate::template_engine::ace_template_selected()
+            {
+                let mut args = auto_val::Obj::new();
+                args.set("name", Value::from(pac_name));
+                let config = crate::config_engine::parse_code(&code, &args)
+                    .map_err(|e| format!("template `{sub_path}` under ACE: {e}"))?;
+                auto_val::Value::Node(Box::new(config.root))
+                    .repr()
+                    .to_string()
+            } else {
+                // 替换模板中的 ${name} 为 pac_name（旧模板内插）
+                let mut interp = AutoInterpreter::new();
+                interp.set_global("name", Value::from(pac_name));
+                let auto_code = interp.eval_template("", &code);
+                let result = auto_code.unwrap();
+                result.repr().to_string()
+            };
+            // 创建文件
+            let mut f = File::create(path.join(sub_path))?;
             eprintln!("code: {}", code);
             // 写入文件
             f.write_all(code.as_bytes())?;
