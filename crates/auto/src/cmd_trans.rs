@@ -41,6 +41,7 @@ fn rust_via_a2r(ai_mode: bool, path: String) -> miette::Result<()> {
         to_miette_err(err)
     })?;
     auto_man_runtime::rust_engine::note_ace_a2r_dispatch();
+    auto_man_runtime::rust_engine::write_proof_if_requested();
     let module = std::path::Path::new(&path)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -100,6 +101,7 @@ pub(crate) fn rust(ai_mode: bool, path: String) -> miette::Result<()> {
         return rust_via_a2r(ai_mode, path);
     }
     auto_man_runtime::rust_engine::note_legacy_dispatch();
+    auto_man_runtime::rust_engine::write_proof_if_requested();
 let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
     if ai_mode {
         eprintln!("{}", format_error_json(&e));
@@ -186,6 +188,11 @@ TransTarget::C { output } => {
     }
 }
 TransTarget::Rust { output, merge } => {
+    // 同一回执面：这条路径也把真实派发记下来（旧路径不静默）。
+    if !auto_man_runtime::rust_engine::ace_a2r_selected() {
+        auto_man_runtime::rust_engine::note_legacy_dispatch();
+        auto_man_runtime::rust_engine::write_proof_if_requested();
+    }
     if merge {
         let merged = auto_lang_core::trans_rust_merged(path.as_str()).map_err(|e| {
             if ai_mode {

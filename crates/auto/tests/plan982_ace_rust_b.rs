@@ -120,3 +120,52 @@ fn p982_rust_a2r_refusal_is_named_and_never_falls_back() {
         "no legacy fallback output may appear on refusal"
     );
 }
+/// **零 legacy dispatch 的对外见证**：A2R 选中时回执必须写 `legacy_dispatches:0`
+/// 且 `a2r_dispatches:1`——这是"没有静默走旧转译"的可核对证据（不是叙述）。
+#[test]
+fn p982_rust_a2r_proof_receipt_shows_zero_legacy_dispatch() {
+    let project = project("proof", SRC);
+    let receipt = project.dir.join("proof.json");
+    let out = Command::new(auto_exe())
+        .args(["rust", project.script.to_str().unwrap()])
+        .current_dir(&project.dir)
+        .env("AUTO_ACE_RUST", "ace")
+        .env("AUTO_ACE_RUST_PROOF", &receipt)
+        .env_remove("AUTO_ACE_CANDIDATE")
+        .output()
+        .expect("run auto rust");
+    assert!(
+        out.status.success(),
+        "A2R run must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = std::fs::read_to_string(&receipt).expect("the proof receipt is written");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("receipt is JSON");
+    assert_eq!(value["engine"], "a2r");
+    assert_eq!(value["a2r_dispatches"], 1);
+    assert_eq!(
+        value["legacy_dispatches"], 0,
+        "the candidate leg must not dispatch the legacy transpiler: {text}"
+    );
+}
+
+/// 对照臂：未选中 A2R 时同一回执显示 `legacy_dispatches:1`（计数是真的，不是常量）。
+#[test]
+fn p982_rust_legacy_proof_receipt_counts_the_legacy_dispatch() {
+    let project = project("proof-legacy", SRC);
+    let receipt = project.dir.join("proof.json");
+    let out = Command::new(auto_exe())
+        .args(["rust", project.script.to_str().unwrap()])
+        .current_dir(&project.dir)
+        .env("AUTO_ACE_RUST_PROOF", &receipt)
+        .env_remove("AUTO_ACE_RUST")
+        .env_remove("AUTO_ACE_CANDIDATE")
+        .output()
+        .expect("run auto rust");
+    assert!(out.status.success(), "legacy run must succeed");
+    let text = std::fs::read_to_string(&receipt).expect("receipt");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    assert_eq!(value["engine"], "legacy");
+    assert_eq!(value["legacy_dispatches"], 1);
+    assert_eq!(value["a2r_dispatches"], 0);
+}

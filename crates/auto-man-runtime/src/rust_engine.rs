@@ -54,6 +54,34 @@ pub fn note_legacy_dispatch() {
     LEGACY_DISPATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
+/// 回执文件名（测试钩子）：写 `{engine, a2r_dispatches, legacy_dispatches}`。
+pub const RUST_PROOF_ENV: &str = "AUTO_ACE_RUST_PROOF";
+
+/// 若 `AUTO_ACE_RUST_PROOF` 指定了路径，写一份**真实计数**回执（原子替换）。
+///
+/// 这是"旧 RustTrans 零 dispatch"的**对外**见证面：进程内计数在真 CLI 测试里
+/// 跨不过进程边界，回执把数字落盘，测试读它而不是相信叙述。
+pub fn write_proof_if_requested() {
+    let Some(path) = std::env::var_os(RUST_PROOF_ENV) else {
+        return;
+    };
+    let (ace, legacy, engine) = observation();
+    let payload = serde_json::json!({
+        "schema": "auto.plan982.rust.proof/1",
+        "engine": engine,
+        "a2r_dispatches": ace,
+        "legacy_dispatches": legacy,
+    });
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+    let tmp = format!("{}.tmp", path.to_string_lossy());
+    if std::fs::write(&tmp, payload.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
 /// 引擎名（回执/诊断用）。
 pub fn engine_name() -> &'static str {
     match choice() {
