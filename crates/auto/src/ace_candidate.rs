@@ -254,6 +254,9 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
             "values": config.values,
             "deps": config.deps,
             "targets": config.targets,
+            // PLAN-982 E7：实际引擎与派发计数（不是自报标签）。
+            "engine": auto_man_runtime::config_engine::engine_name(),
+            "legacy_dispatch": auto_man_runtime::config_engine::observation().legacy_dispatches,
         },
         "execution": {
             "owner": execution_leg,
@@ -379,7 +382,9 @@ fn read_project_config(script: &str) -> Result<ProjectConfig, String> {
         });
     };
     let args = auto_val::Obj::new();
-    let config = auto_lang_core::config::AutoConfig::from_file(&pac_path, &args)
+    // PLAN-982 E7：候选腿的配置读也走**显式引擎选择**（桥已装 ⇒ ACE），
+    // 并把实际引擎记进候选见证（`config.engine`），失败具名上报不回退。
+    let config = auto_man_runtime::config_engine::parse_file(&pac_path, &args)
         .map_err(|e| format!("`{}`: {e}", pac_path.display()))?;
     let mut values = serde_json::Map::new();
     for key in ["name", "version", "scene", "render", "title"] {

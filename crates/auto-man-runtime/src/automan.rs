@@ -129,7 +129,9 @@ impl Automan {
             a.set("port", Value::Str(AutoStr::from("win32")));
             a
         };
-        let config = AutoConfig::from_file(config_path.as_path(), &probe_args)?;
+        // PLAN-982 E7：pac 读取走显式引擎（默认 ACE，无桥宿主落 legacy），
+        // 不静默回退（失败具名上报）。
+        let config = crate::config_engine::parse_file(config_path.as_path(), &probe_args)?;
         let ports = config.root.get_nodes("port");
 
         let mut port_names = Vec::new();
@@ -166,7 +168,7 @@ impl Automan {
         // This lets pac.at use `if port == "win32" { ... }` to switch per-target config.
         let mut args = Obj::new();
         args.set("port", Value::Str(port_name.clone()));
-        let config = AutoConfig::from_file(config_path.as_path(), &args)?;
+        let config = crate::config_engine::parse_file(config_path.as_path(), &args)?;
         let mut index_used: Vec<AutoStr> = Vec::new();
         if config.root.has_prop("index") {
             index_used = config
@@ -1768,7 +1770,10 @@ impl Automan {
                         let _ = handle.join();
                         Ok(())
                     } else if is_ui_project && api_path.exists() {
-                        struct RestoreVmSplit(Option<std::ffi::OsString>, Option<std::ffi::OsString>);
+                        struct RestoreVmSplit(
+                            Option<std::ffi::OsString>,
+                            Option<std::ffi::OsString>,
+                        );
                         impl Drop for RestoreVmSplit {
                             fn drop(&mut self) {
                                 match &self.0 {

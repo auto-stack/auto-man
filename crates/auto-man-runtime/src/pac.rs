@@ -714,7 +714,7 @@ impl Pac {
                     // "reading pac {} with override props: {:?}",
                     // target_path, target.props
                     // );
-                    let dep_config = AutoConfig::from_file(
+                    let dep_config = crate::config_engine::parse_file(
                         target_path.path(),
                         // override dep props
                         &target.props,

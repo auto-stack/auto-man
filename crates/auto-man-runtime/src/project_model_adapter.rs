@@ -312,7 +312,7 @@ mod tests {
     /// R3 F-02: entries are FULL repo-relative paths — matching is exact
     /// (`exempted_by`), so same-name/same-suffix files in other
     /// directories can never inherit an exemption.
-    const EXPECTED_BOTH_REJECTED: [(&str, &str); 2] = [
+    const EXPECTED_BOTH_REJECTED: [(&str, &str); 3] = [
         (
             "test/fixtures/modularity/project-model/fixtures/bad-missing-brace.pac.at",
             "value",
@@ -321,13 +321,19 @@ mod tests {
             "test/fixtures/modularity/project-model/fixtures/bad-missing-value.pac.at",
             "value",
         ),
+        // PLAN-982 A slice 的**故意坏配置**：`render: ${missing_variable}`
+        // 两侧都拒（legacy VM 求值 undefined；静态模型判 value 阶段非法）。
+        ("test/fixtures/plan982/bad-config/pac.at", "value"),
     ];
     /// Inputs whose OLD arm fails config-VM parse (render-pipeline-only
     /// template / undefined-variable fixtures) while the model CLASSIFIES
     /// them non-static — full repo-relative paths, exact match only.
-    const EXPECTED_TEMPLATE_REJECTED: [&str; 2] = [
+    const EXPECTED_TEMPLATE_REJECTED: [&str; 3] = [
         "crates/auto-man-assets/assets/templates/clib/pac.at",
         "test/fixtures/modularity/project-model/fixtures/dynamic-expressions.pac.at",
+        // PLAN-982 A slice 的**故意坏求值**：反引号模板引用未定义变量，
+        // legacy 拒绝、静态模型判非静态（同一诚实配对）。
+        "test/fixtures/plan982/bad-eval/pac.at",
     ];
 
     /// Normalize an absolute managed path to a repo-relative `/`-separated

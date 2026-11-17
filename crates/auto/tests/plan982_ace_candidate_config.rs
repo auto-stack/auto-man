@@ -25,9 +25,10 @@
 //!    terminal states (wall / cancel) are named refusals, and the same script
 //!    does succeed without a budget (non-vacuity guard).
 //!
-//! What is NOT proven here (named delta, PLAN-982 §5 `GAP-982-CONFIG-ACE`): the
-//! configuration *engine* migration to ACE. The config leg is the SDK's frozen
-//! legacy owner (PLAN-969 facade spec §边界); its migration stays with M2-B.
+//! PLAN-982 E7：配置腿已切到**显式引擎选择**（`auto_man_runtime::config_engine`：
+//! 桥已装 ⇒ ACE，无桥宿主 ⇒ legacy）。本文件的见证额外记录 `config.engine` 与
+//! `config.legacy_dispatch`，因此"A 切片只证明门面、配置引擎仍旧"的旧边界
+//! 已被 E7 替换；剩下未证的是 Man 的**二阶段 context/dep** 与 `cargo tc`/780 矩阵。
 //!
 //! These cases only exist with the `ace-candidate` feature. With the feature
 //! off the file reports an explicit, visible skip instead of a silent 0-test
@@ -184,6 +185,15 @@ fn p982_a_config_and_execution_share_one_sdk() {
         config_owner.contains("leg=config") && config_owner.contains("package=auto-lang-core"),
         "config leg identity: {config_owner}"
     );
+    // PLAN-982 E7：配置求值实际由 ACE 引擎服务，且这次运行没有 legacy 派发。
+    assert_eq!(
+        receipt["config"]["engine"], "av",
+        "the configuration leg must report the ACE engine: {receipt}"
+    );
+    assert_eq!(
+        receipt["config"]["legacy_dispatch"], 0,
+        "no legacy configuration dispatch may happen on the ACE path: {receipt}"
+    );
 
     // Leg 2: real execution through the explicit ACE door.
     assert_eq!(receipt["execution"]["engine"], "av");
@@ -257,9 +267,12 @@ fn p982_a_bad_config_refuses_before_any_write() {
     // a document that cannot be parsed and a document that cannot be evaluated.
     // The expected diagnostic substring pins WHICH kind failed, so a regression
     // back to parse-only coverage stays red.
+    // PLAN-982 E7：配置腿由 ACE 服务后，拒绝的**具名诊断**是 ACE 的
+    // `source.undefined` / `source.syntax`（不再是旧 VM 的 "Expected term" /
+    // "Undefined variable" 文案）；覆盖范围仍是"解析失败"和"求值失败"两类。
     for (project_name, expected_kind) in [
-        ("bad-config", "Expected term"),
-        ("bad-eval", "Undefined variable"),
+        ("bad-config", "source.undefined"),
+        ("bad-eval", "source.syntax"),
     ] {
         let expected_kind: &str = expected_kind;
         let project = fixture(project_name);
