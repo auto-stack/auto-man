@@ -72,6 +72,11 @@ impl Automan {
         if path.is_dir() {
             return Err(format!("A directory named with {} already exists", name).into());
         }
+        // PLAN-982（982/TEMPLATE）：`template` 是已存在的目录 ⇒ 独立用户模板。
+        if Path::new(template).is_dir() {
+            Templates::copy_user(Path::new(template), name)?;
+            return Ok(());
+        }
         Templates::copy(template, name)?;
         Ok(())
     }

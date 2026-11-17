@@ -23,6 +23,56 @@ impl Templates {
     // 逐文件的求值/输出步骤保持旧臂原样——含 unwrap panic 语义与
     // 「先创建/截断文件再求值」的遗留顺序（行为改善另立计划，不在
     // 结构迁移中夹带）。
+    /// PLAN-982（982/TEMPLATE）：**独立用户模板**——`template` 是文件系统目录时，
+    /// 按目录内容逐文件渲染到目标工程（`${name}` 替换；`pac.at` 在选中
+    /// `AUTO_ACE_TEMPLATE=ace` 时走 ACE 求值）。嵌入族（`app`/`clib`/…）仍走
+    /// [`Templates::copy`]。
+    pub fn copy_user(template_dir: &Path, path: &str) -> Result<(), AutoError> {
+        let dest = Path::new(path);
+        let pac_name = dest
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| "the project name must be a directory name".to_string())?;
+        let mut stack = vec![template_dir.to_path_buf()];
+        while let Some(current) = stack.pop() {
+            for entry in std::fs::read_dir(&current)? {
+                let entry = entry?;
+                let src = entry.path();
+                if src.is_dir() {
+                    stack.push(src);
+                    continue;
+                }
+                let rel = src
+                    .strip_prefix(template_dir)
+                    .map_err(|e| format!("template path is outside the template dir: {e}"))?;
+                // 输出路径里的 `name` 占位符按目标工程名替换（与嵌入族一致）。
+                let out_rel = rel.to_string_lossy().replace("name", pac_name);
+                let out = dest.join(&out_rel);
+                if let Some(parent) = out.parent() {
+                    create_dir_all(parent)?;
+                }
+                let code = String::from_utf8_lossy(&std::fs::read(&src)?).to_string();
+                let text = if out_rel.ends_with("pac.at")
+                    && crate::template_engine::ace_template_selected()
+                {
+                    let mut args = auto_val::Obj::new();
+                    args.set("name", Value::from(pac_name));
+                    let config = crate::config_engine::parse_code(&code, &args)
+                        .map_err(|e| format!("user template `{out_rel}` under ACE: {e}"))?;
+                    auto_val::Value::Node(Box::new(config.root))
+                        .repr()
+                        .to_string()
+                } else {
+                    let mut interp = AutoInterpreter::new();
+                    interp.set_global("name", Value::from(pac_name));
+                    interp.eval_template("", &code).unwrap().repr().to_string()
+                };
+                let mut f = File::create(&out)?;
+                f.write_all(text.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
     pub fn copy(template: &str, path: &str) -> Result<(), AutoError> {
         let path = Path::new(path);
         let pac_name = path.file_name().unwrap().to_str().unwrap();
