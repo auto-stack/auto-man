@@ -273,6 +273,8 @@ fn p982_a_bad_config_refuses_before_any_write() {
     for (project_name, expected_kind) in [
         ("bad-config", "source.undefined"),
         ("bad-eval", "source.syntax"),
+        // 求值期失败：文档编好了，AV 在 `1 / 0` 上 trap（B-CONFIG-R F-982B-05）。
+        ("bad-runtime", "ace.config/trap"),
     ] {
         let expected_kind: &str = expected_kind;
         let project = fixture(project_name);

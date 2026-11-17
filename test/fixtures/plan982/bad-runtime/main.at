@@ -1,0 +1,5 @@
+// PLAN-982 A slice fixture: the script beside the broken configuration.
+fn main() int {
+    print(42)
+    return 7
+}

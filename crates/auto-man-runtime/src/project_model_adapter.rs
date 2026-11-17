@@ -328,12 +328,15 @@ mod tests {
     /// Inputs whose OLD arm fails config-VM parse (render-pipeline-only
     /// template / undefined-variable fixtures) while the model CLASSIFIES
     /// them non-static — full repo-relative paths, exact match only.
-    const EXPECTED_TEMPLATE_REJECTED: [&str; 3] = [
+    const EXPECTED_TEMPLATE_REJECTED: [&str; 4] = [
         "crates/auto-man-assets/assets/templates/clib/pac.at",
         "test/fixtures/modularity/project-model/fixtures/dynamic-expressions.pac.at",
         // PLAN-982 A slice 的**故意坏求值**：反引号模板引用未定义变量，
         // legacy 拒绝、静态模型判非静态（同一诚实配对）。
         "test/fixtures/plan982/bad-eval/pac.at",
+        // PLAN-982 E8 的**运行期失败**：`1 / 0` 在旧 VM 求值期报错、静态模型
+        // 把它判成非静态（不冒充等价）。
+        "test/fixtures/plan982/bad-runtime/pac.at",
     ];
 
     /// Normalize an absolute managed path to a repo-relative `/`-separated

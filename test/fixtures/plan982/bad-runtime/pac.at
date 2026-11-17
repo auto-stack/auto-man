@@ -1,0 +1,7 @@
+// PLAN-982 E8 fixture: the document PARSES and materializes, but its value
+// expression TRAPS at AV runtime (integer division by zero). This is the
+// "evaluation failure" axis — distinct from the front-end refusals in
+// `bad-config` (typing) and `bad-eval` (syntax). The candidate leg must
+// refuse by name before executing anything and write nothing.
+name: "p982-runtime"
+ratio: 1 / 0
