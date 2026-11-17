@@ -85,3 +85,40 @@ fn p982_user_template_directory_is_rendered_and_consumable() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+/// **事务式物化**：坏模板（`pac.at` 在 ACE 下解析失败）必须在**落盘前**失败，
+/// 目标目录连一个新文件都不能多（round 62 的实现边走边写，会留半成品）。
+#[test]
+fn p982_user_template_failure_writes_nothing() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    auto_lang_ace_host::install().expect("bridge");
+
+    let root = scratch("bad");
+    let template = root.join("bad-template");
+    std::fs::create_dir_all(&template).expect("template dir");
+    // 合法文本文件（若边走边写，会先被写出去）。
+    std::fs::write(template.join("README.md"), "project ${name}\n").expect("readme");
+    // 非法配置文档：`${` 不闭合，ACE 解析期就失败。
+    std::fs::write(template.join("pac.at"), "name: \"${oops\"\n").expect("pac");
+
+    let project = root.join("proj");
+    std::env::set_var("AUTO_ACE_TEMPLATE", "ace");
+    let result = auto_man_runtime::automan::Automan::create_by_template(
+        project.to_str().unwrap(),
+        template.to_str().unwrap(),
+    );
+    std::env::remove_var("AUTO_ACE_TEMPLATE");
+    assert!(result.is_err(), "a bad template must fail");
+
+    // 目标目录要么不存在，要么为空：不得有半成品。
+    match std::fs::read_dir(&project) {
+        Ok(entries) => {
+            let files: Vec<_> = entries.flatten().map(|e| e.file_name()).collect();
+            assert!(
+                files.is_empty(),
+                "a failed template must not materialize files: {files:?}"
+            );
+        }
+        Err(_) => {}
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -27,12 +27,19 @@ impl Templates {
     /// 按目录内容逐文件渲染到目标工程（`${name}` 替换；`pac.at` 在选中
     /// `AUTO_ACE_TEMPLATE=ace` 时走 ACE 求值）。嵌入族（`app`/`clib`/…）仍走
     /// [`Templates::copy`]。
+    /// PLAN-982（982/TEMPLATE）：**独立用户模板**（事务式物化）。
+    ///
+    /// 先把整个模板**渲染进内存**（任何文件失败都还没落盘），再统一写盘；
+    /// 这样"坏模板"在生成阶段就失败，目标 workspace 连一个新文件都不会多出来
+    /// （round 62 的实现是边走边写，坏模板会留下半成品）。
     pub fn copy_user(template_dir: &Path, path: &str) -> Result<(), AutoError> {
         let dest = Path::new(path);
         let pac_name = dest
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| "the project name must be a directory name".to_string())?;
+        // 渲染阶段：不写任何文件。
+        let mut rendered: Vec<(std::path::PathBuf, String)> = Vec::new();
         let mut stack = vec![template_dir.to_path_buf()];
         while let Some(current) = stack.pop() {
             for entry in std::fs::read_dir(&current)? {
@@ -47,10 +54,6 @@ impl Templates {
                     .map_err(|e| format!("template path is outside the template dir: {e}"))?;
                 // 输出路径里的 `name` 占位符按目标工程名替换（与嵌入族一致）。
                 let out_rel = rel.to_string_lossy().replace("name", pac_name);
-                let out = dest.join(&out_rel);
-                if let Some(parent) = out.parent() {
-                    create_dir_all(parent)?;
-                }
                 let code = String::from_utf8_lossy(&std::fs::read(&src)?).to_string();
                 let text = if out_rel.ends_with("pac.at")
                     && crate::template_engine::ace_template_selected()
@@ -65,11 +68,23 @@ impl Templates {
                 } else {
                     let mut interp = AutoInterpreter::new();
                     interp.set_global("name", Value::from(pac_name));
-                    interp.eval_template("", &code).unwrap().repr().to_string()
+                    interp
+                        .eval_template("", &code)
+                        .map_err(|e| format!("user template `{out_rel}`: {e:?}"))?
+                        .repr()
+                        .to_string()
                 };
-                let mut f = File::create(&out)?;
-                f.write_all(text.as_bytes())?;
+                rendered.push((dest.join(out_rel), text));
             }
+        }
+        rendered.sort_by(|a, b| a.0.cmp(&b.0));
+        // 写盘阶段：所有渲染都已成功。
+        for (out, text) in rendered {
+            if let Some(parent) = out.parent() {
+                create_dir_all(parent)?;
+            }
+            let mut f = File::create(&out)?;
+            f.write_all(text.as_bytes())?;
         }
         Ok(())
     }
