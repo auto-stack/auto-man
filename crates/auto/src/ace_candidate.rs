@@ -33,14 +33,20 @@
 //!      script through the SDK config owner, recording the resolved values;
 //!   2. executes the script through the ACE door (console lane) and re-emits
 //!      the captured streams so observable behaviour matches;
-//!   3. records one identity line covering both legs, and asserts they are
-//!      the same SDK package+version;
+//!   3. records one identity line covering both legs, the script input size
+//!      and a run timestamp, and checks that both legs name one SDK
+//!      package+version **and** that the engine which actually served the run
+//!      is the engine that identity names;
 //!   4. refuses by name (`ace.…` codes) — with zero legacy dispatch — for
-//!      argv, unsupported script shapes, diagnostics, denials, resource
-//!      denials and cancellation. It never calls the legacy script runner.
-//! * Nothing is written before a successful evaluation: a bad configuration
-//!   or a refused run leaves no state/lock files behind (the A slice's
-//!   "failure writes nothing" discipline).
+//!      argv, the legacy `--dump-lowered` inspection surface, unsupported
+//!      script shapes, diagnostics, denials, resource denials, cancellation
+//!      and an identity mismatch. It never calls the legacy script runner and
+//!      never prints legacy lowering.
+//! * Nothing is written **inside the project tree**: a bad configuration or a
+//!   refused run leaves no state/lock files behind (the A slice's "failure
+//!   writes nothing" discipline). The only file this leg ever writes is the
+//!   optional receipt below, and only when its path is supplied explicitly
+//!   (a verification hook, not a product default).
 //!
 //! Test hooks (never product defaults)
 //! -----------------------------------
@@ -56,10 +62,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use auto_lang_core::{run_ace, AceEngineChoice, AceOutcome, AceRequest, AceValue};
 use serde_json::json;
-
-use crate::diag::output_success;
 
 /// Explicit opt-in switch for the ACE candidate leg.
 pub(crate) const SELECT_ENV: &str = "AUTO_ACE_CANDIDATE";
@@ -69,11 +72,6 @@ pub(crate) const RECEIPT_ENV: &str = "AUTO_ACE_PROOF_RECEIPT";
 pub(crate) const WALL_MS_ENV: &str = "AUTO_ACE_WALL_MS";
 /// Optional watchdog that sets the run's cancel flag (milliseconds).
 pub(crate) const CANCEL_AFTER_MS_ENV: &str = "AUTO_ACE_CANCEL_AFTER_MS";
-
-/// Console grants the candidate leg requests (explicit, per run).
-fn console_grants() -> Vec<String> {
-    vec!["console.stdout".to_string(), "console.stderr".to_string()]
-}
 
 /// True when the candidate leg is explicitly selected.
 pub(crate) fn selected() -> bool {
@@ -87,7 +85,7 @@ pub(crate) fn selected() -> bool {
 ///
 /// Called by `cmd_run::run_script_file` only when [`selected`] is true; the
 /// caller returns immediately afterwards and never reaches the legacy
-/// runner on this path.
+/// runner (nor the legacy `--dump-lowered` inspection surface) on this path.
 pub(crate) fn run_script(
     ai_mode: bool,
     path: &str,
@@ -105,6 +103,8 @@ pub(crate) fn run_script(
             None,
         );
     }
+    // `--dump-lowered` is a legacy inspection surface. A selected candidate
+    // must not print legacy lowering as if it had succeeded.
     if dump_lowered {
         return refuse(
             ai_mode,
@@ -115,12 +115,44 @@ pub(crate) fn run_script(
         );
     }
 
+    #[cfg(windows)]
+    {
+        return run_script_on_ace(ai_mode, path);
+    }
+    // The ACE execution bridge is Windows-only (ace-abi pattern: the crate
+    // compiles empty elsewhere), so the candidate leg refuses by name on
+    // other targets instead of quietly serving the request with the legacy
+    // engine.
+    #[cfg(not(windows))]
+    {
+        return refuse(
+            ai_mode,
+            "ace.host/unsupported-platform",
+            "the ACE execution bridge is Windows-only in this slice; the \
+             candidate leg refuses instead of falling back to the legacy engine",
+            None,
+        );
+    }
+}
+
+/// The Windows execution body: install the host bridge, evaluate the config
+/// leg, run the script through the ACE door and record the witness.
+#[cfg(windows)]
+fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
+    use auto_lang_core::{run_ace, AceEngineChoice, AceOutcome, AceRequest};
+
+    use crate::diag::output_success;
+
     // Explicit host installation: an unregistered executor is a named host
     // failure, never a default-engine switch.
     if let Err(message) = auto_lang_ace_host::install() {
         return refuse(ai_mode, "ace.host/install-failed", &message, None);
     }
 
+    let started_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default();
     let source = match std::fs::read_to_string(path) {
         Ok(source) => source,
         Err(e) => {
@@ -136,16 +168,19 @@ pub(crate) fn run_script(
     // ---- Leg 1: configuration through the SDK's designated config owner ----
     let config_leg = auto_lang_core::sdk_identity::config_owner_identity();
     let execution_leg = auto_lang_core::sdk_identity::execution_owner_identity();
-    let same_sdk = auto_lang_core::sdk_identity::same_sdk(&config_leg, &execution_leg);
+    // The identity predicate is a build-consistency check, not a claim about
+    // engine semantics: it only becomes meaningful together with the engine
+    // the bridge ACTUALLY served (checked below against the reported engine).
+    let legs_same_sdk = auto_lang_core::sdk_identity::same_sdk(&config_leg, &execution_leg);
     let config = match read_project_config(path) {
         Ok(config) => config,
         Err(e) => {
             // A bad configuration refuses BEFORE anything runs (and writes
-            // nothing — see the A-slice failure discipline).
+            // nothing inside the project tree — see the A-slice discipline).
             let receipt = json!({
                 "schema": auto_lang_core::sdk_identity::SDK_IDENTITY_SCHEMA,
                 "sdk": auto_lang_core::sdk_identity::sdk_identity(),
-                "same_sdk": same_sdk,
+                "same_sdk": legs_same_sdk,
                 "config": {
                     "owner": config_leg,
                     "present": true,
@@ -153,6 +188,8 @@ pub(crate) fn run_script(
                 },
                 "execution": { "outcome": "not-started" },
                 "script": path,
+                "script_bytes": source.len(),
+                "started_unix_ms": started_unix_ms,
             });
             return refuse(ai_mode, "ace.config/invalid", &e, Some(receipt));
         }
@@ -177,6 +214,10 @@ pub(crate) fn run_script(
         ..AceRequest::simple(&source)
     };
     let report = run_ace(AceEngineChoice::AceAV, &request);
+    // One SDK means: both legs mint their identity from this crate AND the
+    // engine that actually served the run is the engine that identity names.
+    let same_sdk =
+        legs_same_sdk && report.engine == auto_lang_core::sdk_identity::EXECUTION_ENGINE_ID;
 
     let (stdout, stderr) = report
         .console
@@ -207,15 +248,17 @@ pub(crate) fn run_script(
         "same_sdk": same_sdk,
         "config": {
             "owner": config_leg,
-            "path": config.pac_path.map(|p| p.display().to_string()),
+            "path": config.pac_path.as_ref().map(|p| p.display().to_string()),
             "present": config.present,
             "values": config.values,
-            "deps": config.dep_nodes,
+            "deps": config.deps,
             "targets": config.targets,
         },
         "execution": {
             "owner": execution_leg,
             "engine": report.engine,
+            "engine_is_identity_engine":
+                report.engine == auto_lang_core::sdk_identity::EXECUTION_ENGINE_ID,
             "outcome": outcome_tag,
             "detail": value_repr,
             "steps": match &report.outcome {
@@ -227,6 +270,8 @@ pub(crate) fn run_script(
             "dispatches": report.console.as_ref().map(|c| c.dispatches),
         },
         "script": path,
+        "script_bytes": source.len(),
+        "started_unix_ms": started_unix_ms,
     });
 
     match &report.outcome {
@@ -235,14 +280,14 @@ pub(crate) fn run_script(
                 return refuse(
                     ai_mode,
                     "ace.sdk/identity-mismatch",
-                    "the config leg and the execution leg did not report the same SDK \
-                     package+version; the candidate run is refused",
+                    "the config leg, the execution leg and the serving engine did not \
+                     report one SDK identity; the candidate run is refused",
                     Some(receipt),
                 );
             }
             // Observable behaviour parity: the script's own streams come out
             // as they were captured, then the returned value prints exactly
-            // where the legacy leg prints it.
+            // where the legacy leg prints it (including its trailing spacing).
             if !stdout.is_empty() {
                 use std::io::Write;
                 let mut out = std::io::stdout();
@@ -257,6 +302,10 @@ pub(crate) fn run_script(
             }
             write_receipt(&receipt);
             output_success(ai_mode, &ace_value_repr(*value));
+            if !ai_mode {
+                // Same trailing spacing the legacy leg prints after a script.
+                println!();
+            }
             Ok(())
         }
         AceOutcome::Diagnostic {
@@ -291,6 +340,11 @@ pub(crate) fn run_script(
     }
 }
 
+/// Console grants the candidate leg requests (explicit, per run).
+fn console_grants() -> Vec<String> {
+    vec!["console.stdout".to_string(), "console.stderr".to_string()]
+}
+
 /// The project configuration values the candidate leg resolved, recorded for
 /// the one-SDK witness. Values are read through the SDK's config owner
 /// (`auto_lang_core::config::AutoConfig`), never through a second parser.
@@ -299,14 +353,15 @@ struct ProjectConfig {
     present: bool,
     values: serde_json::Value,
     /// Dependency targets in the product's own projection (`Pac::deps`).
-    dep_nodes: usize,
+    deps: usize,
     /// Total targets in the product's own projection.
     targets: usize,
 }
 
 /// Read the nearest `pac.at` above the script through the SDK config owner.
-/// A document that fails to evaluate is an error (the candidate leg refuses);
-/// an absent document is not.
+/// A document that fails to parse or evaluate is an error (the candidate leg
+/// refuses); an absent document is not. The nearest-ancestor rule is the
+/// product's own project-discovery rule.
 fn read_project_config(script: &str) -> Result<ProjectConfig, String> {
     let script_path = Path::new(script);
     let start = script_path
@@ -318,7 +373,7 @@ fn read_project_config(script: &str) -> Result<ProjectConfig, String> {
             pac_path: None,
             present: false,
             values: json!({}),
-            dep_nodes: 0,
+            deps: 0,
             targets: 0,
         });
     };
@@ -345,7 +400,7 @@ fn read_project_config(script: &str) -> Result<ProjectConfig, String> {
         pac_path: Some(pac_path),
         present: true,
         values: serde_json::Value::Object(values),
-        dep_nodes: deps,
+        deps,
         targets,
     })
 }
@@ -373,7 +428,9 @@ fn env_millis(name: &str) -> Option<u64> {
 }
 
 /// Map the ACE-visible value onto the CLI's printable representation.
-fn ace_value_repr(value: AceValue) -> String {
+#[cfg(windows)]
+fn ace_value_repr(value: auto_lang_core::AceValue) -> String {
+    use auto_lang_core::AceValue;
     match value {
         AceValue::Unit => "nil".to_string(),
         AceValue::Bool(v) => v.to_string(),

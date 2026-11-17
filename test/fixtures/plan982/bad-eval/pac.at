@@ -1,0 +1,7 @@
+// PLAN-982 A slice fixture: a configuration document that PARSES but fails
+// to EVALUATE — the backtick template references an undefined variable, so
+// the config owner reports an evaluation failure rather than a syntax error.
+// The candidate leg must refuse by name before executing anything and must
+// write nothing in the project tree.
+name: `p982-${missing_variable}`
+render: "vm"

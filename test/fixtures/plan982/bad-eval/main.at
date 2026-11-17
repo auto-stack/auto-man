@@ -1,0 +1,6 @@
+// PLAN-982 A slice fixture: the script beside the configuration that fails
+// to evaluate.
+fn main() int {
+    print(42)
+    return 7
+}

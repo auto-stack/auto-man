@@ -27,6 +27,24 @@ pub(crate) fn run_script_file(ai_mode: bool, s: ScriptArgs) -> miette::Result<bo
         dump_lowered,
         script_args,
     } = s;
+
+    // PLAN-982 A 切片（route C）：显式 ACE 候选执行腿。选中后本次调用**所有**
+    // 面（含 `--dump-lowered` 审查面）都由候选腿服务；任何拒绝具名返回，绝不
+    // 落到下面的旧执行器/旧审查面（无 fallback、无静默引擎切换）。本检查必须
+    // 早于 dump-lowered 早退，否则候选会把旧 lowering 当成功输出。
+    #[cfg(feature = "ace-candidate")]
+    if crate::ace_candidate::selected() {
+        if let Some(path) = file {
+            if !ai_mode {
+println!("----------------------");
+println!("Running Auto {} ", path);
+println!("----------------------");
+            }
+return crate::ace_candidate::run_script(ai_mode, &path, &script_args, dump_lowered)
+    .map(|()| true);
+        }
+    }
+
     if let Some(path) = &file.clone() {
         if dump_lowered {
 let lowered = auto_lang_core::dump_lowered(path).map_err(to_miette_err)?;
@@ -41,14 +59,6 @@ return Ok(true);
 println!("----------------------");
 println!("Running Auto {} ", path);
 println!("----------------------");
-        }
-        // PLAN-982 A 切片（route C）：显式 ACE 候选执行腿。仅当
-        // AUTO_ACE_CANDIDATE 显式选中时进入；该腿的任何拒绝都具名返回，
-        // 绝不落到下面的旧执行器（无 fallback、无静默引擎切换）。
-        #[cfg(feature = "ace-candidate")]
-        if crate::ace_candidate::selected() {
-return crate::ace_candidate::run_script(ai_mode, &path, &script_args, dump_lowered)
-    .map(|()| true);
         }
         // Plan 524: CLI 透传（`auto <file> [args...]`）→ process.args() 表。
         // PLAN-816 T-05：动态 UI 分岔（Plan 227）属宿主装配面——ui-extra

@@ -47,9 +47,12 @@ auto-ui-compiler = { path = "../../../auto-ui/crates/auto-ui-compiler", optional
 auto-ui-runtime = { path = "../../../auto-ui/crates/auto-ui-runtime", optional = true }
 
 # ---- ace-candidate：PLAN-982 A 切片（route C）显式 ACE 候选执行腿 ----
-# 参考执行桥（auto-lang-ace-host）只在显式特性下链接：默认/Core 形态闭包
-# 不含 ACE（与 ui-extra 同纪律）。候选腿由 AUTO_ACE_CANDIDATE 显式选择，
-# 任何拒绝具名返回，绝不回退旧执行器。
+# 参考执行桥只在显式特性下链接：默认/Core 形态闭包不含 ACE（与 ui-extra
+# 同纪律）。候选腿由 AUTO_ACE_CANDIDATE 显式选择，任何拒绝具名返回，绝不
+# 回退旧执行器。桥 crate 本身是 Windows-only（ace-abi 模式：非 Windows
+# 编译为空 crate），故依赖只在 Windows 目标声明；非 Windows 上候选腿给出
+# 具名平台拒绝（`ace.host/unsupported-platform`），不静默走旧引擎。
+[target.'cfg(windows)'.dependencies]
 auto-lang-ace-host = { path = "../../../auto-lang/crates/auto-lang-ace-host", optional = true }
 
 [features]

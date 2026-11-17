@@ -5,18 +5,22 @@
 //! 1. `p982_a_config_and_execution_share_one_sdk` — one run reads a real
 //!    project configuration document through the SDK's designated config owner
 //!    and executes a real script through the explicit ACE door; the recorded
-//!    receipt shows both legs report the SAME SDK package+version, real config
-//!    values, the ACE engine identity, the real stdout and the exit status.
+//!    receipt shows both legs report the SAME SDK package+version, the serving
+//!    engine is the one the identity names, real config values (including the
+//!    product's own dependency projection), the real stdout and exit status.
 //! 2. `p982_a_dual_projects_are_isolated` — two projects with the same script
 //!    and different `pac.at` documents resolve their own values (no cross-talk,
 //!    no static default).
 //! 3. `p982_a_bad_config_refuses_before_any_write` — a configuration that fails
-//!    evaluation refuses by name (`ace.config/invalid`) and the project
-//!    directory is byte-for-byte unchanged (no state/lock writes).
+//!    to parse and one that fails to *evaluate* both refuse by name
+//!    (`ace.config/invalid`) and the project directory is unchanged
+//!    byte-for-byte (no state/lock writes).
 //! 4. `p982_a_candidate_never_falls_back_to_legacy` — the two-arm oracle: the
 //!    same command that the legacy engine runs (argv pass-through) is REFUSED
 //!    by name under the candidate, and the script's own output never appears —
-//!    no silent fallback, no engine switch.
+//!    no silent fallback, no engine switch. The legacy `--dump-lowered`
+//!    inspection surface is refused the same way (it must not print legacy
+//!    lowering as if the candidate had succeeded).
 //! 5. `p982_a_bounded_run_refuses_instead_of_legacy` — the candidate's budget
 //!    terminal states (wall / cancel) are named refusals, and the same script
 //!    does succeed without a budget (non-vacuity guard).
@@ -24,6 +28,10 @@
 //! What is NOT proven here (named delta, PLAN-982 §5 `GAP-982-CONFIG-ACE`): the
 //! configuration *engine* migration to ACE. The config leg is the SDK's frozen
 //! legacy owner (PLAN-969 facade spec §边界); its migration stays with M2-B.
+//!
+//! These cases only exist with the `ace-candidate` feature. With the feature
+//! off the file reports an explicit, visible skip instead of a silent 0-test
+//! green.
 
 #![cfg(feature = "ace-candidate")]
 
@@ -68,7 +76,7 @@ impl Run {
 }
 
 /// Run the real CLI binary on a fixture script. `candidate` selects the
-/// explicit ACE candidate leg; `extra` are script argv values.
+/// explicit ACE candidate leg; `extra` are CLI arguments after the script.
 fn run(script: &Path, candidate: bool, extra: &[&str], envs: &[(&str, &str)]) -> Run {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -88,6 +96,10 @@ fn run(script: &Path, candidate: bool, extra: &[&str], envs: &[(&str, &str)]) ->
     } else {
         cmd.env_remove("AUTO_ACE_CANDIDATE");
     }
+    // The budget hooks are inherited environment state: clear them so an
+    // operator's exported values can never turn the non-vacuity guard red.
+    cmd.env_remove("AUTO_ACE_WALL_MS");
+    cmd.env_remove("AUTO_ACE_CANCEL_AFTER_MS");
     cmd.env("AUTO_ACE_PROOF_RECEIPT", &receipt_path);
     for (key, value) in envs {
         cmd.env(key, value);
@@ -99,9 +111,19 @@ fn run(script: &Path, candidate: bool, extra: &[&str], envs: &[(&str, &str)]) ->
     Run { output, receipt }
 }
 
-/// Recursive `relative path -> bytes` snapshot (the "writes nothing" oracle).
-fn snapshot(dir: &Path) -> BTreeMap<String, u64> {
-    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, u64>) {
+/// Recursive `relative path -> (bytes, content hash)` snapshot. The hash is a
+/// plain FNV-1a over the file bytes so "unchanged" means byte-level unchanged,
+/// not merely same-size.
+fn snapshot(dir: &Path) -> BTreeMap<String, (u64, u64)> {
+    fn fnv1a(bytes: &[u8]) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in bytes {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(0x100_0000_01b3);
+        }
+        hash
+    }
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, (u64, u64)>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
@@ -113,10 +135,10 @@ fn snapshot(dir: &Path) -> BTreeMap<String, u64> {
                 .to_string_lossy()
                 .replace('\\', "/");
             if path.is_dir() {
-                out.insert(format!("{rel}/"), 0);
+                out.insert(format!("{rel}/"), (0, 0));
                 walk(root, &path, out);
-            } else if let Ok(meta) = entry.metadata() {
-                out.insert(rel, meta.len());
+            } else if let Ok(bytes) = std::fs::read(&path) {
+                out.insert(rel, (bytes.len() as u64, fnv1a(&bytes)));
             }
         }
     }
@@ -165,8 +187,13 @@ fn p982_a_config_and_execution_share_one_sdk() {
 
     // Leg 2: real execution through the explicit ACE door.
     assert_eq!(receipt["execution"]["engine"], "av");
+    assert_eq!(
+        receipt["execution"]["engine_is_identity_engine"], true,
+        "the serving engine is the one the identity names: {receipt}"
+    );
     assert_eq!(receipt["execution"]["outcome"], "success");
     assert_eq!(receipt["execution"]["detail"], "7");
+    assert!(receipt["execution"]["steps"].as_u64().unwrap_or(0) > 0);
     let execution_owner = receipt["execution"]["owner"].as_str().unwrap();
     assert!(
         execution_owner.contains("leg=execution") && execution_owner.contains("engine=av"),
@@ -184,6 +211,15 @@ fn p982_a_config_and_execution_share_one_sdk() {
             auto_lang_core::sdk_identity::sdk_version()
         )),
         "the receipt names this build's SDK version: {sdk}"
+    );
+    // The receipt binds the real input, and each run is distinguishable.
+    assert!(
+        receipt["script_bytes"].as_u64().unwrap_or(0) > 0,
+        "the receipt binds the script input: {receipt}"
+    );
+    assert!(
+        receipt["started_unix_ms"].as_u64().unwrap_or(0) > 0,
+        "the receipt carries a run timestamp: {receipt}"
     );
 
     // Observable behaviour: the script's own output and the run's exit status.
@@ -205,6 +241,10 @@ fn p982_a_dual_projects_are_isolated() {
     assert_eq!(a_receipt["config"]["values"]["name"], "p982-a");
     assert_eq!(b_receipt["config"]["values"]["name"], "p982-b");
     assert_eq!(b_receipt["config"]["values"]["version"], "2.3.4");
+    assert_eq!(
+        b_receipt["config"]["deps"], 1,
+        "the second project's own dependency is evaluated too"
+    );
     assert_ne!(
         a_receipt["config"]["values"]["name"], b_receipt["config"]["values"]["name"],
         "two projects with the same script keep their own configuration"
@@ -213,36 +253,41 @@ fn p982_a_dual_projects_are_isolated() {
 
 #[test]
 fn p982_a_bad_config_refuses_before_any_write() {
-    let project = fixture("bad-config");
-    let script = project.join("main.at");
-    let before = snapshot(&project);
+    // Two distinct failure kinds, both through the same SDK config owner:
+    // a document that cannot be parsed and a document that cannot be evaluated.
+    for project_name in ["bad-config", "bad-eval"] {
+        let project = fixture(project_name);
+        let script = project.join("main.at");
+        let before = snapshot(&project);
 
-    let run = run(&script, true, &[], &[]);
-    assert!(
-        !run.output.status.success(),
-        "a configuration that fails evaluation must refuse the run"
-    );
-    assert!(
-        run.all().contains("ace.config/invalid"),
-        "the refusal is named: {}",
-        run.all()
-    );
-    let after = snapshot(&project);
-    assert_eq!(
-        before, after,
-        "a refused configuration must write nothing (no state/lock files)"
-    );
+        let run = run(&script, true, &[], &[]);
+        assert!(
+            !run.output.status.success(),
+            "a {project_name} configuration must refuse the run"
+        );
+        assert!(
+            run.all().contains("ace.config/invalid"),
+            "the refusal is named for {project_name}: {}",
+            run.all()
+        );
+        let after = snapshot(&project);
+        assert_eq!(
+            before, after,
+            "a refused {project_name} configuration must leave the project tree \
+             byte-identical (no state/lock files)"
+        );
 
-    let receipt = run.receipt.expect("the refusal is recorded with identity");
-    assert_eq!(receipt["refusal"]["code"], "ace.config/invalid");
-    assert_eq!(
-        receipt["execution"]["outcome"], "not-started",
-        "the execution leg never starts after a bad configuration"
-    );
-    assert_ne!(
-        receipt["same_sdk"], false,
-        "identity is still one SDK: {receipt}"
-    );
+        let receipt = run.receipt.expect("the refusal is recorded with identity");
+        assert_eq!(receipt["refusal"]["code"], "ace.config/invalid");
+        assert_eq!(
+            receipt["execution"]["outcome"], "not-started",
+            "the execution leg never starts after a {project_name} configuration"
+        );
+        assert_eq!(
+            receipt["same_sdk"], true,
+            "identity is still one SDK for {project_name}: {receipt}"
+        );
+    }
 }
 
 #[test]
@@ -280,6 +325,37 @@ fn p982_a_candidate_never_falls_back_to_legacy() {
         !candidate.stdout().contains("42"),
         "no legacy dispatch may run the script: {}",
         candidate.stdout()
+    );
+
+    // Same discipline for the legacy inspection surface: a selected candidate
+    // must not print legacy lowering and exit 0.
+    let dump = run(&script, true, &["--dump-lowered"], &[]);
+    assert!(
+        !dump.output.status.success(),
+        "dump-lowered under a selected candidate must not succeed"
+    );
+    assert!(
+        dump.all().contains("ace.dump-lowered/unsupported"),
+        "the dump-lowered refusal is named: {}",
+        dump.all()
+    );
+    assert!(
+        !dump.stdout().contains("42"),
+        "no legacy lowering is printed: {}",
+        dump.stdout()
+    );
+
+    // The legacy arm keeps the inspection surface working when the candidate
+    // is not selected (the gate must not regress the default behaviour).
+    let legacy_dump = run(&script, false, &["--dump-lowered"], &[]);
+    assert!(
+        legacy_dump.output.status.success(),
+        "the legacy dump-lowered surface still works: {}",
+        legacy_dump.all()
+    );
+    assert!(
+        !legacy_dump.stdout().trim().is_empty(),
+        "the legacy dump-lowered surface still prints lowering"
     );
 }
 
