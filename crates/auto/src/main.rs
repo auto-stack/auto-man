@@ -159,6 +159,9 @@ fn real_main(cli: Cli) -> Result<()> {
     }
     // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
     // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。
+    // 该拒绝面只在候选构建里存在（`ace_candidate` 模块是特性门控的），默认构建
+    // 走既有分派——否则无特性构建会引用不存在的模块。
+    #[cfg(feature = "ace-candidate")]
     if let Some(command) = candidate_unsupported_command(cli.command.as_ref()) {
         return crate::ace_candidate::refuse_unsupported_command(ai_mode, command);
     }
