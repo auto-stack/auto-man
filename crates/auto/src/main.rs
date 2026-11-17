@@ -800,14 +800,19 @@ fn real_main(cli: Cli) -> Result<()> {
                 miette::miette!("Failed to read file: {}", e)
             })?;
             let args = auto_val::Obj::new();
-            let c = auto_lang_core::eval_config_with_vm(code.as_str(), &args).map_err(|e| {
-                if ai_mode {
-                    eprintln!("{}", format_error_json(&e));
-                    std::process::exit(1);
-                }
-                to_miette_err(e)
-            })?;
-            output_success(ai_mode, &c.repr());
+            // PLAN-982 E7（B-CONFIG-R F-982B-02）：`auto config` 也走**显式引擎
+            // 选择**（桥已装 ⇒ ACE），不再直接调旧求值边——否则 legacy 会在这条
+            // 路径上静默发生而不进观测计数。
+            let c =
+                auto_man_runtime::config_engine::parse_code(code.as_str(), &args).map_err(|e| {
+                    if ai_mode {
+                        eprintln!("{}", format_error_json(&e));
+                        std::process::exit(1);
+                    }
+                    to_miette_err(e)
+                })?;
+            // Node 没有 `repr`；沿用值渲染（`Value::Node` 的 repr 与旧行为同源）。
+            output_success(ai_mode, &auto_val::Value::Node(Box::new(c.root)).repr());
         }
         // ========== Transpile (single file) ==========
         Some(Commands::C { path, target }) => {

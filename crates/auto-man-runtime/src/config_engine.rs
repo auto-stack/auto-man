@@ -33,17 +33,35 @@ pub fn choice() -> ConfigEngineChoice {
         _ => {}
     }
     if let Ok(v) = std::env::var("AUTO_CONFIG_ENGINE") {
-        if v == "legacy" || v == "vm" {
-            return ConfigEngineChoice::LegacyVm;
+        match v.as_str() {
+            "legacy" | "vm" => return ConfigEngineChoice::LegacyVm,
+            // 显式 ACE：即使本构建没装桥也走 ACE（失败具名），不静默回退。
+            "av" | "ace" => return ConfigEngineChoice::AceAv,
+            _ => {}
         }
     }
     if auto_lang_core::ace_executor_installed() {
         ConfigEngineChoice::AceAv
     } else {
-        // 没有执行桥的宿主（例如只链接 SDK 的库）：legacy 是**环境事实**，
-        // 不是语义回退——桥装上后同一路径立即走 ACE。
+        // 没有执行桥的宿主（例如只链接 SDK 的库、或未开 `ace-candidate` 的
+        // 默认 `auto` 构建）：legacy 是**环境事实**，不是语义回退——桥装上后
+        // 同一路径立即走 ACE。这条选择必须**可观测**（B-CONFIG-R F-982B-03）：
+        // 每次进程只提示一次，避免每份 pac 都刷屏。
+        note_legacy_fallback_once();
         ConfigEngineChoice::LegacyVm
     }
+}
+
+/// 无桥 ⇒ legacy 的一次性提示（stderr；不改变控制流、不静默）。
+fn note_legacy_fallback_once() {
+    static NOTICE: std::sync::Once = std::sync::Once::new();
+    NOTICE.call_once(|| {
+        eprintln!(
+            "auto.config/engine: no ACE configuration executor is installed in this build; \
+             the legacy configuration engine serves pac documents (named boundary, \
+             AUTO_CONFIG_ENGINE=av refuses instead of falling back)"
+        );
+    });
 }
 
 /// 当前选择的引擎名（`av` / `legacy`），收据与日志用。
@@ -165,5 +183,22 @@ mod tests {
         assert_eq!(observation().ace_dispatches, 1);
         assert_eq!(observation().legacy_dispatches, 0, "no silent fallback");
         set_choice_for_test(None);
+    }
+    #[test]
+    fn p982_explicit_engine_env_is_honoured() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_choice_for_test(None);
+        std::env::set_var("AUTO_CONFIG_ENGINE", "legacy");
+        assert_eq!(engine_name(), "legacy");
+        std::env::set_var("AUTO_CONFIG_ENGINE", "av");
+        assert_eq!(
+            engine_name(),
+            "av",
+            "an explicit ACE selection must not be downgraded to legacy"
+        );
+        std::env::set_var("AUTO_CONFIG_ENGINE", "not-an-engine");
+        // 未知取值：回到环境事实（本测试进程无桥 ⇒ legacy），但绝不静默改成 av。
+        assert_eq!(engine_name(), "legacy");
+        std::env::remove_var("AUTO_CONFIG_ENGINE");
     }
 }
