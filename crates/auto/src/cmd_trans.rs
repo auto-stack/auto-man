@@ -28,6 +28,49 @@ output_success(ai_mode, &c);
     Ok(())
 }
 
+/// A2R 的 `--merge` 面：渲染三件套 → 内联合并 → 写文件/打印。
+#[cfg(feature = "ace-candidate")]
+fn rust_merged_via_a2r(
+    ai_mode: bool,
+    path: &str,
+    output: Option<&str>,
+) -> miette::Result<()> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| miette::miette!("Failed to read file: {e}"))?;
+    auto_man_runtime::rust_engine::note_ace_a2r_dispatch();
+    auto_man_runtime::rust_engine::write_proof_if_requested();
+    let module = std::path::Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "trans".to_string());
+    let fileset =
+        auto_lang_ace_host::rust_transpile::transpile_scalar_source(&source, &module, "main")
+            .map_err(|e| miette::miette!("{}: {}", e.code, e.message))?;
+    let merged = auto_lang_ace_host::rust_transpile::merge_fileset(&fileset)
+        .map_err(|e| miette::miette!("{}: {}", e.code, e.message))?;
+    match output {
+        Some(out) => {
+            std::fs::write(out, &merged)
+                .map_err(|e| miette::miette!("Failed to write: {e}"))?;
+            if !ai_mode {
+                println!("[trans] {path} -> {out} (merged, a2r)");
+            }
+        }
+        None => output_success(ai_mode, &merged),
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "ace-candidate"))]
+fn rust_merged_via_a2r(
+    _ai_mode: bool,
+    _path: &str,
+    _output: Option<&str>,
+) -> miette::Result<()> {
+    Err(miette::miette!(
+        "ace.rust/executor-unavailable: AUTO_ACE_RUST selects A2R but this build has no ACE host"
+    ))
+}
 /// A2R 候选腿（`AUTO_ACE_RUST` 选中时）：读源 → 宿主驱动渲染 → 把
 /// `generated.rs`（降级后的程序）作为单文件输出；失败**具名**且不回退旧路径。
 #[cfg(feature = "ace-candidate")]
@@ -194,14 +237,10 @@ TransTarget::Rust { output, merge } => {
         auto_man_runtime::rust_engine::write_proof_if_requested();
     }
     if merge {
-        // PLAN-982 982/RUST：merge 面尚无 A2R 实现（单文件合并需要重写模块
-        // 边界），显式选中 A2R 时**具名拒绝**，不静默落回旧合并器。
+        // PLAN-982 982/RUST：A2R 的 merge 面 = 三件套**模块内联**成单个 .rs
+        //（生成文本一字不改；只过滤 wrapper 的模块声明与 use）。
         if auto_man_runtime::rust_engine::ace_a2r_selected() {
-            auto_man_runtime::rust_engine::write_proof_if_requested();
-            return Err(miette::miette!(
-                "ace.rust/merge-unsupported: the A2R candidate leg has no merged single-file \
-                 output yet; unset AUTO_ACE_RUST to use the legacy merger"
-            ));
+            return rust_merged_via_a2r(ai_mode, path.as_str(), output.as_deref());
         }
         let merged = auto_lang_core::trans_rust_merged(path.as_str()).map_err(|e| {
             if ai_mode {

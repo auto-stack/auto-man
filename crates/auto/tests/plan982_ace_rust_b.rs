@@ -169,10 +169,12 @@ fn p982_rust_legacy_proof_receipt_counts_the_legacy_dispatch() {
     assert_eq!(value["legacy_dispatches"], 1);
     assert_eq!(value["a2r_dispatches"], 0);
 }
-/// **merge 面**在 A2R 选中时具名拒绝（无静默旧合并器）：退出非零 + `ace.rust/merge-unsupported`。
+/// **merge 面**：A2R 把三件套内联成**单个 .rs**，该文件必须能独立冷构建并运行
+/// （不是"写出来就算过"）。
 #[test]
-fn p982_rust_merge_surface_refuses_under_a2r() {
+fn p982_rust_merge_surface_writes_a_buildable_single_file() {
     let project = project("merge", SRC);
+    let merged = project.dir.join("merged.rs");
     let out = Command::new(auto_exe())
         .args([
             "trans",
@@ -181,21 +183,51 @@ fn p982_rust_merge_surface_refuses_under_a2r() {
             "rust",
             "--merge",
             "--output",
-            project.dir.join("merged.rs").to_str().unwrap(),
+            merged.to_str().unwrap(),
         ])
         .current_dir(&project.dir)
         .env("AUTO_ACE_RUST", "ace")
         .env_remove("AUTO_ACE_CANDIDATE")
         .output()
         .expect("run auto trans");
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    assert!(!out.status.success(), "merge under A2R must fail by name");
     assert!(
-        stderr.contains("ace.rust/merge-unsupported"),
-        "stderr must name the boundary, got: {stderr}"
+        out.status.success(),
+        "the A2R merge must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = std::fs::read_to_string(&merged).expect("merged file written");
+    assert!(
+        text.contains("mod a2x_runtime {"),
+        "runtime inlined as a module"
     );
     assert!(
-        !project.dir.join("merged.rs").exists(),
-        "a refused merge must not write the output file"
+        text.contains("mod generated {"),
+        "generated inlined as a module"
+    );
+
+    // 冷构建 + 实跑：单个文件就够，不需要其它生成文件。
+    let exe = project.dir.join(if cfg!(windows) {
+        "merged.exe"
+    } else {
+        "merged"
+    });
+    let compile = Command::new("rustc")
+        .args(["--edition", "2021", "merged.rs", "-o"])
+        .arg(&exe)
+        .current_dir(&project.dir)
+        .output()
+        .expect("rustc");
+    assert!(
+        compile.status.success(),
+        "the merged file must compile alone:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let run = Command::new(&exe)
+        .current_dir(&project.dir)
+        .output()
+        .expect("run");
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("value:5"),
+        "the merged program must run the source semantics"
     );
 }
