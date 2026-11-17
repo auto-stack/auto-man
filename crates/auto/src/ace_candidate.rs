@@ -456,6 +456,20 @@ fn ace_value_repr(value: auto_lang_core::AceValue) -> String {
 /// A named refusal: machine JSON in `--ai` mode, a miette diagnostic
 /// otherwise. The same code reaches the receipt so a failed run is still
 /// attributable.
+/// PLAN-982 EXEC：候选腿只服务**裸脚本入口**；其余 run 家族子命令（项目
+/// run/service/req/debug/test）在当前切片内没有 ACE 实现，因此**具名拒绝**，
+/// 绝不静默落回旧执行器（EXEC 的"未知目标不 legacy fallback"）。
+pub(crate) fn refuse_unsupported_command(ai_mode: bool, command: &str) -> miette::Result<()> {
+    refuse(
+        ai_mode,
+        "ace.exec/unsupported-command",
+        &format!(
+            "`auto {command}` is not served by the ACE candidate leg yet; install nothing and \
+             re-run without the candidate selection, or wait for the 982/EXEC slice"
+        ),
+        None,
+    )
+}
 fn refuse(
     ai_mode: bool,
     code: &str,

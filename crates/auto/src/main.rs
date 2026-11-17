@@ -99,6 +99,30 @@ fn install_ui_host_capabilities() {
     auto_ui_runtime::install_ui_host_capabilities();
 }
 
+/// 候选腿未实现、必须具名拒绝的 run 家族子命令（`None` = 走既有分派）。
+fn candidate_unsupported_command(command: Option<&Commands>) -> Option<&'static str> {
+    #[cfg(feature = "ace-candidate")]
+    {
+        if !crate::ace_candidate::selected() {
+            return None;
+        }
+        match command {
+            Some(Commands::Run { .. }) => Some("run"),
+            Some(Commands::Service { .. }) => Some("service"),
+            Some(Commands::ServiceExport { .. }) => Some("service-export"),
+            Some(Commands::Test { .. }) => Some("test"),
+            Some(Commands::TestUi { .. }) => Some("test-ui"),
+            Some(Commands::Debug { .. }) => Some("debug"),
+            Some(Commands::Req { .. }) => Some("req"),
+            _ => None,
+        }
+    }
+    #[cfg(not(feature = "ace-candidate"))]
+    {
+        let _ = command;
+        None
+    }
+}
 fn real_main(cli: Cli) -> Result<()> {
     auto_web::install_http_service_host_if_absent();
     // PLAN-816 T-05：UI 宿主装配先行（ui-extra 形态；见函数注记）。
@@ -122,6 +146,11 @@ fn real_main(cli: Cli) -> Result<()> {
 
     // Determine AI mode: -ai flag or --format json
     let ai_mode = cli.ai || matches!(cli.format, Some(OutputFormat::Json));
+    // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
+    // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。
+    if let Some(command) = candidate_unsupported_command(cli.command.as_ref()) {
+        return crate::ace_candidate::refuse_unsupported_command(ai_mode, command);
+    }
 
     miette::set_hook(Box::new(move |_| {
         Box::new(MietteHandlerOpts::new().terminal_links(true).build())
