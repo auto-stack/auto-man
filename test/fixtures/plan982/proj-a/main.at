@@ -1,0 +1,6 @@
+// PLAN-982 A slice fixture: the minimal CLI script the candidate leg
+// executes through the explicit ACE door (console lane, per-run grants).
+fn main() int {
+    print(42)
+    return 7
+}

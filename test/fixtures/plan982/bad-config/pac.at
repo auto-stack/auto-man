@@ -1,0 +1,5 @@
+// PLAN-982 A slice fixture: a configuration document that FAILS evaluation
+// (an undefined reference). The candidate leg must refuse by name before
+// executing anything, and must write no state/lock files.
+name: "p982-bad"
+render: ${missing_variable}

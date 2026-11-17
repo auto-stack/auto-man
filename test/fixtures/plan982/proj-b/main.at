@@ -1,0 +1,6 @@
+// PLAN-982 A slice fixture: same script shape as proj-a (config isolation
+// must come from the project document, not from the script).
+fn main() int {
+    print(42)
+    return 7
+}

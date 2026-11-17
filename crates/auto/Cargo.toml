@@ -46,6 +46,12 @@ notify = { workspace = true }
 auto-ui-compiler = { path = "../../../auto-ui/crates/auto-ui-compiler", optional = true }
 auto-ui-runtime = { path = "../../../auto-ui/crates/auto-ui-runtime", optional = true }
 
+# ---- ace-candidate：PLAN-982 A 切片（route C）显式 ACE 候选执行腿 ----
+# 参考执行桥（auto-lang-ace-host）只在显式特性下链接：默认/Core 形态闭包
+# 不含 ACE（与 ui-extra 同纪律）。候选腿由 AUTO_ACE_CANDIDATE 显式选择，
+# 任何拒绝具名返回，绝不回退旧执行器。
+auto-lang-ace-host = { path = "../../../auto-lang/crates/auto-lang-ace-host", optional = true }
+
 [features]
 # 完整 profile（现行默认交付形态）：全部命令支持面。
 # Plan 040 裁定①: autodown 提为 default——auto-down 是旗舰消费方，任意
@@ -66,6 +72,8 @@ ui-extra = [
     "dep:shell-pack",
 ]
 python = ["auto-lang-core/python"]
+# PLAN-982 A 切片（route C）：显式 ACE 候选执行腿（opt-in，不进 default）。
+ace-candidate = ["dep:auto-lang-ace-host"]
 # with-file-history alias removed (PLAN-014 T-03 superseding fix-cli-stale-feat): auto-lang-core dropped the dead feature (auto-lang PLAN-901).
 autodown = ["ui-extra", "auto-ui-runtime/autodown"]
 

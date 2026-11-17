@@ -1,0 +1,10 @@
+// PLAN-982 A slice fixture (route C): a real project configuration
+// document with a display face and one dependency node, evaluated by the
+// SDK's designated config owner.
+name: "p982-a"
+version: "0.1.0"
+scene: "cli"
+render: "vm"
+dep("kernel") {
+    port: "msvc/x64"
+}

@@ -42,6 +42,14 @@ println!("----------------------");
 println!("Running Auto {} ", path);
 println!("----------------------");
         }
+        // PLAN-982 A 切片（route C）：显式 ACE 候选执行腿。仅当
+        // AUTO_ACE_CANDIDATE 显式选中时进入；该腿的任何拒绝都具名返回，
+        // 绝不落到下面的旧执行器（无 fallback、无静默引擎切换）。
+        #[cfg(feature = "ace-candidate")]
+        if crate::ace_candidate::selected() {
+return crate::ace_candidate::run_script(ai_mode, &path, &script_args, dump_lowered)
+    .map(|()| true);
+        }
         // Plan 524: CLI 透传（`auto <file> [args...]`）→ process.args() 表。
         // PLAN-816 T-05：动态 UI 分岔（Plan 227）属宿主装配面——ui-extra
         // 形态经 auto-ui-runtime 直跑（旧行为冻结）；Core 形态恒走纯语言

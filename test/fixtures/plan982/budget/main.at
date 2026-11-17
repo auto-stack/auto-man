@@ -1,0 +1,12 @@
+// PLAN-982 A slice fixture: a long-running script used to observe the
+// budget/cancel terminal states of the candidate leg (the bounded run must
+// end in a named refusal, never in a legacy dispatch). The `for <cond>`
+// shape is part of the host-console surface the candidate leg serves.
+fn main() int {
+    var i = 0
+    for i < 50000 {
+        i = i + 1
+    }
+    print(i)
+    return 0
+}

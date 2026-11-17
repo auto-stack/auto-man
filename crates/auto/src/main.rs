@@ -49,6 +49,9 @@ mod tool_ui_ops;
 // stdio/退出码零改；复用既有 cmd 模块与 tool_ui_ops，不造第二工具
 // 发现或 owned 进程设施。
 mod cli_spec;
+// PLAN-982 A 切片（route C）：显式 ACE 候选执行腿（opt-in 特性）。
+#[cfg(feature = "ace-candidate")]
+mod ace_candidate;
 mod cmd_build;
 mod cmd_env;
 mod cmd_req;

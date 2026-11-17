@@ -1,0 +1,9 @@
+// PLAN-982 A slice fixture: a second project with the SAME script and a
+// DIFFERENT configuration, so config isolation is observable per run.
+name: "p982-b"
+version: "2.3.4"
+scene: "cli"
+render: "vm"
+dep("stylekit") {
+    path: "../stylekit"
+}
