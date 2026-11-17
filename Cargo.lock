@@ -88,6 +88,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ace-a2x-rust"
+version = "0.1.0"
+dependencies = [
+ "ace-a2x-core",
+ "ace-core",
+ "ace-foreign-contract",
+]
+
+[[package]]
 name = "ace-a2x-store"
 version = "0.1.0"
 dependencies = [
@@ -1508,6 +1517,11 @@ name = "auto-web"
 version = "0.1.0"
 dependencies = [
  "a2r-std",
+ "ace-a2x-core",
+ "ace-a2x-rust",
+ "ace-av",
+ "ace-av-core",
+ "ace-core",
  "auto-generation-core",
  "auto-lang-core",
  "auto-media-core",
