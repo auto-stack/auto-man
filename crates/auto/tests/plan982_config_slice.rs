@@ -42,7 +42,7 @@ fn corpus() -> Vec<PathBuf> {
 
 /// 登记的例外：这些文档在**无注入**时 ACE 具名拒绝（模板占位符需要注入），或
 /// 两侧都拒（计划内坏夹具）。必须是仓库相对路径，精确匹配。
-const ACE_ONLY_REFUSALS: [&str; 10] = [
+const ACE_ONLY_REFUSALS: [&str; 9] = [
     "crates/auto-man-assets/assets/templates/app/pac.at",
     "crates/auto-man-assets/assets/templates/capp/pac.at",
     "crates/auto-man-assets/assets/templates/clib/pac.at",
@@ -53,8 +53,6 @@ const ACE_ONLY_REFUSALS: [&str; 10] = [
     "test/fixtures/plan982/bad-runtime/pac.at",
     // 模板占位符（无注入时 legacy 留字面、ACE 按 fail-closed 具名拒绝）。
     "test/fixtures/modularity/project-model/fixtures/dynamic-template.pac.at",
-    // 保留字作 pair key（`tag:`）——已登记的语法边界（见 §5 E4 gap register）。
-    "test/fixtures/modularity/project-model/fixtures/static-unknown-node-content.pac.at",
 ];
 
 fn rel(path: &Path, root: &Path) -> String {
