@@ -714,3 +714,42 @@ fn p982_av_service_refuses_an_oversize_request_line_before_dispatch() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 159）：**405 vs 404**——路径已有 GET handler 时，用别的方法访问
+/// 应得 **405 + `allow: GET`**（且不派发）；路径与方法都没有 def 才是 404。
+#[test]
+fn p982_av_service_answers_405_when_the_path_exists_for_another_method() {
+    let project = scratch("method");
+    let mut service = start(
+        &project,
+        "fn hello() int { return 11 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "2"),
+            ("AUTO_AV_ROUTES", "derive"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    let (get_status, get_body) = request(addr, "/hello");
+    let (post_status, post_body) = request_method(addr, "POST", "/hello");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: method GET={get_body:?} POST={post_status} {post_body:?}");
+    assert_eq!(get_status, "HTTP/1.1 200 OK", "{get_body}");
+    assert!(
+        post_status.starts_with("HTTP/1.1 405"),
+        "the path exists for GET only: {post_status}"
+    );
+    assert!(
+        post_body.contains("ace.service/method-not-allowed") && post_body.contains("allow GET"),
+        "the 405 names the allowed method: {post_body}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=1"),
+        "only the GET request dispatched: {receipt}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

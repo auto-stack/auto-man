@@ -149,6 +149,7 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     // 并发：**每连接一个线程**（服务器本身仍是单 accept 循环）；计数用原子量共享。
     let served = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let av_dispatches = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let declared = std::sync::Arc::new(declared_fns(&source));
     let max_body = std::env::var("AUTO_SERVICE_MAX_BODY")
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
@@ -210,6 +211,7 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         let served = std::sync::Arc::clone(&served);
         let av_dispatches = std::sync::Arc::clone(&av_dispatches);
         let active_worker = std::sync::Arc::clone(&active);
+        let declared_worker = std::sync::Arc::clone(&declared);
         workers.push(std::thread::spawn(move || {
             serve_connection(
                 stream,
@@ -221,6 +223,7 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
                 max_body,
                 max_header,
                 max_line,
+                &declared_worker,
                 &served,
                 &av_dispatches,
             );
@@ -271,6 +274,7 @@ fn serve_connection(
     max_body: usize,
     max_header: usize,
     max_line: usize,
+    declared: &std::collections::BTreeSet<String>,
     served: &std::sync::atomic::AtomicU64,
     av_dispatches: &std::sync::atomic::AtomicU64,
 ) {
@@ -339,6 +343,28 @@ fn serve_connection(
         } else {
             fixed_entry.to_string()
         };
+        // HTTP 语义：路径存在但方法不对 ⇒ **405 + allow**（不派发）；方法与路径都没有
+        // 对应的 def 才走 404（由 lower 的 `ace.entry/missing` 给出）。
+        if derive_routes && !declared.contains(&entry) {
+            let allowed = allowed_methods(declared, &path);
+            if !allowed.is_empty() {
+                let body = format!(
+                    "ace.service/method-not-allowed: allow {}\n",
+                    allowed.join(", ")
+                );
+                let response = format!(
+                    "HTTP/1.1 405 Method Not Allowed\r\ncontent-type: text/plain; charset=utf-8\r\n\
+                     allow: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    allowed.join(", "),
+                    body.len()
+                );
+                let mut io = request.stream;
+                let _ = io.write_all(response.as_bytes());
+                let _ = io.flush();
+                served.fetch_add(1, Ordering::SeqCst);
+                break;
+            }
+        }
         let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
         if dispatched {
             av_dispatches.fetch_add(1, Ordering::SeqCst);
@@ -711,6 +737,43 @@ fn entry_for(method: &str, path: &str) -> String {
         name.push_str(&method.to_ascii_lowercase());
     }
     name
+}
+
+/// 源码里的 `fn <name>` 声明集合（只做标识符扫描；用于 **405 vs 404** 的判定）。
+fn declared_fns(source: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        if &bytes[i..i + 2] == b"fn" && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric()) {
+            let mut j = i + 2;
+            if j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                let start = j;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                    j += 1;
+                }
+                if j > start {
+                    // 源码函数名 ⇒ **def id**（语言侧惯例：`fn hello` ⇒ `d_hello`）。
+                    out.insert(format!("d_{}", &source[start..j]));
+                }
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// 同一个 path 上**已声明**的方法（用于 405 的 `allow` 头）。
+fn allowed_methods(declared: &std::collections::BTreeSet<String>, path: &str) -> Vec<&'static str> {
+    ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        .into_iter()
+        .filter(|method| declared.contains(&entry_for(method, path)))
+        .collect()
 }
 
 fn av_handle(
