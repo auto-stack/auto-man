@@ -124,11 +124,12 @@ fn candidate_unsupported_command(command: Option<&Commands>) -> Option<&'static 
             }
             Some(Commands::Service { .. }) => Some("service"),
             Some(Commands::ServiceExport { .. }) => Some("service-export"),
-            // PLAN-982（EXEC，round 186）：**`auto test`（无过滤词）分派接通**——
-            // 候选腿经 ACE 项目测试门（lang 侧 `run_ace_project_tests`，宿主
-            // ProjectHost 为 971 已备形状）；`--filter`/`test:ui` 保持具名拒绝。
-            Some(Commands::Test { filter: None, .. }) => None,
-            Some(Commands::Test { .. }) => Some("test"),
+            // PLAN-982（EXEC，round 186/189）：**`auto test` 分派接通**——候选腿
+            // 经 ACE 项目测试门（lang 侧 `run_ace_project_tests`，宿主
+            // ProjectHost 为 971 已备形状）；round 189 起 `--filter` 一并接通
+            //（legacy 匹配/退出语义：限定名子串、执行前筛选、零匹配＝退出 0）。
+            // `test:ui`（Playwright 面）保持具名拒绝。
+            Some(Commands::Test { .. }) => None,
             Some(Commands::TestUi { .. }) => Some("test-ui"),
             // PLAN-982（EXEC，round 187）：**`auto debug` 分派接通**——候选腿
             // 经 ACE 调试门（971 形状：入口断点 + continue 到终态）。交互式
@@ -471,12 +472,13 @@ fn real_main(cli: Cli) -> Result<()> {
             filter,
             verbose,
         }) => {
-            // PLAN-982（EXEC）：候选腿的 `auto test`（无过滤词）分派——ACE
-            // 项目测试门；带过滤词/非候选构建走既有 test runner。
+            // PLAN-982（EXEC，round 186/189）：候选腿的 `auto test` 分派——ACE
+            // 项目测试门（round 186 无过滤；round 189 起 `--filter` 一并走
+            // ACE：执行前筛选、legacy 匹配/退出语义）；非候选构建走既有 runner。
             #[cfg(feature = "ace-candidate")]
             {
-                if crate::ace_candidate::selected() && filter.is_none() {
-                    crate::ace_candidate::run_tests(ai_mode, dir)?;
+                if crate::ace_candidate::selected() {
+                    crate::ace_candidate::run_tests(ai_mode, dir, filter.as_deref())?;
                     return Ok(());
                 }
             }

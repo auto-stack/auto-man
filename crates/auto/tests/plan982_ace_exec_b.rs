@@ -42,10 +42,11 @@ fn run(dir: &PathBuf, args: &[&str], candidate: bool) -> std::process::Output {
 /// 选中候选后，未迁移的 run 家族子命令必须非零退出 +
 /// 具名 `ace.exec/unsupported-command`，且**不写任何产物**。
 ///
-/// 边界随 EXEC 推进收窄：round 186 起无过滤词 `test` 分派接通；round 187 起
-/// 非 agent `debug` 与 `req`（匿名 one-shot 走会话宿主、会话化走 wire 客户端）
-/// 接通——它们的正面行为由 `plan982_exec_test_cli`／`plan982_exec_debug_cli`／
-/// `plan982_exec_req_cli` 各自证明；本测试钉住**仍未迁移**的集合。
+/// 边界随 EXEC 推进收窄：round 186 起 `test`（round 189 扩至 `--filter`）、
+/// round 187 起非 agent `debug` 与 `req`（匿名 one-shot 走会话宿主、会话化走
+/// wire 客户端）接通——它们的正面行为由 `plan982_exec_test_cli`／
+/// `plan982_exec_debug_cli`／`plan982_exec_req_cli` 各自证明；本测试钉住
+/// **仍未迁移**的集合。
 #[test]
 fn p982_exec_unsupported_commands_refuse_by_name() {
     for (command, args) in [
@@ -55,7 +56,6 @@ fn p982_exec_unsupported_commands_refuse_by_name() {
             "service-export",
             vec!["service-export", "--delivery-root", "out"],
         ),
-        ("test", vec!["test", "--filter", "x"]),
         ("test-ui", vec!["test:ui"]),
         ("debug", vec!["debug", "--agent", "no_such_script.at"]),
     ] {

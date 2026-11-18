@@ -605,11 +605,17 @@ fn write_receipt(receipt: &serde_json::Value) {
     }
 }
 
-/// PLAN-982（EXEC · round 186）：候选腿的 `auto test`（无过滤词）——ACE
-/// 项目测试门（`run_ace_project_tests` + 宿主 ProjectHost，971 形状）。
-/// 收集语义与既有 test runner 同形（单文件或目录递归）；每个零参 `int`
-/// 函数即一个测试候选（宿主发现合同）。失败 ⇒ 非零退出。
-pub(crate) fn run_tests(ai_mode: bool, dir: Option<String>) -> miette::Result<()> {
+/// PLAN-982（EXEC · round 186/189）：候选腿的 `auto test`——ACE 项目测试门
+/// （`run_ace_project_tests` + 宿主 ProjectHost，971 形状）。收集语义与既有
+/// test runner 同形（单文件或目录递归）；每个零参 `int` 函数即一个测试候选
+///（宿主发现合同）。round 189 起 `--filter` 一并走 ACE：限定名子串、**执行前
+/// 筛选**、零匹配＝零执行＋退出 0（legacy 匹配/退出语义；`discovered` 仍为
+/// 完整生产者事实）。失败 ⇒ 非零退出。
+pub(crate) fn run_tests(
+    ai_mode: bool,
+    dir: Option<String>,
+    filter: Option<&str>,
+) -> miette::Result<()> {
     use auto_lang_core::{
         run_ace_project_tests, AceEngineChoice, AceModuleSpec, AceTestRunRequest,
     };
@@ -682,6 +688,7 @@ pub(crate) fn run_tests(ai_mode: bool, dir: Option<String>) -> miette::Result<()
         entry_module: &entry_module,
         entry_def_id: "d_main",
         capabilities: &capabilities,
+        filter,
         wall: None,
         cancel: None,
     };
@@ -708,6 +715,15 @@ pub(crate) fn run_tests(ai_mode: bool, dir: Option<String>) -> miette::Result<()
             failures += 1;
         }
         println!("test {} ... {state}", test.name);
+    }
+    // 零匹配可见性（legacy 退出 0，但不静默）：过滤词无命中 ⇒ 一行具名
+    // 输出＋discovered 计数对照（`discovered` 是完整生产者事实）。
+    if filter.is_some() && report.tests.is_empty() {
+        println!(
+            "0 tests matched '{}' (discovered {} candidate(s) in the project)",
+            filter.unwrap_or_default(),
+            report.discovered.len()
+        );
     }
     println!(
         "ACE test report: engine={} tests={} failures={} exit_code={}",
