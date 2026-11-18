@@ -486,35 +486,85 @@ fn inject_request_context(method: &str, path: &str, source: &str, request: &AvRe
         request.target.len()
     );
     // 查询参数按**键**注入：`?n=5&m=7` ⇒ `__av_query_n()`=5、`__av_query_m()`=7；
-    // 每个键另有 `__av_query_<key>_present()`=1。键不存在时两个函数都不注入。
+    // 每个键另有 `__av_query_<key>_present()`=1。
+    // **多值**：`?t=a&t=b` ⇒ `__av_query_t_len()`=2、`__av_query_t_0()`/`__av_query_t_1()`
+    // （仅当值是十进制整数时给值函数）；单值函数取**第一个**值。
     // 值不是十进制整数时只注入 `_present()`——**原文面还没开**（实测：AV 源面
     // 连 `str` 类型都不是该 profile 的一部分）。
-    for (key, value) in query_pairs(&request.query) {
+    for (key, values) in query_groups(&request.query) {
         let key = sanitize_key(&key);
         if key.is_empty() {
             continue;
         }
         injected.push_str(&format!(
-            "fn __av_query_{key}_present() int {{ return 1 }}\n"
+            "fn __av_query_{key}_present() int {{ return 1 }}\n\
+             fn __av_query_{key}_len() int {{ return {} }}\n",
+            values.len()
         ));
-        if let Ok(int) = value.parse::<i64>() {
-            injected.push_str(&format!("fn __av_query_{key}() int {{ return {int} }}\n"));
+        if let Some(first) = values.first() {
+            if let Ok(int) = first.parse::<i64>() {
+                injected.push_str(&format!("fn __av_query_{key}() int {{ return {int} }}\n"));
+            }
+        }
+        for (index, value) in values.iter().enumerate() {
+            if let Ok(int) = value.parse::<i64>() {
+                injected.push_str(&format!(
+                    "fn __av_query_{key}_{index}() int {{ return {int} }}\n"
+                ));
+            }
         }
     }
     injected.push_str(source);
     injected
 }
 
-/// `a=1&b=2` ⇒ `[("a","1"), ("b","2")]`（不做百分号解码——最小面）。
-fn query_pairs(query: &str) -> Vec<(String, String)> {
-    query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .map(|pair| match pair.split_once('=') {
-            Some((key, value)) => (key.to_string(), value.to_string()),
-            None => (pair.to_string(), String::new()),
-        })
-        .collect()
+/// `a=1&b=2&a=3` ⇒ `[("a", ["1","3"]), ("b", ["2"])]`（百分号解码，保持首次出现顺序）。
+fn query_groups(query: &str) -> Vec<(String, Vec<String>)> {
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = match pair.split_once('=') {
+            Some((key, value)) => (percent_decode(key), percent_decode(value)),
+            None => (percent_decode(pair), String::new()),
+        };
+        match groups.iter_mut().find(|(existing, _)| *existing == key) {
+            Some((_, values)) => values.push(value),
+            None => groups.push((key, vec![value])),
+        }
+    }
+    groups
+}
+
+/// `%XX` 与 `+` 的最小解码（非法转义原样保留）。
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+                match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                    Some(byte) => {
+                        out.push(byte);
+                        i += 3;
+                    }
+                    None => {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
+                }
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
 }
 
 /// 查询键 ⇒ 合法标识符片段（非字母数字折 `_`）。

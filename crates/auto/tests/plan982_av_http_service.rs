@@ -589,3 +589,47 @@ fn p982_av_service_hands_named_query_values_to_the_handler() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 156）：**多值查询与百分号解码**——`?t=5&t=7` ⇒ `__av_query_t_len()`=2、
+/// `__av_query_t_0()`=5、`__av_query_t_1()`=7；键里的 `%20` 解码后再用作函数名片段。
+#[test]
+fn p982_av_service_reads_multi_value_and_percent_decoded_query() {
+    let project = scratch("multi");
+    let mut service = start(
+        &project,
+        "fn main() int {\n  return __av_query_t_len() * 100 + __av_query_t_0() * 10 + __av_query_t_1()\n}\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "1")],
+    );
+    let addr = wait_ready(&service);
+    let (status, body) = request(addr, "/m?t=5&t=7");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: multi status={status} body={body:?}");
+    assert_eq!(status, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(
+        body.starts_with("257"),
+        "len(2)*100 + 5*10 + 7 = 257 came from the multi-value query: {body}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+
+    // 百分号解码：`na%6De=3` ⇒ 键 `name`（解码后才是合法命名面的一部分）。
+    let project2 = scratch("pct");
+    let mut service2 = start(
+        &project2,
+        "fn main() int {\n  return __av_query_name_present()\n}\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "1")],
+    );
+    let addr2 = wait_ready(&service2);
+    let (status2, body2) = request(addr2, "/p?na%6De=3");
+    let receipt2 = finish(&mut service2);
+    eprintln!("p982: pct status={status2} body={body2:?}");
+    assert_eq!(status2, "HTTP/1.1 200 OK", "{receipt2}");
+    assert!(
+        body2.starts_with("1"),
+        "the percent-decoded key is visible to the handler: {body2}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&project2);
+}
