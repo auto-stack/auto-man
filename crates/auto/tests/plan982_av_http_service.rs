@@ -63,7 +63,7 @@ fn start(project: &PathBuf, api: &str, envs: &[(&str, &str)]) -> Service {
             "--dir",
             project.to_str().unwrap(),
             "--server",
-            "av",
+            "av-direct",
             "--http-config-inline",
             &format!(
                 "{{\"profile\":\"development\",\"listen\":{{\"addr\":\"127.0.0.1\",\"port\":{port}}}}}"

@@ -484,7 +484,7 @@ pub(crate) enum Commands {
     /// PLAN-736: HTTP 服务独立启动（server-only；不启 UI/Vite/桌面）。
     /// 命名注记：`auto serve` 已被 Plan 269 AutoVM daemon 占用，故为 `auto service`。
     #[command(
-        about = "Start the project's HTTP service standalone (no UI): --server vm|rust [--http-config <json file>]"
+        about = "Start the project's HTTP service standalone (no UI): --server vm|rust|av|av-direct [--http-config <json file>]"
     )]
     Service {
         #[arg(short, long)]
@@ -512,7 +512,12 @@ pub(crate) enum Commands {
         back_port: Option<String>,
         #[arg(
             long,
-            help = "Service stack: omit = the native `d_main` lane; `web` = the AutoWeb file-channel stack for C0 business sources"
+            help = "Explicit AV handler source path (default: src/back/api.at); --server av only"
+        )]
+        api: Option<String>,
+        #[arg(
+            long,
+            help = "Service stack alias: `web` = the AutoWeb AV engine (same lane as --server av with an explicit --api); omit = the pre-C0 host for av, the native d_main lane otherwise"
         )]
         stack: Option<String>,
     },

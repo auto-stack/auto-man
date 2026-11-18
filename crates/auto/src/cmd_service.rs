@@ -7,9 +7,9 @@
 //! 不启动 Vue/Vite/桌面 UI/webview；两轨（vm/rust）消费同一份解析后的
 //! [HttpServiceConfig]。错误以 miette 报告上抛（main 层 Err = 非零退出）。
 
-use auto_man_runtime::http_service::{resolve_config, serve_project, HttpConfigSource};
+use auto_man_runtime::http_service::{resolve_config, serve_project_with_api, HttpConfigSource};
 use miette::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ServeArgs {
     pub dir: Option<String>,
@@ -17,22 +17,29 @@ pub struct ServeArgs {
     pub http_config: Option<String>,
     pub http_config_inline: Option<String>,
     pub back_port: Option<String>,
-    /// PLAN-982 (C0): `web` = the AutoWeb file-channel stack (983 business sources);
-    /// omitted = the native `d_main` lane.
+    /// PLAN-983 C0：显式 AV 源路径（仅 `--server av`；默认发现 `src/back/api.at`）。
+    pub api: Option<String>,
+    /// PLAN-982：`web` 是**别名**——等价于 `--server av` 且显式给 `--api`；
+    /// 省略 = 保持既有的 av 宿主 / `d_main` 车道不变。
     pub stack: Option<String>,
 }
 
 pub fn cmd_service(args: ServeArgs) -> Result<()> {
+    // PLAN-982：`--stack web` 是 `--server av --api <explicit source>` 的**别名**；
+    // 未知取值仍是具名拒绝（不静默落到默认车道）。
+    let api = args.api.clone();
     if let Some(stack) = args.stack.as_deref() {
         match stack {
             "web" => {
-                return Err(miette::miette!(
-                    "ace.service/stack-web-unavailable: `--stack web` needs auto-web's public AvServiceEngine::new_with_grants (platform.env grant), AvServiceEngine::receipt and a public HttpServiceConfig to TransportConfig mapping (owned by PLAN-983); the current auto-web surface has none of them yet"
-                ))
+                if api.is_none() {
+                    return Err(miette::miette!(
+                        "ace.service/stack-web-needs-api: `--stack web` needs an explicit source path via `--api <file>`; the AV file-channel stack never guesses the business source"
+                    ));
+                }
             }
             other => {
                 return Err(miette::miette!(
-                    "ace.service/stack-unknown: `--stack {other}` is not a known service stack (omit it for the native d_main lane, or use `web`)"
+                    "ace.service/stack-unknown: `--stack {other}` is not a known service stack (omit it for the native lane, or use `web` together with `--api`)"
                 ))
             }
         }
@@ -91,8 +98,13 @@ pub fn cmd_service(args: ServeArgs) -> Result<()> {
         config.listen_port
     );
 
-    let code =
-        serve_project(&project_dir, &args.server, config).map_err(|e| miette::miette!("{e}"))?;
+    let code = serve_project_with_api(
+        &project_dir,
+        &args.server,
+        config,
+        api.as_deref().map(Path::new),
+    )
+    .map_err(|e| miette::miette!("{e}"))?;
     if code != 0 {
         return Err(miette::miette!("http service exited with code {code}"));
     }

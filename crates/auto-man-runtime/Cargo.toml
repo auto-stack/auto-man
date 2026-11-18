@@ -39,6 +39,9 @@ auto-tool-execution = { path = "../../../auto-lang/crates/auto-tool-execution" }
 
 blake3 = { workspace = true }
 sha2 = "0.10"
+# PLAN-983 C0：`--server av` 的 auto-web 宿主（serve_av 是 async；本 crate
+# 自带 current-thread runtime + LocalSet，不依赖调用方运行时）。
+tokio = { workspace = true }
 thiserror = { workspace = true }
 rust-embed = { workspace = true }
 tabled = { workspace = true }

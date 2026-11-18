@@ -345,6 +345,7 @@ fn real_main(cli: Cli) -> Result<()> {
             http_config,
             http_config_inline,
             back_port,
+            api,
             stack,
         }) => {
             // PLAN-781 T-15: 宿主可信预算配置 fail-fast——非法值指名报错 +
@@ -363,6 +364,7 @@ fn real_main(cli: Cli) -> Result<()> {
                 http_config,
                 http_config_inline,
                 back_port,
+                api,
                 stack,
             });
         }

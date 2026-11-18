@@ -65,16 +65,30 @@ pub fn serve_project(
     server: &str,
     config: HttpServiceConfig,
 ) -> Result<i32, String> {
+    serve_project_with_api(project_dir, server, config, None)
+}
+
+/// PLAN-983 C0：带**显式 AV 源路径**的服务入口（`auto service --server av --api <path>`）。
+///
+/// 只影响 AV 轨；其它轨忽略该参数。`--server av` = auto-web AV 服务宿主
+/// （983/AVSERVICE）；`--server av-direct` = pre-C0 的 man 自带 TCP 宿主（显式
+/// 保留给其文本入口/注入常量面，不是 fallback）。
+pub fn serve_project_with_api(
+    project_dir: &Path,
+    server: &str,
+    config: HttpServiceConfig,
+    api: Option<&Path>,
+) -> Result<i32, String> {
     match server {
         "vm" => serve_vm(project_dir, config),
         "rust" => serve_rust(project_dir, config),
-        // PLAN-982（形状 A，用户裁定）：`av` 轨＝Rust HTTP 宿主 + **ACE AV** 执行
-        // handler。宿主能力（`platform.http-service/1`）尚在实现中，因此这里先给
-        // **具名拒绝**：让 983 能显式选中该轨并拿到可编程判断的错误，而不是
-        // "unknown --server" 这种配置错误。
-        "av" | "ace" => serve_av(project_dir, config),
+        // PLAN-983 C0（用户裁定）：`av` 轨=**auto-web AV 服务宿主**，同一份
+        // `#[api]` AV 源经文件通道引擎执行；`--api` 可显式指定源。
+        "av" | "ace" => serve_av(project_dir, config, api),
+        // pre-C0 的 man 自带 TCP 宿主（文本入口/注入常量面），显式命名保留。
+        "av-direct" => serve_av_direct(project_dir, config),
         other => Err(format!(
-            "unknown --server `{other}` (expected `vm`, `rust` or `av`)"
+            "unknown --server `{other}` (expected `vm`, `rust`, `av` or `av-direct`)"
         )),
     }
 }
@@ -92,7 +106,7 @@ pub fn serve_project(
 ///
 /// 测试用阀门：`AUTO_SERVICE_MAX_REQUESTS=N` ⇒ 服务满 N 个请求后自行关停（关停后
 /// 监听关闭，连接被拒）。**绝不回退**到 `vm` 轨。
-fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String> {
+fn serve_av_direct(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String> {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
@@ -257,6 +271,164 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         ));
     }
     Ok(0)
+}
+
+/// PLAN-983 C0 CLI 切片：`--server av` 的**auto-web 宿主**。
+///
+/// 形态：`auto_web::http_server::serve_av` + `av_service::AvServiceEngine`
+/// （983/AVSERVICE 文件通道引擎）——真实 axum/hyper transport、配置/排水/
+/// 控制面（`/__auto/shutdown`）与 legacy serve 同源；AV 源按 `#[api]` 抽取
+/// 路由、**编译一次驻留**，每请求 `run_platform`（grants 可配），响应字节由
+/// AV 程序产出。
+///
+/// `--api <path>` 显式指定 AV 源（默认仍发现 `src/back/api.at`）。无源/无路由/
+/// 编译失败/坏配置 = 具名失败，**绝不回退** `vm`/`av-direct`。
+///
+/// pre-C0 的 man 自带 TCP 宿主保留为显式 `--server av-direct`（其文本入口与
+/// 注入常量面由 `plan982_av_http_service` 钉住），不是本轨的 fallback。
+fn serve_av(
+    project_dir: &Path,
+    config: HttpServiceConfig,
+    api_override: Option<&Path>,
+) -> Result<i32, String> {
+    let api_path = match api_override {
+        Some(path) => path.to_path_buf(),
+        None => auto_lang_core::config::resolve_back_api(project_dir).ok_or_else(|| {
+            format!(
+                "ace.service/no-api: no back API found under {} (expected src/back/api.at); \
+                 `auto service --server av` never falls back to the legacy VM track",
+                project_dir.display()
+            )
+        })?,
+    };
+    let source = std::fs::read_to_string(&api_path)
+        .map_err(|e| format!("ace.service/api-unreadable: {}: {e}", api_path.display()))?;
+    if source.trim().is_empty() {
+        return Err(format!(
+            "ace.service/api-empty: {} is empty",
+            api_path.display()
+        ));
+    }
+
+    // 文件通道 scratch：ASCII（w16 staging 约束）；服务结束删除。
+    let scratch = std::env::temp_dir().join(format!("auto-av-service-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("ace.service/scratch: {e}"))?;
+    let scratch_text = scratch
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    if !scratch_text.is_ascii() {
+        return Err(
+            "ace.service/scratch-ascii: the AV file channel requires an ASCII scratch path".into(),
+        );
+    }
+    let grants: Vec<String> = std::env::var("AUTO_AV_GRANTS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(|grant| grant.trim().to_string())
+                .filter(|grant| !grant.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|grants: &Vec<String>| !grants.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                "platform.file".to_string(),
+                "platform.mem".to_string(),
+                "platform.env".to_string(),
+            ]
+        });
+    let engine = auto_web::av_service::AvServiceEngine::new_with_grants(&source, &scratch, grants)
+        .map_err(|e| format!("ace.service/source: {e}"))?;
+    let receipt = engine.receipt();
+    let route_count = engine.routes().len();
+    let addr = format!("{}:{}", config.listen_addr, config.listen_port);
+    println!(
+        "▶ Starting AV HTTP service on {addr} (engine auto-web, {route_count} route(s), profile {})",
+        config.profile.as_str()
+    );
+
+    let mut transport = auto_web::http_transport::TransportConfig::from_env();
+    transport.service = None;
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let handle = std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .name("auto-av-http-service".into())
+        .spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| format!("ace.service/runtime: {e}"))?;
+            let local = tokio::task::LocalSet::new();
+            // 控制面（loopback `/__auto/shutdown`）与 Ctrl+C 驱动同一关停通道
+            // （legacy `serve_async_with` 同款接线；`serve_av` 是公共入口，自身
+            // 不安装信号面）。
+            auto_web::http_server::bind_control_plane_shutdown(shutdown_tx.clone());
+            let ctrl_tx = shutdown_tx.clone();
+            local.spawn_local(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                eprintln!("[HTTP] Ctrl+C — shutting down gracefully");
+                let _ = ctrl_tx.send(true);
+            });
+            local
+                .block_on(
+                    &rt,
+                    auto_web::http_server::serve_av(engine, &addr, transport, shutdown_rx),
+                )
+                .map_err(|e| format!("ace.service/serve: {e}"))
+        })
+        .map_err(|e| format!("ace.service/thread: {e}"))?;
+
+    // bind 判定同 serve_vm（port=0 → 内核分配）。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let mut bound = None;
+    while std::time::Instant::now() < deadline {
+        if let Some(addr) = auto_web::http_server::bound_addr_snapshot() {
+            bound = Some(addr);
+            break;
+        }
+        if handle.is_finished() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    match bound {
+        Some(addr) => {
+            println!("  ✓ AV HTTP service ready (bound {addr})");
+            println!(
+                "  AUTO_SERVICE_READY {{\"bound\":\"{addr}\",\"profile\":\"{}\",\"config_hash\":\"{:016x}\"}}",
+                config.profile.as_str(),
+                config.effective_config_hash()
+            );
+        }
+        None => {
+            let join = handle.join();
+            let fatal = auto_web::http_server::take_serve_fatal_error();
+            if let Some(f) = fatal {
+                return Err(f);
+            }
+            if let Ok(Err(e)) = join {
+                return Err(e);
+            }
+            return Err("AV HTTP service did not become ready within 120s".to_string());
+        }
+    }
+
+    let join = handle.join();
+    println!(
+        "✓ AV service receipt: served={} av_dispatches={} legacy_dispatches={} same_sdk=true",
+        receipt.av_dispatches(),
+        receipt.av_dispatches(),
+        receipt.legacy_dispatches()
+    );
+    let _ = auto_web::http_server::take_serve_fatal_error();
+    let _ = std::fs::remove_dir_all(&scratch);
+    match join {
+        Ok(Ok(())) => Ok(0),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("AV service thread failed".to_string()),
+    }
 }
 
 /// 服务端请求体上限的默认值（1 MiB）；`AUTO_SERVICE_MAX_BODY` 可覆盖。
