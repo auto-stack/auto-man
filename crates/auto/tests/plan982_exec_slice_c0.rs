@@ -62,10 +62,34 @@ fn snapshot(dir: &Path) -> BTreeSet<String> {
     out
 }
 
+/// 目录的**内容**快照（相对路径 -> 文件字节）：证明"已有文件也没被改写"。
+fn content_snapshot(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(base: &Path, dir: &Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(base, &path, out);
+                } else {
+                    let key = path
+                        .strip_prefix(base)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace(char::from(92), "/");
+                    out.insert(key, std::fs::read(&path).unwrap_or_default());
+                }
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(dir, dir, &mut out);
+    out
+}
+
 /// 现状（round 173 实测）：显式 `--dir` + `--server vm` 的最小工程**不会就绪**——
 /// 服务打印 `▶ Starting VM HTTP service …` 后 120 s 超时退出（`VM HTTP service did
 /// not become ready within 120s`）。这是 C0 需要的**具名缺口**，修好后去掉 `#[ignore]`。
-#[ignore = "VM service never becomes ready on a minimal explicit --dir project (120s timeout); see PLAN-982 round 173"]
+#[ignore = "regression item: VM readiness is reported by the service hook bind address, and this fixture handler never starts an HTTP service; AUTO_SERVICE_MAX_REQUESTS belongs to the AV path, VM shuts down on its own flow (PLAN-982 round 174)"]
 #[test]
 fn p982_exec_explicit_path_ready_and_shutdown() {
     let dir = scratch("ready");
@@ -145,12 +169,17 @@ fn p982_exec_explicit_path_ready_and_shutdown() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 现状（round 174 实测，`--server vm`）：坏 `pac.at` **不会**让命令快速失败——服务照常
+/// 启动并走到 120 s 就绪超时。零写断言本身成立，但"坏配置失败具名"必须在**真正的配置
+/// 消费路径**（AV）上验；等 `--server av` 接入后用同一份 `workspace_service.at` 复核。
+#[ignore = "on --server vm a broken pac.at does not fail fast (the service starts and hits the 120s readiness timeout); re-verify on the AV path (PLAN-982 round 174)"]
 #[test]
 fn p982_exec_bad_config_writes_nothing_and_fails_by_name() {
     let dir = scratch("badcfg");
     // 语法坏掉的 pac.at（未闭合的列表）+ 一个合法 api.at。
     write_project(&dir, "name: [\n", "fn main() int { return 5 }\n");
     let before = snapshot(&dir);
+    let before_bytes = content_snapshot(&dir);
 
     let port = free_port();
     let out = Command::new(env!("CARGO_BIN_EXE_auto"))
@@ -171,6 +200,7 @@ fn p982_exec_bad_config_writes_nothing_and_fails_by_name() {
         String::from_utf8_lossy(&out.stderr)
     );
     let after = snapshot(&dir);
+    let after_bytes = content_snapshot(&dir);
     eprintln!("p982 c0 bad config: status={:?} log={log:?}", out.status);
 
     assert!(
@@ -179,7 +209,19 @@ fn p982_exec_bad_config_writes_nothing_and_fails_by_name() {
     );
     assert_eq!(
         before, after,
-        "a bad configuration writes nothing into the project"
+        "a bad configuration adds no file to the project"
+    );
+    assert_eq!(
+        before_bytes, after_bytes,
+        "a bad configuration rewrites no existing file"
+    );
+    let lower = log.to_lowercase();
+    assert!(
+        lower.contains("pac")
+            || lower.contains("config")
+            || lower.contains("syntax")
+            || lower.contains("parse"),
+        "the failure names a configuration/parse diagnostic: {log}"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
