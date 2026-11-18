@@ -258,6 +258,16 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
             "engine": auto_man_runtime::config_engine::engine_name(),
             "legacy_dispatch": auto_man_runtime::config_engine::observation().legacy_dispatches,
         },
+        // PLAN-982/DEVSDK（用户裁定 A：只做"发现 + 见证"）：把**发现规则本身**写进
+        // 见证——本候选腿按"最近的 `pac.at`"发现工程 SDK；找到没找到、以及服务它的
+        // 配置引擎，都是可断言字段（`legacy_dispatch` 是**真实计数**，不是自报标签）。
+        "sdk_discovery": {
+            "rule": "nearest-pac.at",
+            "found": config.present,
+            "pac_at": config.pac_path.as_ref().map(|p| p.display().to_string()),
+            "config_engine": auto_man_runtime::config_engine::engine_name(),
+            "legacy_dispatch": auto_man_runtime::config_engine::observation().legacy_dispatches,
+        },
         "execution": {
             "owner": execution_leg,
             "engine": report.engine,

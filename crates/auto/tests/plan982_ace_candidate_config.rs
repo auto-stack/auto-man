@@ -194,6 +194,23 @@ fn p982_a_config_and_execution_share_one_sdk() {
         receipt["config"]["legacy_dispatch"], 0,
         "no legacy configuration dispatch may happen on the ACE path: {receipt}"
     );
+    // PLAN-982/DEVSDK（用户裁定 A：只做"发现 + 见证"）：发现规则与其结果都是见证字段。
+    assert_eq!(
+        receipt["sdk_discovery"]["rule"], "nearest-pac.at",
+        "the discovery rule is named: {receipt}"
+    );
+    assert_eq!(
+        receipt["sdk_discovery"]["found"], true,
+        "the project document is discovered: {receipt}"
+    );
+    assert_eq!(
+        receipt["sdk_discovery"]["config_engine"], "av",
+        "the discovered SDK is served by ACE: {receipt}"
+    );
+    assert_eq!(
+        receipt["sdk_discovery"]["legacy_dispatch"], 0,
+        "discovery never falls back to the legacy engine: {receipt}"
+    );
 
     // Leg 2: real execution through the explicit ACE door.
     assert_eq!(receipt["execution"]["engine"], "av");
