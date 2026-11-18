@@ -171,4 +171,9 @@ fn c0_cli_serves_workspace_from_the_same_av_source() {
         receipt.contains("legacy_dispatches=0"),
         "legacy dispatch receipt: {receipt}"
     );
+    // r19：两笔派发全部经 982 组合文本入口（请求不再 staged 到文件）。
+    assert!(
+        receipt.contains("combined_entry_dispatches=2"),
+        "combined-entry receipt: {receipt}"
+    );
 }

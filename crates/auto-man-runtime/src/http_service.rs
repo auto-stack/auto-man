@@ -430,10 +430,12 @@ fn serve_av(
 
     let join = handle.join();
     println!(
-        "✓ AV service receipt: served={} av_dispatches={} legacy_dispatches={} same_sdk=true",
+        "✓ AV service receipt: served={} av_dispatches={} legacy_dispatches={} \
+         combined_entry_dispatches={} same_sdk=true",
         receipt.av_dispatches(),
         receipt.av_dispatches(),
-        receipt.legacy_dispatches()
+        receipt.legacy_dispatches(),
+        receipt.combined_entry_dispatches()
     );
     let _ = auto_web::http_server::take_serve_fatal_error();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -1552,4 +1554,3 @@ mod tests {
         assert!(err.contains("unknown --server"), "{err}");
     }
 }
-

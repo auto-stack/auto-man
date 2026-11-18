@@ -170,6 +170,13 @@ impl Service {
             receipt.contains("legacy_dispatches=0"),
             "AV dispatch receipt: {receipt}"
         );
+        // r19：全部派发经组合文本入口（combined == av >= 1）。
+        let (av, combined) = receipt_counts(&receipt);
+        assert!(av >= 1, "AV dispatch receipt: {receipt}");
+        assert_eq!(
+            combined, av,
+            "every dispatch must run through the combined text entry: {receipt}"
+        );
     }
 }
 
@@ -178,6 +185,28 @@ fn expected_body(root: &str) -> String {
 }
 fn slash(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// r19（PLAN-983）：关停回据里解析 `av_dispatches` 与
+/// `combined_entry_dispatches`——证明请求经 982 组合文本入口执行
+/// （而非 r16–r18 的请求文件暂存通道）。
+fn receipt_counts(receipt: &str) -> (u64, u64) {
+    fn field(line: &str, name: &str) -> u64 {
+        line.split_whitespace()
+            .find(|token| token.starts_with(name))
+            .and_then(|token| token.split('=').nth(1))
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+    }
+    let line = receipt
+        .lines()
+        .rev()
+        .find(|line| line.contains("av_dispatches="))
+        .unwrap_or("");
+    (
+        field(line, "av_dispatches="),
+        field(line, "combined_entry_dispatches="),
+    )
 }
 
 #[test]
@@ -521,4 +550,131 @@ fn c1_config_commit_failure_keeps_the_old_workspace() {
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), old_body, "restart keeps old workspace: {reply}");
     service.shutdown();
+}
+
+/// PLAN-983 r19（用户指令 2）：**并发提交合同**（§5 r15——"并发切换须串行
+/// 提交，GET 在切换期间读到一套一致的状态；重启读到最后一次成功提交"）。
+/// 结构依据：AV 引擎单 owner 循环顺序派发（`!Send`，dispatch 同步完成）+
+/// `<config>.tmp` + MoveFileEx 原子替换 ⇒ 任何 GET 读到的配置都是某一笔
+/// 完整提交。本用例把该合同固化为永久回归（并发 POST A/B + 穿插 GET；
+/// `Service` 含 `!Sync` 的 stdout 管道，并发腿直接用端口发裸请求）。
+#[test]
+fn c1_concurrent_switches_stay_consistent_and_last_commit_wins() {
+    let source = consumer_source();
+    let base = tempfile::Builder::new().prefix("p983c1x").tempdir().unwrap();
+    let project = tempfile::Builder::new().prefix("p983c1xp").tempdir().unwrap();
+    let config = base.path().join("workspace-config.json");
+    let ws_a = base.path().join("ws-a");
+    let ws_b = base.path().join("ws-b");
+    std::fs::create_dir_all(ws_a.join("wiki")).unwrap();
+    std::fs::write(ws_a.join("wiki/a.ad"), "# A
+").unwrap();
+    std::fs::create_dir_all(ws_b.join("wiki")).unwrap();
+    std::fs::write(ws_b.join("wiki/b.ad"), "# B
+").unwrap();
+    let a = slash(&ws_a);
+    let b = slash(&ws_b);
+    let canonical = |path: &std::path::Path| {
+        std::fs::canonicalize(path)
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    };
+    let expected_a = expected_body(&canonical(&ws_a));
+    let expected_b = expected_body(&canonical(&ws_b));
+    let config_text = slash(&config);
+
+    let service = Service::start(&source, project.path(), &config_text, &a);
+    let port = service.port;
+    // 预热：先顺序打开 A（此后 GET 只有 canonical A/B 两种一致形态，
+    // 不混入 env 原样回退形态）。
+    let reply = service.post_open(&a);
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+    assert_eq!(body_of(&reply), expected_a, "{reply}");
+
+    // 并发两路切换 + 穿插 GET（hammer 断言每次都是完整一致的状态）。
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let getter = {
+        let stop = std::sync::Arc::clone(&stop);
+        let expected_a = expected_a.clone();
+        let expected_b = expected_b.clone();
+        std::thread::spawn(move || {
+            let mut seen = 0u64;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let reply = request(
+                    port,
+                    b"GET /api/workspace HTTP/1.1
+Host: 127.0.0.1
+Connection: close
+
+",
+                );
+                let body = body_of(&reply).to_string();
+                assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+                assert!(
+                    body == expected_a || body == expected_b,
+                    "inconsistent GET during concurrent switches: {body}"
+                );
+                seen += 1;
+            }
+            seen
+        })
+    };
+    let poster = |root: String, pause_ms: u64| {
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(pause_ms));
+            let body = format!("{{\"root\":\"{root}\"}}");
+            let wire = format!(
+                "POST /api/workspace/open HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Content-Length: {}
+Connection: close
+
+{}",
+                body.len(),
+                body
+            );
+            request(port, wire.as_bytes())
+        })
+    };
+    let post_a = poster(a.clone(), 0);
+    let post_b = poster(b.clone(), 5);
+    let reply_a = post_a.join().unwrap();
+    let reply_b = post_b.join().unwrap();
+    assert!(reply_a.starts_with("HTTP/1.1 200"), "{reply_a}");
+    assert!(reply_b.starts_with("HTTP/1.1 200"), "{reply_b}");
+    assert_eq!(body_of(&reply_a), expected_a, "{reply_a}");
+    assert_eq!(body_of(&reply_b), expected_b, "{reply_b}");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let seen = getter.join().unwrap();
+
+    // 最终配置 = 两笔 canonical 提交之一；当前 GET 与之逐字节一致。
+    let config_value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    let final_root = config_value["workspace_root"]
+        .as_str()
+        .expect("workspace_root")
+        .to_string();
+    let final_expected = expected_body(&final_root);
+    assert!(
+        final_expected == expected_a || final_expected == expected_b,
+        "final config must be one of the committed workspaces: {final_root}"
+    );
+    let reply = service.get_workspace();
+    assert_eq!(body_of(&reply), final_expected, "{reply}");
+    service.shutdown();
+
+    // 重启：持久配置优先 ⇒ 最后一次成功提交胜出。
+    let service = Service::start(&source, project.path(), &config_text, &a);
+    let reply = service.get_workspace();
+    assert_eq!(
+        body_of(&reply),
+        final_expected,
+        "restart keeps the last committed workspace: {reply}"
+    );
+    service.shutdown();
+    eprintln!(
+        "✓ C1 concurrency receipt: {seen} consistent GETs during concurrent A/B switches; last commit wins on restart ({final_root})"
+    );
 }
