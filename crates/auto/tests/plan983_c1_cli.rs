@@ -649,7 +649,9 @@ Connection: close
             seen
         })
     };
+    let arrival = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let poster = |root: String, pause_ms: u64| {
+        let arrival = std::sync::Arc::clone(&arrival);
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(pause_ms));
             let body = format!("{{\"root\":\"{root}\"}}");
@@ -664,13 +666,19 @@ Connection: close
                 body.len(),
                 body
             );
-            request(port, wire.as_bytes())
+            let reply = request(port, wire.as_bytes());
+            // 到达序（观测证据）：单 owner 顺序派发下响应写出序=提交序；
+            // 仅记入收据，不作断言（客户端线程调度理论上可换到达序）。
+            let seq = arrival.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            (reply, root, seq)
         })
     };
     let post_a = poster(a.clone(), 0);
     let post_b = poster(b.clone(), 5);
-    let reply_a = post_a.join().unwrap();
-    let reply_b = post_b.join().unwrap();
+    let (reply_a, root_a, seq_a) = post_a.join().unwrap();
+    let (reply_b, root_b, seq_b) = post_b.join().unwrap();
+    assert_eq!(seq_a + seq_b, 3, "two distinct arrival slots");
+    let _ = (root_a.as_str(), root_b.as_str());
     assert!(reply_a.starts_with("HTTP/1.1 200"), "{reply_a}");
     assert!(reply_b.starts_with("HTTP/1.1 200"), "{reply_b}");
     assert_eq!(body_of(&reply_a), expected_a, "{reply_a}");
@@ -708,7 +716,8 @@ Connection: close
         "restart keeps the last committed workspace: {reply}"
     );
     let _ = service.shutdown();
+    let order = if seq_a < seq_b { "A->B" } else { "B->A" };
     eprintln!(
-        "✓ C1 concurrency receipt: {seen} consistent GETs during concurrent A/B switches; last commit wins on restart ({final_root})"
+        "✓ C1 concurrency receipt: {seen} consistent GETs (config always one complete commit) during concurrent A/B switches; observed POST arrival order {order}; final={final_root} (root_a={root_a}, root_b={root_b}); restart keeps the last commit"
     );
 }
