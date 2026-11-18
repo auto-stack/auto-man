@@ -286,10 +286,9 @@ fn c1_open_get_restart_share_one_persisted_workspace_config() {
 /// `workspace.index-rebuild-failed:` 开头；GET/重启 GET ⇒ 旧工作区；配置字节
 /// 与旧索引字节不变；标记文件原样；目标 wiki 已创建（允许的副作用）。
 ///
-/// 当前实现（r14 子集：配置持久化 + POST，尚未生成索引/原子提交）不满足本
-/// 回归，先以 `#[ignore]` 固定；C1 完整语义（982 组合入口）落地后去掉 ignore。
+/// 当前实现（r18，982 组合入口已落主）：AV 源做 canonical + 索引重建 +
+/// 原子提交；本回归常驻（无 ignore）。
 #[test]
-#[ignore = "PLAN-983 r15: C1 index preparation + atomic config commit pending (982 combined entry)"]
 fn c1_index_failure_keeps_the_old_workspace_and_config() {
     let source = consumer_source();
     let base = tempfile::Builder::new().prefix("p983c1i").tempdir().unwrap();
@@ -303,14 +302,19 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
     std::fs::write(target.join("jade-garden-index.json/keep.txt"), "keep").unwrap();
 
     let old_text = slash(&old);
+    // r14/r15 基线：C1 的 POST/GET 响应是 Windows canonical（`\\?\`）形态。
+    let old_canonical = std::fs::canonicalize(&old)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
     let target_text = slash(&target);
     let config_text = slash(&config);
 
     let service = Service::start(&source, project.path(), &config_text, &target_text);
-    // 先打开旧工作区（最终实现会在此生成旧索引；当前实现仅写配置）。
+    // 先打开旧工作区（打开即生成旧索引）。
     let reply = service.post_open(&old_text);
     assert!(reply.starts_with("HTTP/1.1 200"), "open old workspace: {reply}");
-    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+    assert_eq!(body_of(&reply), expected_body(&old_canonical), "{reply}");
     let config_before = std::fs::read(&config).unwrap_or_default();
     let old_index_path = old.join("jade-garden-index.json");
     let old_index_before = std::fs::read(&old_index_path).ok();
@@ -326,7 +330,7 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
         "old index contains hello.ad: {old_index}"
     );
     let reply = service.get_workspace();
-    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+    assert_eq!(body_of(&reply), expected_body(&old_canonical), "{reply}");
 
     // 目标索引写不进去 ⇒ 500 具名；旧工作区/配置/旧索引保持。
     let reply = service.post_open(&target_text);
@@ -341,7 +345,7 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
         "named index failure: {body}"
     );
     let reply = service.get_workspace();
-    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+    assert_eq!(body_of(&reply), expected_body(&old_canonical), "{reply}");
     assert_eq!(
         std::fs::read(&config).unwrap_or_default(),
         config_before,
@@ -365,7 +369,7 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
     let reply = service.get_workspace();
     assert_eq!(
         body_of(&reply),
-        expected_body(&old_text),
+        expected_body(&old_canonical),
         "restart keeps the old workspace after a failed index rebuild: {reply}"
     );
     service.shutdown();
@@ -376,9 +380,8 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
 
 
 /// PLAN-983 r15 预置：**Unicode 工作区路径**的 POST/GET/重启同一路径。
-/// 现有 interim 源只支持 ASCII（具名 400），本用例固定目标行为。
+/// r18（982 组合入口落主）起常驻：AV 源全量 UTF-8 ↔ UTF-16 转换。
 #[test]
-#[ignore = "PLAN-983 r15: Unicode workspace paths pending C1 implementation (interim source returns a named 400)"]
 fn c1_unicode_workspace_path_roundtrips() {
     let source = consumer_source();
     let base = tempfile::Builder::new().prefix("p983c1u").tempdir().unwrap();
@@ -423,9 +426,8 @@ fn c1_unicode_workspace_path_roundtrips() {
 }
 
 /// PLAN-983 r14/r15 预置：**Windows canonical 形态**（`\\?\` 前缀 + 反斜杠）
-/// 与 legacy `open_workspace_impl` 一致；现有 interim 源返回原样路径。
+/// 与 legacy `open_workspace_impl` 一致。r18 起常驻。
 #[test]
-#[ignore = "PLAN-983 r14/r15: Windows canonical (\\\\?\\...) root parity pending; interim source returns the given path"]
 fn c1_windows_canonical_paths_match_legacy() {
     let source = consumer_source();
     let base = tempfile::Builder::new().prefix("p983c1c").tempdir().unwrap();
@@ -465,11 +467,11 @@ fn c1_windows_canonical_paths_match_legacy() {
 }
 
 /// PLAN-983 r15 预置：**配置提交失败**不得改工作区/配置。
-/// 故障夹具：旧工作区打开后把配置文件设为只读，下一次 POST 的配置提交失败。
-/// 期望：500 且 error 以 `workspace.config-commit-failed:` 开头（建议前缀，
-/// 待实现冻结）；GET/重启 GET 仍是旧工作区；配置字节不变。
+/// 故障夹具：旧工作区打开后把配置文件设为只读，下一次 POST 的配置提交失败
+/// （`<config>.tmp` 写入后 MoveFileEx 替换只读目标 ⇒ 拒绝）。
+/// 期望：500 且 error 以 `workspace.config-commit-failed:` 开头（r18 冻结）；
+/// GET/重启 GET 仍是旧工作区；配置字节不变。
 #[test]
-#[ignore = "PLAN-983 r15: config commit failure semantics pending (proposed prefix workspace.config-commit-failed:)"]
 fn c1_config_commit_failure_keeps_the_old_workspace() {
     let source = consumer_source();
     let base = tempfile::Builder::new().prefix("p983c1f").tempdir().unwrap();
