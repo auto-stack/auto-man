@@ -604,3 +604,123 @@ fn write_receipt(receipt: &serde_json::Value) {
         let _ = std::fs::write(&path, text);
     }
 }
+
+/// PLAN-982（EXEC · round 186）：候选腿的 `auto test`（无过滤词）——ACE
+/// 项目测试门（`run_ace_project_tests` + 宿主 ProjectHost，971 形状）。
+/// 收集语义与既有 test runner 同形（单文件或目录递归）；每个零参 `int`
+/// 函数即一个测试候选（宿主发现合同）。失败 ⇒ 非零退出。
+pub(crate) fn run_tests(ai_mode: bool, dir: Option<String>) -> miette::Result<()> {
+    use auto_lang_core::{
+        run_ace_project_tests, AceEngineChoice, AceModuleSpec, AceTestRunRequest,
+    };
+
+    let target = dir.unwrap_or_else(|| ".".to_string());
+    let path = std::path::Path::new(&target);
+    let files: Vec<PathBuf> = if path.is_file() {
+        vec![path.to_path_buf()]
+    } else if path.is_dir() {
+        let mut found = Vec::new();
+        fn collect_at_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        collect_at_files(&p, out);
+                    } else if p.extension().map_or(false, |e| e == "at" || e == "au") {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        collect_at_files(path, &mut found);
+        found.sort();
+        if found.is_empty() {
+            return refuse(
+                ai_mode,
+                "ace.test/no-sources",
+                &format!("no .at files found in '{target}'"),
+                None,
+            );
+        }
+        found
+    } else {
+        return refuse(
+            ai_mode,
+            "ace.test/target-missing",
+            &format!("'{target}' not found"),
+            None,
+        );
+    };
+
+    let mut specs: Vec<AceModuleSpec> = Vec::new();
+    let mut sources: Vec<(String, String)> = Vec::new();
+    for file in &files {
+        let source = std::fs::read_to_string(file)
+            .map_err(|e| miette::miette!("Failed to read {}: {e}", file.display()))?;
+        let id = file
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "main".to_string());
+        sources.push((id.clone(), source));
+    }
+    for (id, source) in &sources {
+        specs.push(AceModuleSpec {
+            package: "app",
+            version: "1.0.0",
+            id,
+            source,
+        });
+    }
+    let entry_module = format!(
+        "app::{}",
+        sources.first().map(|(id, _)| id.as_str()).unwrap_or("main")
+    );
+    // 包线显式能力键（packages 前门合同；缺位 = source.module-capability 具名拒）。
+    let capabilities = vec!["ac.source.modules.packages/v1".to_string()];
+    let request = AceTestRunRequest {
+        modules: &specs,
+        entry_module: &entry_module,
+        entry_def_id: "d_main",
+        capabilities: &capabilities,
+        wall: None,
+        cancel: None,
+    };
+    let report = run_ace_project_tests(AceEngineChoice::AceAV, &request);
+    // 诊断可见性：非 Passed 终态把 outcome 具名带出（NoTestsDiscovered /
+    // Diagnostic 的 message 是排障的第一现场）。
+    if !matches!(report.outcome, auto_lang_core::AceTestRunOutcome::Passed) {
+        let detail = match &report.outcome {
+            auto_lang_core::AceTestRunOutcome::Failed { message } => format!("failed: {message}"),
+            auto_lang_core::AceTestRunOutcome::NoTestsDiscovered { message } => {
+                format!("no tests discovered: {message}")
+            }
+            auto_lang_core::AceTestRunOutcome::Diagnostic(d) => {
+                format!("diagnostic {}: {} ({:?})", d.code, d.message, d.span)
+            }
+            other => format!("{other:?}"),
+        };
+        eprintln!("ACE test outcome: {detail}");
+    }
+    let mut failures = 0usize;
+    for test in &report.tests {
+        let state = if test.passed { "ok" } else { "FAILED" };
+        if !test.passed {
+            failures += 1;
+        }
+        println!("test {} ... {state}", test.name);
+    }
+    println!(
+        "ACE test report: engine={} tests={} failures={} exit_code={}",
+        report.engine,
+        report.tests.len(),
+        failures,
+        report.exit_code
+    );
+    if report.exit_code != 0 {
+        return Err(miette::miette!(
+            "ace.test/failures: protocol exit {} (failures={failures})",
+            report.exit_code
+        ));
+    }
+    Ok(())
+}

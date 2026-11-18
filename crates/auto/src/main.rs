@@ -124,6 +124,10 @@ fn candidate_unsupported_command(command: Option<&Commands>) -> Option<&'static 
             }
             Some(Commands::Service { .. }) => Some("service"),
             Some(Commands::ServiceExport { .. }) => Some("service-export"),
+            // PLAN-982（EXEC，round 186）：**`auto test`（无过滤词）分派接通**——
+            // 候选腿经 ACE 项目测试门（lang 侧 `run_ace_project_tests`，宿主
+            // ProjectHost 为 971 已备形状）；`--filter`/`test:ui` 保持具名拒绝。
+            Some(Commands::Test { filter: None, .. }) => None,
             Some(Commands::Test { .. }) => Some("test"),
             Some(Commands::TestUi { .. }) => Some("test-ui"),
             Some(Commands::Debug { .. }) => Some("debug"),
@@ -459,6 +463,15 @@ fn real_main(cli: Cli) -> Result<()> {
             filter,
             verbose,
         }) => {
+            // PLAN-982（EXEC）：候选腿的 `auto test`（无过滤词）分派——ACE
+            // 项目测试门；带过滤词/非候选构建走既有 test runner。
+            #[cfg(feature = "ace-candidate")]
+            {
+                if crate::ace_candidate::selected() && filter.is_none() {
+                    crate::ace_candidate::run_tests(ai_mode, dir)?;
+                    return Ok(());
+                }
+            }
             cmd_test::test(dir, filter, verbose)?;
         }
         Some(Commands::TestUi {
