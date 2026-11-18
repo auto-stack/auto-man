@@ -114,7 +114,14 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     let source = std::fs::read_to_string(&api_path)
         .map_err(|e| format!("ace.service/api-unreadable: {}: {e}", api_path.display()))?;
 
-    let entry = std::env::var("AUTO_AV_ENTRY").unwrap_or_else(|_| "d_main".to_string());
+    // 路由模式：默认（未设 `AUTO_AV_ROUTES`）走固定入口 `AUTO_AV_ENTRY`（默认
+    // `d_main`）；`AUTO_AV_ROUTES=derive` 时按 **(method, path) ⇒ def 名** 派生——
+    // `GET /hello` ⇒ `d_hello`，`POST /hello` ⇒ `d_hello_post`，`GET /` ⇒ `d_main`。
+    // 派生不到 def 时**不是**静默回落到 `d_main`，而是 404 `ace.service/no-route`。
+    let fixed_entry = std::env::var("AUTO_AV_ENTRY").unwrap_or_else(|_| "d_main".to_string());
+    let derive_routes = std::env::var("AUTO_AV_ROUTES")
+        .map(|v| matches!(v.trim(), "derive" | "1" | "true" | "yes"))
+        .unwrap_or(false);
     let wall_ms = std::env::var("AUTO_AV_WALL_MS")
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok());
@@ -129,7 +136,13 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         .local_addr()
         .map_err(|e| format!("ace.service/bind: {e}"))?;
     println!(
-        "▶ Starting AV HTTP service on {bound} (entry {entry}, profile {})",
+        "▶ Starting AV HTTP service on {bound} (entry {}, routes {}, profile {})",
+        if derive_routes {
+            "<derived>"
+        } else {
+            fixed_entry.as_str()
+        },
+        if derive_routes { "derive" } else { "fixed" },
         config.profile.as_str()
     );
 
@@ -163,6 +176,12 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
 
         // 每个请求**重新合成**源码：请求上下文以常量函数注入（见 inject_request_context）。
         let program = inject_request_context(&method, &path, &source);
+        // 路由：固定入口（默认）或按 (method, path) 派生。
+        let entry = if derive_routes {
+            entry_for(&method, &path)
+        } else {
+            fixed_entry.clone()
+        };
         let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
         if dispatched {
             av_dispatches += 1;
@@ -217,6 +236,34 @@ fn inject_request_context(method: &str, path: &str, source: &str) -> String {
         method.len()
     )
 }
+/// 路由派生：`(method, path)` ⇒ def 名（`AUTO_AV_ROUTES=derive` 时启用）。
+///
+/// - `GET /` ⇒ `d_main`（根入口沿用惯例名）；
+/// - `GET /hello` ⇒ `d_hello`；`GET /a/b` ⇒ `d_a_b`；
+/// - 非 GET 追加方法后缀：`POST /hello` ⇒ `d_hello_post`。
+///
+/// 派生是**确定**的：路径里非字母数字一律折成 `_`，大小写保留；查询串不参与。
+fn entry_for(method: &str, path: &str) -> String {
+    let method = method.trim().to_ascii_uppercase();
+    let trimmed = path.split('?').next().unwrap_or("").trim_matches('/');
+    if trimmed.is_empty() {
+        return if method == "GET" {
+            "d_main".to_string()
+        } else {
+            format!("d_{}", method.to_ascii_lowercase())
+        };
+    }
+    let mut name = String::from("d_");
+    for ch in trimmed.chars() {
+        name.push(if ch.is_ascii_alphanumeric() { ch } else { '_' });
+    }
+    if method != "GET" {
+        name.push('_');
+        name.push_str(&method.to_ascii_lowercase());
+    }
+    name
+}
+
 fn av_handle(
     source: &str,
     entry: &str,
@@ -242,6 +289,17 @@ fn av_handle(
             "ace.service/timeout: the AV budget was exhausted\n".to_string(),
             true,
         ),
+        // 派生入口不存在 ⇒ **404**（绝不静默回落到 `d_main`）。
+        // 实测：未知入口的具名 code 是 `ace.entry/missing`（lower 阶段给出 `lower.entry`）。
+        AceOutcome::Diagnostic { code, .. }
+            if code == "ace.entry/missing" || code == "lower.entry" =>
+        {
+            (
+                "404 Not Found",
+                "ace.service/no-route: no handler is defined for this (method, path)\n".to_string(),
+                true,
+            )
+        }
         AceOutcome::Diagnostic { code, .. } => (
             "500 Internal Server Error",
             format!("ace.service/handler-diagnostic: {code}\n"),

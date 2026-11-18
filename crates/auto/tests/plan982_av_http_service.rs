@@ -92,11 +92,16 @@ fn wait_ready(service: &Service) -> std::net::SocketAddr {
 }
 
 fn request(addr: std::net::SocketAddr, path: &str) -> (String, String) {
+    request_method(addr, "GET", path)
+}
+
+fn request_method(addr: std::net::SocketAddr, method: &str, path: &str) -> (String, String) {
     let mut stream = TcpStream::connect(addr).expect("connect");
     stream
         .set_read_timeout(Some(Duration::from_secs(120)))
         .expect("read timeout");
-    let request = format!("GET {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n");
+    let request =
+        format!("{method} {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).expect("write request");
     let mut text = String::new();
     stream.read_to_string(&mut text).expect("read response");
@@ -283,6 +288,55 @@ fn p982_av_service_hands_request_context_to_the_program() {
     assert!(
         receipt.contains("av_dispatches=2") && receipt.contains("legacy_dispatches=0"),
         "both requests dispatched to AV and never to the VM: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+/// PLAN-982（round 151）：**路由表**——`AUTO_AV_ROUTES=derive` 时 `(method, path)`
+/// 派生 def 名：`GET /hello` ⇒ `d_hello`、`GET /other` ⇒ `d_other`、
+/// `POST /hello` ⇒ `d_hello_post`；派生不到 ⇒ **404**，绝不静默回落 `d_main`。
+#[test]
+fn p982_av_service_routes_by_method_and_path() {
+    let project = scratch("routes");
+    let mut service = start(
+        &project,
+        "fn hello() int { return 11 }\n\
+         fn other() int { return 22 }\n\
+         fn hello_post() int { return 33 }\n\
+         fn main() int { return 99 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "4"),
+            ("AUTO_AV_ROUTES", "derive"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    let (get_hello, body_hello) = request(addr, "/hello");
+    let (get_other, body_other) = request(addr, "/other");
+    let (post_hello, body_post) = request_method(addr, "POST", "/hello");
+    let (get_missing, body_missing) = request(addr, "/missing");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: routes GET /hello = {body_hello:?} GET /other = {body_other:?}");
+    eprintln!("p982: routes POST /hello = {body_post:?} GET /missing = {body_missing:?}");
+    assert_eq!(get_hello, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(body_hello.starts_with("11"), "{body_hello}");
+    assert!(
+        body_other.starts_with("22"),
+        "a different handler ran: {body_other}"
+    );
+    assert_eq!(post_hello, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(
+        body_post.starts_with("33"),
+        "the method suffix selected its handler: {body_post}"
+    );
+    assert_eq!(get_missing, "HTTP/1.1 404 Not Found", "{body_missing}");
+    assert!(
+        body_missing.contains("ace.service/no-route"),
+        "no silent fallback to d_main: {body_missing}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
     );
     let _ = std::fs::remove_dir_all(&project);
 }
