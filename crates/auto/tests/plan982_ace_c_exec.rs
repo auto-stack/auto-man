@@ -95,3 +95,52 @@ fn p982_c_transpiled_program_compiles_and_runs_with_msvc() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+/// PLAN-982 / V-B-C（多模块）：两个 Auto 模块各自生成 C，由 `cl` **一起**编译链接，
+/// 跨模块调用在真实可执行文件里生效。
+/// 现状（PLAN-982 round 169 实测）：A2C **不降级跨模块限定调用**——`util.add(2, 3)`
+/// 被原样写成 C（`error C2224: ".add"的左侧必须具有结构/联合类型`）。这条用例保留为
+/// **具名缺口**，修好后去掉 `#[ignore]` 即为验收。
+#[ignore = "A2C does not lower qualified cross-module calls (util.add); see PLAN-982 round 169"]
+#[test]
+fn p982_c_multi_module_program_links_and_runs() {
+    let probe_dir = scratch("probe2");
+    if !cl_available(&probe_dir) {
+        eprintln!("p982 c-leg(multi): skipped (no MSVC `cl` via vcvars64)");
+        let _ = std::fs::remove_dir_all(&probe_dir);
+        return;
+    }
+    let _ = std::fs::remove_dir_all(&probe_dir);
+
+    let dir = scratch("multi");
+    // 两个模块：`util` 提供 add；`main` 调它并按结果打印。
+    let util_src = "pub fn add(a int, b int) int {\n  return a + b\n}\n";
+    let main_src = "use util\nfn main() int {\n  var r int = util.add(2, 3)\n  print(f\"multi:${r}\")\n  return 0\n}\n";
+
+    for (module, src) in [("util", util_src), ("main", main_src)] {
+        let mut code = auto_lang_core::trans::c::transpile_c(module, src)
+            .unwrap_or_else(|e| panic!("A2C transpiles `{module}`: {e}"));
+        let body = code.done().expect("the C body renders");
+        assert!(!body.is_empty(), "`{module}` produced a C body");
+        std::fs::write(dir.join(format!("{module}.c")), &body).expect("write .c");
+        if !code.header.is_empty() {
+            std::fs::write(dir.join(format!("{module}.h")), &code.header).expect("write .h");
+        }
+    }
+
+    let (ok, build_log) = run_in_vs(&dir, "cl /nologo /W0 /Fe:prog.exe main.c util.c");
+    assert!(
+        ok && dir.join("prog.exe").exists(),
+        "MSVC compiles and links both modules:\n{build_log}"
+    );
+    let run = Command::new(dir.join("prog.exe"))
+        .current_dir(&dir)
+        .output()
+        .expect("run prog.exe");
+    let out = String::from_utf8_lossy(&run.stdout).to_string();
+    eprintln!("p982 c-leg(multi): status={:?} stdout={out:?}", run.status);
+    assert!(
+        out.contains("multi:5"),
+        "the cross-module call works in the compiled binary: {out:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
