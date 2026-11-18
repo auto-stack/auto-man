@@ -140,7 +140,45 @@ pub(crate) fn run_script(
 /// leg, run the script through the ACE door and record the witness.
 #[cfg(windows)]
 fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
-    use auto_lang_core::{run_ace, AceEngineChoice, AceOutcome, AceRequest};
+    use auto_lang_core::{run_ace, run_ace_text, AceEngineChoice, AceOutcome, AceRequest};
+
+    /// PLAN-982（EXEC · 脚本 stdin）：管道 stdin 预读（非 TTY 且非空才取——与
+    /// `auto config` 的 CLI 侧同款判据）。
+    fn read_piped_stdin() -> Option<String> {
+        if <std::io::Stdin as std::io::IsTerminal>::is_terminal(&std::io::stdin()) {
+            return None;
+        }
+        use std::io::Read;
+        let mut input = String::new();
+        let _ = std::io::stdin().read_to_string(&mut input);
+        if input.is_empty() {
+            None
+        } else {
+            Some(input)
+        }
+    }
+
+    /// PLAN-982（EXEC · 脚本 stdin）：入口形判据——`fn main(<name> str)`（恰一个
+    /// 借用 `str` 形参）的脚本把管道 stdin 作为该形参的运行时文本（round-182
+    /// 受检通道）；**其它形状的脚本不受影响**（stdin 保持既有"不可读"边界，
+    /// 不静默改变语义）。机械文本扫描（与服务路由的 `text_route_param` 同纪律，
+    /// 不引入第二解析器）。
+    fn main_takes_single_str_param(source: &str) -> bool {
+        let needle = "fn main(";
+        let Some(at) = source.find(needle) else {
+            return false;
+        };
+        let open = at + needle.len();
+        let Some(rel) = source[open..].find(')') else {
+            return false;
+        };
+        let close = open + rel;
+        let params = source[open..close].trim();
+        let mut words = params.split_whitespace();
+        let _name = words.next();
+        let ty = words.next();
+        matches!(ty, Some("str")) && words.next().is_none()
+    }
 
     use crate::diag::output_success;
 
@@ -214,7 +252,10 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
         cancel: Some(cancel.as_ref()),
         ..AceRequest::simple(&source)
     };
-    let report = run_ace(AceEngineChoice::AceAV, &request);
+    let report = match read_piped_stdin().filter(|_| main_takes_single_str_param(&source)) {
+        Some(input) => run_ace_text(AceEngineChoice::AceAV, &request, &[input.as_bytes()]),
+        None => run_ace(AceEngineChoice::AceAV, &request),
+    };
     // One SDK means: both legs mint their identity from this crate AND the
     // engine that actually served the run is the engine that identity names.
     let same_sdk =
