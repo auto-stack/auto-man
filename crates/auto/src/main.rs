@@ -345,6 +345,7 @@ fn real_main(cli: Cli) -> Result<()> {
             http_config,
             http_config_inline,
             back_port,
+            stack,
         }) => {
             // PLAN-781 T-15: 宿主可信预算配置 fail-fast——非法值指名报错 +
             // 非零退出，先于任何业务 dispatch（决策报告 D-1；serve 面）。
@@ -362,6 +363,7 @@ fn real_main(cli: Cli) -> Result<()> {
                 http_config,
                 http_config_inline,
                 back_port,
+                stack,
             });
         }
         // PLAN-1006 T-04: Web 生成成员独立交付公开入口（export-only，不监听）。

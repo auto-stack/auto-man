@@ -510,6 +510,11 @@ pub(crate) enum Commands {
             help = "Explicit override for the configured listen port"
         )]
         back_port: Option<String>,
+        #[arg(
+            long,
+            help = "Service stack: omit = the native `d_main` lane; `web` = the AutoWeb file-channel stack for C0 business sources"
+        )]
+        stack: Option<String>,
     },
     /// PLAN-1006: 导出 Rust 服务成员为可迁移交付包（export-only；不启动监听、
     /// 不复用 UI gen 路由）。薄接线到 auto-web 公开导出库接口。

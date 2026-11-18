@@ -17,9 +17,26 @@ pub struct ServeArgs {
     pub http_config: Option<String>,
     pub http_config_inline: Option<String>,
     pub back_port: Option<String>,
+    /// PLAN-982 (C0): `web` = the AutoWeb file-channel stack (983 business sources);
+    /// omitted = the native `d_main` lane.
+    pub stack: Option<String>,
 }
 
 pub fn cmd_service(args: ServeArgs) -> Result<()> {
+    if let Some(stack) = args.stack.as_deref() {
+        match stack {
+            "web" => {
+                return Err(miette::miette!(
+                    "ace.service/stack-web-unavailable: `--stack web` needs auto-web's public AvServiceEngine::new_with_grants (platform.env grant), AvServiceEngine::receipt and a public HttpServiceConfig to TransportConfig mapping (owned by PLAN-983); the current auto-web surface has none of them yet"
+                ))
+            }
+            other => {
+                return Err(miette::miette!(
+                    "ace.service/stack-unknown: `--stack {other}` is not a known service stack (omit it for the native d_main lane, or use `web`)"
+                ))
+            }
+        }
+    }
     let project_dir = match &args.dir {
         Some(d) => PathBuf::from(d),
         None => {
