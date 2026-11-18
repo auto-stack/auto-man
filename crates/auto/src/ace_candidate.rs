@@ -93,14 +93,34 @@ pub(crate) fn run_script(
     script_args: &[String],
     dump_lowered: bool,
 ) -> miette::Result<()> {
+    // PLAN-982（Q-982-2 裁定 (a) 第一步）：**显式候选入口** `AUTO_ACE_SCRIPT_SYS=1`
+    // ⇒ 脚本走 sys-stdlib 包车道（`process.args()` 公开面＋宿主供
+    // `[argv0, ...args]`、逐执行隔离；无参/有参同一条路径）。默认（未设）
+    // 保持 console 腿不动——第二步兼容门（stdout/退出码/stdin 组合/same_sdk/
+    // 零回退）通过后再统一切换默认。
+    if std::env::var("AUTO_ACE_SCRIPT_SYS")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false)
+    {
+        if dump_lowered {
+            return refuse(
+                ai_mode,
+                "ace.dump-lowered/unsupported",
+                "dump-lowered is a legacy inspection surface; the sys lane refuses it",
+                None,
+            );
+        }
+        return run_sys_script_lane(ai_mode, path, script_args);
+    }
     // The AV lane has no argv surface (PLAN-969 T-08 named refusal). The A
     // slice refuses by name instead of dropping the arguments.
     if !script_args.is_empty() {
         return refuse(
             ai_mode,
             "ace.args/unsupported",
-            "the ACE candidate leg has no argv surface in this slice; refusing \
-             rather than dropping the script arguments or falling back",
+            "the console lane has no argv surface; the sys lane \
+             (AUTO_ACE_SCRIPT_SYS=1) carries script arguments, or re-run without \
+             the candidate selection",
             None,
         );
     }
@@ -392,6 +412,69 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
             Some(receipt),
         ),
         AceOutcome::HostFailure { code, message } => refuse(ai_mode, code, message, Some(receipt)),
+    }
+}
+
+/// PLAN-982（Q-982-2 裁定 (a) 第一步）：`AUTO_ACE_SCRIPT_SYS=1` 的显式候选
+/// 入口——sys-stdlib 包车道（宿主桥 `run_sys_script`）。argv＝`[argv0,
+/// ...args]`（宿主进程 argv[0] 沿用 legacy 契约），逐执行隔离；`fn main()`
+/// 入口 ABI 不变，脚本经 stdlib `process.args()` 读参。失败按具名码退出。
+fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> miette::Result<()> {
+    use auto_lang_core::{AceOutcome, AceRequest};
+
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| miette::miette!("Failed to read {path}: {e}"))?;
+    let args: Vec<&str> = script_args.iter().map(|s| s.as_str()).collect();
+    let request = AceRequest {
+        source: &source,
+        entry_def_id: "d_main",
+        capabilities: &[],
+        grants: &[],
+        provider: None,
+        wall: None,
+        cancel: None,
+        console: false,
+        args: &args,
+        input: None,
+    };
+    println!(
+        "  ACE sys lane: AUTO_ACE_SCRIPT_SYS=1 (sys-stdlib packages lane, argv x{})",
+        args.len()
+    );
+    let report = auto_lang_ace_host::run_sys_script(&request);
+    match &report.outcome {
+        AceOutcome::Success { value, .. } => {
+            crate::diag::output_success(ai_mode, &ace_value_repr(*value));
+            if !ai_mode {
+                println!();
+            }
+            Ok(())
+        }
+        AceOutcome::Diagnostic {
+            stage,
+            code,
+            message,
+            span,
+        } => refuse(
+            ai_mode,
+            &format!("ace.sys/{stage}/{code}"),
+            &format!("{message} (original span {span:?})"),
+            None,
+        ),
+        AceOutcome::Denied { code, message } => refuse(ai_mode, code, message, None),
+        AceOutcome::ResourceDenied { kind, message } => refuse(
+            ai_mode,
+            &format!("ace.sys/resource-{kind}"),
+            message,
+            None,
+        ),
+        AceOutcome::Cancelled => refuse(
+            ai_mode,
+            "ace.sys/cancelled",
+            "the sys-lane run observed cancellation",
+            None,
+        ),
+        AceOutcome::HostFailure { code, message } => refuse(ai_mode, code, message, None),
     }
 }
 
