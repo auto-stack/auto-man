@@ -132,8 +132,9 @@ impl Service {
         request(self.port, wire.as_bytes())
     }
 
-    /// 控制面优雅关停 → 子进程退出 0 → 端口重绑。
-    fn shutdown(mut self) {
+    /// 控制面优雅关停 → 子进程退出 0 → 端口重绑。返回已排空的关停收据
+    ///（含 `combined_entry_dispatches`，供按服务语义断言）。
+    fn shutdown(mut self) -> String {
         let reply = request(
             self.port,
             b"POST /__auto/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -170,13 +171,15 @@ impl Service {
             receipt.contains("legacy_dispatches=0"),
             "AV dispatch receipt: {receipt}"
         );
-        // r19：全部派发经组合文本入口（combined == av >= 1）。
+        // r20（982 文本路由）：combined ≤ av 恒成立（GET 是 0 参路由=
+        // 文件通道，不计文本）；做过 POST 的服务由调用方再断言 combined ≥ 1。
         let (av, combined) = receipt_counts(&receipt);
         assert!(av >= 1, "AV dispatch receipt: {receipt}");
-        assert_eq!(
-            combined, av,
-            "every dispatch must run through the combined text entry: {receipt}"
+        assert!(
+            combined <= av,
+            "text-route dispatches cannot exceed total dispatches: {receipt}"
         );
+        receipt
     }
 }
 
@@ -291,8 +294,14 @@ fn c1_open_get_restart_share_one_persisted_workspace_config() {
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), b_body, "{reply}");
 
-    // 5) 关停重启：持久化值优先于 env（env 仍指向 A）。
-    service.shutdown();
+    // 5) 关停重启：持久化值优先于 env（env 仍指向 A）。首个服务做过 POST ⇒
+    // 其收据必须含文本路由计数（982 组合入口确实执行）。
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
     let service = Service::start(&source, project.path(), &config_text, &a);
     let reply = service.get_workspace();
     assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
@@ -301,7 +310,7 @@ fn c1_open_get_restart_share_one_persisted_workspace_config() {
         b_body,
         "after restart the persisted root wins over the env fallback: {reply}"
     );
-    service.shutdown();
+    let _ = service.shutdown();
 
     eprintln!(
         "✓ C1 receipt: POST open → GET → restart → GET share one persisted config (env fallback {a}, persisted {b})"
@@ -391,7 +400,12 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
         "marker file untouched"
     );
     let wiki_created = target.join("wiki").is_dir();
-    service.shutdown();
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
 
     // 重启后 GET 仍返回旧工作区（失败不得改动持久配置）。
     let service = Service::start(&source, project.path(), &config_text, &target_text);
@@ -401,7 +415,7 @@ fn c1_index_failure_keeps_the_old_workspace_and_config() {
         expected_body(&old_canonical),
         "restart keeps the old workspace after a failed index rebuild: {reply}"
     );
-    service.shutdown();
+    let _ = service.shutdown();
     eprintln!(
         "✓ C1 index-failure receipt: 500 named, old workspace/config/index preserved; target wiki created = {wiki_created}"
     );
@@ -446,12 +460,17 @@ fn c1_unicode_workspace_path_roundtrips() {
     let config_text = std::fs::read_to_string(&config).expect("config written");
     let config_value: serde_json::Value = serde_json::from_str(&config_text).unwrap();
     assert_eq!(config_value["workspace_root"].as_str().unwrap(), root);
-    service.shutdown();
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
 
     let service = Service::start(&source, project.path(), &slash(&config), &a);
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), u_body, "restart keeps the unicode root: {reply}");
-    service.shutdown();
+    let _ = service.shutdown();
 }
 
 /// PLAN-983 r14/r15 预置：**Windows canonical 形态**（`\\?\` 前缀 + 反斜杠）
@@ -487,12 +506,17 @@ fn c1_windows_canonical_paths_match_legacy() {
     let config_value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
     assert_eq!(config_value["workspace_root"].as_str().unwrap(), canonical);
-    service.shutdown();
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
 
     let service = Service::start(&source, project.path(), &config_text, &a);
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), expected, "restart keeps canonical root: {reply}");
-    service.shutdown();
+    let _ = service.shutdown();
 }
 
 /// PLAN-983 r15 预置：**配置提交失败**不得改工作区/配置。
@@ -541,7 +565,12 @@ fn c1_config_commit_failure_keeps_the_old_workspace() {
         config_before,
         "config bytes unchanged on commit failure"
     );
-    service.shutdown();
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
 
     let mut perms = std::fs::metadata(&config).unwrap().permissions();
     perms.set_readonly(false);
@@ -549,7 +578,7 @@ fn c1_config_commit_failure_keeps_the_old_workspace() {
     let service = Service::start(&source, project.path(), &config_text, &slash(&target));
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), old_body, "restart keeps old workspace: {reply}");
-    service.shutdown();
+    let _ = service.shutdown();
 }
 
 /// PLAN-983 r19（用户指令 2）：**并发提交合同**（§5 r15——"并发切换须串行
@@ -663,7 +692,12 @@ Connection: close
     );
     let reply = service.get_workspace();
     assert_eq!(body_of(&reply), final_expected, "{reply}");
-    service.shutdown();
+    let first_receipt = service.shutdown();
+    let (_av_first, combined_first) = receipt_counts(&first_receipt);
+    assert!(
+        combined_first >= 1,
+        "POST dispatches must run through the combined text entry: {first_receipt}"
+    );
 
     // 重启：持久配置优先 ⇒ 最后一次成功提交胜出。
     let service = Service::start(&source, project.path(), &config_text, &a);
@@ -673,7 +707,7 @@ Connection: close
         final_expected,
         "restart keeps the last committed workspace: {reply}"
     );
-    service.shutdown();
+    let _ = service.shutdown();
     eprintln!(
         "✓ C1 concurrency receipt: {seen} consistent GETs during concurrent A/B switches; last commit wins on restart ({final_root})"
     );

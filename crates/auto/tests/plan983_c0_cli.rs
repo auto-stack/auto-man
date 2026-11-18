@@ -171,9 +171,10 @@ fn c0_cli_serves_workspace_from_the_same_av_source() {
         receipt.contains("legacy_dispatches=0"),
         "legacy dispatch receipt: {receipt}"
     );
-    // r19：两笔派发全部经 982 组合文本入口（请求不再 staged 到文件）。
+    // r20（982 文本路由）：GET 是 0 参路由=文件通道，combined 计数为 0
+    //（文本路由的区分性断言在 C1 的 POST 用例里）。
     assert!(
-        receipt.contains("combined_entry_dispatches=2"),
-        "combined-entry receipt: {receipt}"
+        receipt.contains("combined_entry_dispatches=0"),
+        "GET-only run must not use text routes: {receipt}"
     );
 }
