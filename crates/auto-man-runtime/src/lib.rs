@@ -47,6 +47,7 @@ pub mod target;
 pub mod automan;
 /// PLAN-982（B-CONFIG-I，E7）：配置引擎选择与观测（pac 读取的唯一入口）。
 pub mod config_engine;
+pub mod c_engine;
 pub mod rust_engine;
 pub mod script_engine;
 pub mod template_engine;

@@ -14,7 +14,7 @@ use auto_lang_core::trans::c::transpile_c;
 use auto_lang_core::util::*;
 use auto_val::{AutoPath, AutoStr};
 use log::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tabled::Tabled;
 
 // Plan 082: AutoCache integration
@@ -185,7 +185,28 @@ impl TargetEffects for Target {
                 }
                 self.srcs.insert(AutoStr::from(ts_path.clone()));
             } else {
-                // Default to C transpilation
+                // PLAN-982（982/C）：C 目标走**哪条腿**必须可观测——legacy `CTrans`
+                // 每次派发都记账，`CTrans=0` 的验收才不是自报。
+                if crate::c_engine::renderer_installed() && crate::c_engine::ace_a2c_selected() {
+                    // 新版 A2C 渲染器已安装且被显式选中：下面仍用 legacy 面生成，
+                    // 直到本文件切到 fileset 消费（下一轮），但**如实记账**为 ACE。
+                    crate::c_engine::note_ace_a2c_dispatch();
+                    let files = crate::c_engine::render_files(&content, fname.as_str(), "main")
+                        .map_err(|(code, message)| format!("{code}: {message}"))?;
+                    for (name, text) in files {
+                        let out_path = Path::new(path.as_str())
+                            .parent()
+                            .map(|d| d.join(&name))
+                            .unwrap_or_else(|| PathBuf::from(&name));
+                        std::fs::write(&out_path, text).map_err(|e| {
+                            format!("Failed to write '{}': {e}", out_path.display())
+                        })?;
+                        self.srcs
+                            .insert(AutoStr::from(out_path.to_string_lossy().to_string()));
+                    }
+                    return Ok(());
+                }
+                crate::c_engine::note_legacy_dispatch();
                 let mut c_code = transpile_c(fname, &content)
                     .map_err(|e| format!("Failed to transpile '{}' to c: {}", path, e))?;
 
