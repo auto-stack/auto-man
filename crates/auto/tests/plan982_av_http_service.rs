@@ -563,3 +563,29 @@ fn p982_av_service_refuses_connections_over_the_cap() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 155）：**查询参数按值进程序**——handler 直接读 `__av_query_<key>()`。
+/// `?n=5&m=7` ⇒ `5 + 7 = 12`；缺失的键连 `_present()` 都不会被注入（这里用存在的键断言）。
+#[test]
+fn p982_av_service_hands_named_query_values_to_the_handler() {
+    let project = scratch("query");
+    let mut service = start(
+        &project,
+        "fn main() int {\n  return __av_query_n() + __av_query_m() + __av_query_n_present()\n}\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "1")],
+    );
+    let addr = wait_ready(&service);
+    let (status, body) = request(addr, "/x?n=5&m=7");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: query status={status} body={body:?}");
+    assert_eq!(status, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(
+        body.starts_with("13"),
+        "5 + 7 + present(1) = 13 came from the query: {body}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=1") && receipt.contains("legacy_dispatches=0"),
+        "the AV lane dispatched and the VM never did: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

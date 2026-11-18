@@ -473,19 +473,55 @@ fn read_request(
 /// 用 `platform.input/1` 把整段请求文本送进程序后，这两个常量函数继续保留为
 /// 轻量便捷面。
 fn inject_request_context(method: &str, path: &str, source: &str, request: &AvRequest) -> String {
-    format!(
+    let mut injected = format!(
         "fn __av_request_path_len() int {{ return {} }}\n\
          fn __av_request_method_len() int {{ return {} }}\n\
          fn __av_request_query_len() int {{ return {} }}\n\
          fn __av_request_body_len() int {{ return {} }}\n\
-         fn __av_request_target_len() int {{ return {} }}\n\
-         {source}",
+         fn __av_request_target_len() int {{ return {} }}\n",
         path.len(),
         method.len(),
         request.query.len(),
         request.body.len(),
         request.target.len()
-    )
+    );
+    // 查询参数按**键**注入：`?n=5&m=7` ⇒ `__av_query_n()`=5、`__av_query_m()`=7；
+    // 每个键另有 `__av_query_<key>_present()`=1。键不存在时两个函数都不注入。
+    // 值不是十进制整数时只注入 `_present()`——**原文面还没开**（实测：AV 源面
+    // 连 `str` 类型都不是该 profile 的一部分）。
+    for (key, value) in query_pairs(&request.query) {
+        let key = sanitize_key(&key);
+        if key.is_empty() {
+            continue;
+        }
+        injected.push_str(&format!(
+            "fn __av_query_{key}_present() int {{ return 1 }}\n"
+        ));
+        if let Ok(int) = value.parse::<i64>() {
+            injected.push_str(&format!("fn __av_query_{key}() int {{ return {int} }}\n"));
+        }
+    }
+    injected.push_str(source);
+    injected
+}
+
+/// `a=1&b=2` ⇒ `[("a","1"), ("b","2")]`（不做百分号解码——最小面）。
+fn query_pairs(query: &str) -> Vec<(String, String)> {
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| match pair.split_once('=') {
+            Some((key, value)) => (key.to_string(), value.to_string()),
+            None => (pair.to_string(), String::new()),
+        })
+        .collect()
+}
+
+/// 查询键 ⇒ 合法标识符片段（非字母数字折 `_`）。
+fn sanitize_key(key: &str) -> String {
+    key.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
 }
 /// 路由派生：`(method, path)` ⇒ def 名（`AUTO_AV_ROUTES=derive` 时启用）。
 ///
