@@ -633,3 +633,46 @@ fn p982_av_service_reads_multi_value_and_percent_decoded_query() {
     let _ = std::fs::remove_dir_all(&project);
     let _ = std::fs::remove_dir_all(&project2);
 }
+/// PLAN-982（round 157）：**请求体的数值字段按名进程序**——`{"n":5,"m":-7}` ⇒
+/// `__av_body_n()`=5、`__av_body_m()`=-7，另有 `_present()`。
+#[test]
+fn p982_av_service_hands_numeric_body_fields_to_the_handler() {
+    let project = scratch("bodyfield");
+    let mut service = start(
+        &project,
+        "fn main() int {\n  return __av_body_n() + __av_body_m() + __av_body_n_present()\n}\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "1")],
+    );
+    let addr = wait_ready(&service);
+
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("read timeout");
+    let body = "{\"n\":5,\"m\":-7}";
+    let request = format!(
+        "POST /f HTTP/1.1\r\nhost: localhost\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).expect("write");
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).expect("read response");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: bodyfield = {response:?}");
+    assert!(
+        response.starts_with("HTTP/1.1 200"),
+        "the request is served: {response}"
+    );
+    // 5 + (-7) + present(1) = -1
+    assert!(
+        response.contains("-1\n") || response.contains("-1\\n"),
+        "5 + (-7) + 1 = -1 came from the body fields: {response}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

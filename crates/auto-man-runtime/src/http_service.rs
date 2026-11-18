@@ -514,8 +514,77 @@ fn inject_request_context(method: &str, path: &str, source: &str, request: &AvRe
             }
         }
     }
+    // 请求体的**数值字段**按名注入：`{"n":5,"m":7}` ⇒ `__av_body_n()`=5、`__av_body_m()`=7
+    // （另有 `_present()`）。这是**最小扫描**：只认扁平对象里的十进制/负整数
+    // 字面量，不解析嵌套、字符串、布尔与小数——文本面仍等语言决策。
+    for (key, value) in body_number_fields(&request.body) {
+        let key = sanitize_key(&key);
+        if key.is_empty() {
+            continue;
+        }
+        injected.push_str(&format!(
+            "fn __av_body_{key}_present() int {{ return 1 }}\n\
+             fn __av_body_{key}() int {{ return {value} }}\n"
+        ));
+    }
     injected.push_str(source);
     injected
+}
+
+/// 从请求体里扫出**数值字段**：`{"n":5,"m":-7}` ⇒ `[("n",5),("m",-7)]`。
+///
+/// 只处理扁平对象：`"key"` `:` 十进制或负十进制（可带空白），值后面必须是
+/// `,` / `}` / 空白 / 结束。其余形状一律跳过（不是解析器，也不会报错）。
+fn body_number_fields(body: &str) -> Vec<(String, i64)> {
+    let bytes = body.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        // 键
+        let key_start = i + 1;
+        let mut j = key_start;
+        while j < bytes.len() && bytes[j] != b'"' {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+        let key = &body[key_start..j];
+        let mut k = j + 1;
+        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        if k >= bytes.len() || bytes[k] != b':' {
+            i = j + 1;
+            continue;
+        }
+        k += 1;
+        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        let value_start = k;
+        if k < bytes.len() && bytes[k] == b'-' {
+            k += 1;
+        }
+        let digits_start = k;
+        while k < bytes.len() && bytes[k].is_ascii_digit() {
+            k += 1;
+        }
+        if k > digits_start {
+            let raw = &body[value_start..k];
+            if let Ok(value) = raw.parse::<i64>() {
+                out.push((key.to_string(), value));
+            }
+            i = k;
+        } else {
+            i = j + 1;
+        }
+    }
+    out
 }
 
 /// `a=1&b=2&a=3` ⇒ `[("a", ["1","3"]), ("b", ["2"])]`（百分号解码，保持首次出现顺序）。
