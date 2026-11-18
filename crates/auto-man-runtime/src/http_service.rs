@@ -153,6 +153,15 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
         .unwrap_or(AV_MAX_BODY);
+    let max_header = std::env::var("AUTO_SERVICE_MAX_HEADER")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(AV_MAX_HEADER);
+    let max_conn = std::env::var("AUTO_SERVICE_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(AV_MAX_CONNECTIONS);
+    let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     // 非阻塞 accept：这样"已服务的请求数达到上限"能在**没有新连接**时被观察到，
     // 进程才能按上限自然关停（否则会一直阻塞在 accept 上）。
     listener
@@ -179,10 +188,24 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
             drop(stream);
             break;
         }
+        // 连接上限：超限时**不派发**，直接 503 并关闭连接。
+        if active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= max_conn {
+            active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            let body = "ace.service/overloaded: the connection cap is reached\n";
+            let response = format!(
+                "HTTP/1.1 503 Service Unavailable\r\ncontent-type: text/plain; charset=utf-8\r\n\
+                 content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let mut stream = stream;
+            let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+            continue;
+        }
         let source = source.clone();
         let fixed_entry = fixed_entry.clone();
         let served = std::sync::Arc::clone(&served);
         let av_dispatches = std::sync::Arc::clone(&av_dispatches);
+        let active_worker = std::sync::Arc::clone(&active);
         workers.push(std::thread::spawn(move || {
             serve_connection(
                 stream,
@@ -192,9 +215,11 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
                 wall_ms,
                 max_requests,
                 max_body,
+                max_header,
                 &served,
                 &av_dispatches,
             );
+            active_worker.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         }));
     }
     drop(listener);
@@ -222,6 +247,10 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
 
 /// 服务端请求体上限的默认值（1 MiB）；`AUTO_SERVICE_MAX_BODY` 可覆盖。
 const AV_MAX_BODY: usize = 1024 * 1024;
+/// 请求头总量上限（8 KiB）；`AUTO_SERVICE_MAX_HEADER` 可覆盖。
+const AV_MAX_HEADER: usize = 8 * 1024;
+/// 并发连接上限（64）；`AUTO_SERVICE_MAX_CONNECTIONS` 可覆盖。
+const AV_MAX_CONNECTIONS: usize = 64;
 
 /// 一条连接的完整服务过程（**每连接一个线程**）：keep-alive + 逐请求派发 AV。
 #[allow(clippy::too_many_arguments)]
@@ -233,6 +262,7 @@ fn serve_connection(
     wall_ms: Option<u64>,
     max_requests: Option<u64>,
     max_body: usize,
+    max_header: usize,
     served: &std::sync::atomic::AtomicU64,
     av_dispatches: &std::sync::atomic::AtomicU64,
 ) {
@@ -243,12 +273,27 @@ fn serve_connection(
     let mut reader = std::io::BufReader::new(stream);
     let mut stream = None;
     loop {
-        let request = match read_request(&mut reader, max_body) {
+        let request = match read_request(&mut reader, max_body, max_header) {
             Ok(Some(request)) => request,
             // 就绪探针（只连不发）或对端提前关闭：本连接结束。
             Ok(None) => break,
             Err(_) => break,
         };
+        // 超限头：直接 431（不派发）。
+        if request.headers_too_large {
+            let body = "ace.service/headers-too-large: the request headers exceed the cap\n";
+            let response = format!(
+                "HTTP/1.1 431 Request Header Fields Too Large\r\n\
+                 content-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let mut io = request.stream;
+            let _ = io.write_all(response.as_bytes());
+            let _ = io.flush();
+            served.fetch_add(1, Ordering::SeqCst);
+            break;
+        }
         // 超限体：直接 413，不派发（也绝不读体）。
         if request.oversize {
             let body = "ace.service/body-too-large: content-length exceeds the configured cap\n";
@@ -304,6 +349,8 @@ struct AvRequest {
     keep_alive: bool,
     /// `content-length` 超过服务端上限：不读体、不派发，直接 413。
     oversize: bool,
+    /// 请求头总量超过上限：直接 431。
+    headers_too_large: bool,
     stream: std::net::TcpStream,
 }
 
@@ -311,6 +358,7 @@ struct AvRequest {
 fn read_request(
     reader: &mut std::io::BufReader<std::net::TcpStream>,
     max_body: usize,
+    max_header: usize,
 ) -> Result<Option<AvRequest>, String> {
     use std::io::BufRead;
 
@@ -332,6 +380,7 @@ fn read_request(
 
     let mut content_length = 0usize;
     let mut keep_alive = true;
+    let mut header_bytes = 0usize;
     loop {
         let mut header = String::new();
         if reader
@@ -341,6 +390,7 @@ fn read_request(
         {
             break;
         }
+        header_bytes += header.len();
         let trimmed = header.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
@@ -357,7 +407,22 @@ fn read_request(
         }
     }
 
-    let oversize = content_length > max_body;
+    let headers_too_large = header_bytes > max_header;
+    let oversize = !headers_too_large && content_length > max_body;
+    if headers_too_large {
+        let stream = reader.get_ref().try_clone().map_err(|e| e.to_string())?;
+        return Ok(Some(AvRequest {
+            method,
+            target,
+            path,
+            query,
+            body: String::new(),
+            keep_alive: false,
+            oversize: false,
+            headers_too_large: true,
+            stream,
+        }));
+    }
     let mut body = String::new();
     if oversize {
         // 超限：不读体（避免被一个声称超大的 content-length 拖住内存）。
@@ -370,6 +435,7 @@ fn read_request(
             body: String::new(),
             keep_alive: false,
             oversize: true,
+            headers_too_large: false,
             stream,
         }));
     }
@@ -389,6 +455,7 @@ fn read_request(
         body,
         keep_alive,
         oversize: false,
+        headers_too_large: false,
         stream,
     }))
 }

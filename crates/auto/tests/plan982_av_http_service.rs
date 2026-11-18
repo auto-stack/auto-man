@@ -454,3 +454,112 @@ fn p982_av_service_serves_concurrent_connections_and_refuses_oversize_bodies() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 154）：**头上限**——头总量超过 `AUTO_SERVICE_MAX_HEADER` ⇒ 431，
+/// 且在派发前拒绝。
+#[test]
+fn p982_av_service_refuses_oversize_headers_before_dispatch() {
+    let project = scratch("hdrcap");
+    let mut service = start(
+        &project,
+        "fn main() int { return 3 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "1"),
+            ("AUTO_SERVICE_MAX_HEADER", "16"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("read timeout");
+    let big = "GET /h HTTP/1.1\r\nhost: localhost\r\nx-pad: 0123456789012345678901234567890123456789\r\n\r\n";
+    stream.write_all(big.as_bytes()).expect("write");
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).expect("read 431");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: hdrcap = {response:?}");
+    assert!(
+        response.starts_with("HTTP/1.1 431") && response.contains("ace.service/headers-too-large"),
+        "an oversize header is refused before dispatch: {response}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=0") && receipt.contains("legacy_dispatches=0"),
+        "nothing dispatched, least of all the legacy VM: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// PLAN-982（round 154）：**连接上限**——已有连接占用上限时，新连接直接 503
+/// `ace.service/overloaded`，不派发。
+#[test]
+fn p982_av_service_refuses_connections_over_the_cap() {
+    let project = scratch("conncap");
+    let mut service = start(
+        &project,
+        "fn main() int { return 3 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "2"),
+            ("AUTO_SERVICE_MAX_CONNECTIONS", "1"),
+        ],
+    );
+    let addr = wait_ready(&service);
+    // 让就绪探针那条连接先结束，避免它占用上限（探针只连不发）。
+    std::thread::sleep(Duration::from_millis(300));
+
+    // 第一个连接保持打开且不发完（keep-alive 语义下服务端仍在读）。
+    let mut first = TcpStream::connect(addr).expect("connect first");
+    first
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("first timeout");
+    let keep = "GET /a HTTP/1.1\r\nhost: localhost\r\n\r\n";
+    first.write_all(keep.as_bytes()).expect("write first");
+    let mut first_buf = [0u8; 4096];
+    let first_read = first.read(&mut first_buf).expect("first response");
+    let first_response = String::from_utf8_lossy(&first_buf[..first_read]).to_string();
+    assert_eq!(
+        first_response.lines().next().unwrap_or(""),
+        "HTTP/1.1 200 OK",
+        "the first connection is served: {first_response}"
+    );
+
+    // 第二个连接：上限已占 ⇒ 503。
+    let mut second = TcpStream::connect(addr).expect("connect second");
+    second
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("second timeout");
+    second.write_all(keep.as_bytes()).expect("write second");
+    let mut second_buf = [0u8; 4096];
+    let second_read = second.read(&mut second_buf).expect("second response");
+    let second_response = String::from_utf8_lossy(&second_buf[..second_read]).to_string();
+    // 第一条连接再发一个请求（keep-alive），把 served 推到上限让服务自然关停。
+    let closing = "GET /b HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n";
+    first.write_all(closing.as_bytes()).expect("write closing");
+    let mut closing_buf = [0u8; 4096];
+    let closing_read = first.read(&mut closing_buf).expect("closing response");
+    assert_eq!(
+        String::from_utf8_lossy(&closing_buf[..closing_read])
+            .lines()
+            .next()
+            .unwrap_or(""),
+        "HTTP/1.1 200 OK",
+        "the kept-alive connection continues to be served"
+    );
+    drop(second);
+    drop(first);
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: conncap = {second_response:?}");
+    assert!(
+        second_response.starts_with("HTTP/1.1 503")
+            && second_response.contains("ace.service/overloaded"),
+        "a connection over the cap is refused: {second_response}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
