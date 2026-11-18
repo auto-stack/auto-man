@@ -96,7 +96,44 @@ fn p982_argv_sys_lane_serves_all_shapes_by_real_cli() {
     assert!(ok3, "first execution sees its own args");
     assert!(ok4, "second execution sees only its own args: {log4}");
 
-    // (4) spawn 负控：窄面没有 spawn——`use std.process.spawn_with_output`
+    // (4) console 面（Q-982-2 第二步）：print/eprint 捕获再发＋值/退出码。
+    let print_script = "fn main() int {
+    print(42)
+    eprint(\"bad\")
+    return 7
+}
+";
+    std::fs::write(dir.join("s.at"), print_script).expect("write script");
+    let out = Command::new(env!("CARGO_BIN_EXE_auto"))
+        .arg("s.at")
+        .current_dir(&dir)
+        .env("AUTO_ACE_CANDIDATE", "1")
+        .env("AUTO_ACE_SCRIPT_SYS", "1")
+        .output()
+        .expect("spawn auto");
+    let plog = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    eprintln!(
+        "p982 argv console-face: ok={} log={plog:?}",
+        out.status.success()
+    );
+    assert!(
+        out.status.success(),
+        "the console-face script exits zero: {plog}"
+    );
+    assert!(
+        plog.contains("42") && plog.contains("bad"),
+        "both streams re-emit: {plog}"
+    );
+    assert!(
+        plog.contains("\n7\n"),
+        "the value 7 prints on stdout: {plog}"
+    );
+
+    // (5) spawn 负控：窄面没有 spawn——`use std.process.spawn_with_output`
     //     在 sys 车道＝具名绑定/编译拒，非零退出（授权面也不含 spawn 族）。
     let spawn_script = "use std.process.spawn_with_output\n\nfn main() int { return 0 }\n";
     let (ok5, log5) = run_sys(&dir, spawn_script, &[]);
