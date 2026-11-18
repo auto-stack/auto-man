@@ -5,8 +5,9 @@
 //! 宿主能力 `platform.http-service/1` 仍在 982 内实现中，因此本轮先把 **CLI 合同**
 //! 钉住：
 //! 1. `--server av` 与 `--server ace` 都被**识别**（不是 "unknown --server"）；
-//! 2. 当前返回**具名**错误 `ace.service/host-unavailable`（或 `bridge-unavailable`）；
-//! 3. **绝不回退**到 `vm` 轨（旧执行器）——错误信息里明确写了不会回退。
+//! 2. **PLAN-982 round 149 起**：`av` 轨已经是真实服务；没有 `src/back/api.at`
+//!    的工程以具名错误 `ace.service/no-api` 拒绝（仍然不回退 `vm` 轨）；
+//! 3. 真实请求/错误/超时/关停的证据见 `plan982_av_http_service`。
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -59,8 +60,9 @@ fn p982_service_av_track_is_recognised_and_refuses_by_name() {
         "`av` must be a recognised track, not an unknown server: {combined}"
     );
     assert!(
-        combined.contains("ace.service/host-unavailable")
-            || combined.contains("ace.service/bridge-unavailable"),
+        combined.contains("ace.service/no-api")
+            || combined.contains("ace.service/bridge-unavailable")
+            || combined.contains("ace.service/host-unavailable"),
         "the refusal is named `ace.service/*`: {combined}"
     );
     // miette 会把长消息按行折行并插入 `│` 边框字符，比较前先剥掉再归一化空白。

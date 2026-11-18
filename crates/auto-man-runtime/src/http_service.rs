@@ -79,11 +79,23 @@ pub fn serve_project(
     }
 }
 
-/// PLAN-982：`av` 轨——**Rust 负责 HTTP，ACE AV 负责 handler**。
+/// PLAN-982：`av` 轨——**真实 HTTP 宿主（Rust）＋ ACE AV 执行 handler**。
 ///
-/// 现状（round 130）：能力面 `platform.http-service/1` 与宿主接线在 982 内逐步
-/// 交付；在宿主面就绪前，这里**显式具名拒绝**，绝不回退到 `vm` 轨（旧执行器）。
-fn serve_av(project_dir: &Path, _config: HttpServiceConfig) -> Result<i32, String> {
+/// 第一条真实请求的最小完整链路（round 149 起）：
+/// 1. 工程发现：`src/back/api.at`（产品自己的 project-discovery 规则）；
+/// 2. 真实监听：`TcpListener` 绑 `config.listen`，每连接解析请求行；
+/// 3. **AV 执行**：每个请求跑一次 `run_ace(AceAV)`，入口由 `AUTO_AV_ENTRY`
+///    指定（默认 `d_main`），预算由 `AUTO_AV_WALL_MS` 指定；
+/// 4. 响应：成功 ⇒ 200 + 值文本；诊断/宿主失败 ⇒ 500 + 具名 code；预算耗尽 ⇒
+///    504 + `ace.service/timeout`；
+/// 5. 收据：`served` / `av_dispatches` / `legacy_dispatches`（后者必须为 0）。
+///
+/// 测试用阀门：`AUTO_SERVICE_MAX_REQUESTS=N` ⇒ 服务满 N 个请求后自行关停（关停后
+/// 监听关闭，连接被拒）。**绝不回退**到 `vm` 轨。
+fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
     // 桥必须**由产品装配**（`auto` 启动时已 `install()`；本 crate 不依赖宿主桥，
     // 分层同 `rust_engine`/`script_engine`）。无桥 ⇒ 同一具名拒绝，绝不静默回退。
     if !auto_lang_core::ace_executor_installed() {
@@ -92,12 +104,157 @@ fn serve_av(project_dir: &Path, _config: HttpServiceConfig) -> Result<i32, Strin
                 .to_string(),
         );
     }
-    Err(format!(
-        "ace.service/host-unavailable: the AV service host (`platform.http-service/1`) is not \
-         implemented yet; `auto service --server av` never falls back to the legacy VM track \
-         (project: {})",
-        project_dir.display()
-    ))
+    let api_path = auto_lang_core::config::resolve_back_api(project_dir).ok_or_else(|| {
+        format!(
+            "ace.service/no-api: no back API found under {} (expected src/back/api.at); \
+             `auto service --server av` never falls back to the legacy VM track",
+            project_dir.display()
+        )
+    })?;
+    let source = std::fs::read_to_string(&api_path)
+        .map_err(|e| format!("ace.service/api-unreadable: {}: {e}", api_path.display()))?;
+
+    let entry = std::env::var("AUTO_AV_ENTRY").unwrap_or_else(|_| "d_main".to_string());
+    let wall_ms = std::env::var("AUTO_AV_WALL_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok());
+    let max_requests = std::env::var("AUTO_SERVICE_MAX_REQUESTS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok());
+
+    let addr = format!("{}:{}", config.listen_addr, config.listen_port);
+    let listener = TcpListener::bind(&addr)
+        .map_err(|e| format!("ace.service/bind: cannot bind {addr}: {e}"))?;
+    let bound = listener
+        .local_addr()
+        .map_err(|e| format!("ace.service/bind: {e}"))?;
+    println!(
+        "▶ Starting AV HTTP service on {bound} (entry {entry}, profile {})",
+        config.profile.as_str()
+    );
+
+    let mut served = 0u64;
+    let mut av_dispatches = 0u64;
+    loop {
+        let (mut stream, _peer) = match listener.accept() {
+            Ok(pair) => pair,
+            Err(e) => return Err(format!("ace.service/accept: {e}")),
+        };
+        let mut buf = [0u8; 4096];
+        let n = stream
+            .read(&mut buf)
+            .map_err(|e| format!("ace.service/read: {e}"))?;
+        let request = String::from_utf8_lossy(&buf[..n]).to_string();
+        // 就绪探针（只连不发）不消耗请求、也不派发——真实 HTTP 客户端总会先说话。
+        if n == 0 {
+            continue;
+        }
+        let path = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("/")
+            .to_string();
+
+        let (status, body, dispatched) = av_handle(&source, &entry, wall_ms, &path);
+        if dispatched {
+            av_dispatches += 1;
+        }
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: text/plain; charset=utf-8\r\n\
+             content-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
+        served += 1;
+        if max_requests.is_some_and(|max| served >= max) {
+            break;
+        }
+    }
+    drop(listener);
+
+    let legacy = crate::config_engine::observation().legacy_dispatches;
+    let same = legacy == 0 && av_dispatches >= 1;
+    println!(
+        "✓ AV service receipt: served={served} av_dispatches={av_dispatches} \
+         legacy_dispatches={legacy} same_sdk={same}"
+    );
+    if !same {
+        return Err(format!(
+            "ace.service/receipt: the AV track must dispatch (av={av_dispatches}) and never \
+             fall back (legacy={legacy})"
+        ));
+    }
+    Ok(0)
+}
+
+/// 一个请求的 AV 执行：返回 `(状态行, 响应体, 是否真的派发到 AV)`。
+fn av_handle(
+    source: &str,
+    entry: &str,
+    wall_ms: Option<u64>,
+    path: &str,
+) -> (&'static str, String, bool) {
+    use auto_lang_core::{run_ace, AceEngineChoice, AceOutcome, AceRequest};
+    let wall = wall_ms.map(std::time::Duration::from_millis);
+    let request = AceRequest {
+        entry_def_id: entry,
+        wall,
+        ..AceRequest::simple(source)
+    };
+    let report = run_ace(AceEngineChoice::AceAV, &request);
+    match &report.outcome {
+        AceOutcome::Success { value, steps } => {
+            let rendered = render_ace_value(value);
+            let body = format!("{rendered}\npath={path} steps={steps}");
+            ("200 OK", body, true)
+        }
+        AceOutcome::Cancelled => (
+            "504 Gateway Timeout",
+            "ace.service/timeout: the AV budget was exhausted\n".to_string(),
+            true,
+        ),
+        AceOutcome::Diagnostic { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-diagnostic: {code}\n"),
+            true,
+        ),
+        AceOutcome::HostFailure { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-host-failure: {code}\n"),
+            true,
+        ),
+        AceOutcome::Denied { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-denied: {code}\n"),
+            true,
+        ),
+        // 预算回收（步数/字节/栈）与墙钟超时同类：请求被回收，回 504。
+        AceOutcome::ResourceDenied { kind, .. } => (
+            "504 Gateway Timeout",
+            format!("ace.service/budget-exhausted: {kind}\n"),
+            true,
+        ),
+    }
+}
+
+/// `AceValue` → 响应体文本（只做最小渲染：数值与文本；其它给 debug 形）。
+fn render_ace_value(value: &auto_lang_core::AceValue) -> String {
+    use auto_lang_core::AceValue as V;
+    match value {
+        V::Unit => String::new(),
+        V::Bool(b) => b.to_string(),
+        V::I8(v) => v.to_string(),
+        V::U8(v) => v.to_string(),
+        V::I32(v) => v.to_string(),
+        V::U32(v) => v.to_string(),
+        V::I64(v) => v.to_string(),
+        V::U64(v) => v.to_string(),
+        V::F32(v) => v.to_string(),
+        V::F64(v) => v.to_string(),
+        other => format!("{other:?}"),
+    }
 }
 
 // ============================================================================
