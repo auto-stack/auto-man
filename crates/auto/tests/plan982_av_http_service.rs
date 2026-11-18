@@ -761,7 +761,8 @@ fn p982_av_service_serves_chinese_and_japanese_query_text() {
     let project = scratch("text");
     let mut service = start(
         &project,
-        "fn main(q str) int {\n  if q == \"中文\" {\n    return 1\n  }\n  return 2\n}\n",
+        // 文本入口契约：`fn main(query str, body str)`（体可为空）。
+        "fn main(q str, body str) int {\n  if q == \"中文\" {\n    return 1\n  }\n  return 2\n}\n",
         &[("AUTO_SERVICE_MAX_REQUESTS", "2"), ("AUTO_AV_TEXT", "1")],
     );
     let addr = wait_ready(&service);
@@ -800,4 +801,62 @@ fn p982_av_service_serves_chinese_and_japanese_query_text() {
         "one SDK served both legs: {receipt}"
     );
     let _ = std::fs::remove_dir_all(&project);
+}
+/// PLAN-982（983 文本面）：**请求体复用同一文本通道**——`texts[1]` 是体，handler
+/// `fn main(q str, body str)` 按内容判断体；查询串仍是 `texts[0]`。
+#[test]
+fn p982_av_service_serves_the_utf8_body_through_the_same_channel() {
+    let project = scratch("bodytext");
+    let mut service = start(
+        &project,
+        "fn main(q str, body str) int {\n  if body == \"中文\" {\n    return 7\n  }\n  return q.len_bytes()\n}\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "2"),
+            ("AUTO_AV_TEXT", "1"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    // (1) 体是中文 ⇒ 走 body 分支（7），与查询串内容无关。
+    let zh = post_with_body(addr, "/b?x", "中文");
+    // (2) 体是日文 ⇒ 落到查询串长度分支（"x" = 1 字节）。
+    let ja = post_with_body(addr, "/b?x", "日文");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: bodytext zh={zh:?} ja={ja:?}");
+    assert!(zh.0.starts_with("HTTP/1.1 200"), "{zh:?}");
+    assert!(
+        zh.1.starts_with("7"),
+        "the UTF-8 body reached the handler: {zh:?}"
+    );
+    assert!(
+        ja.1.starts_with("1"),
+        "a different body took the other branch: {ja:?}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=2") && receipt.contains("legacy_dispatches=0"),
+        "both requests ran on AV and never on the VM: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+/// POST：查询串 + UTF-8 体（体长度按字节数写 `content-length`）。
+fn post_with_body(addr: std::net::SocketAddr, target: &str, body: &str) -> (String, String) {
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(60)))
+        .expect("read timeout");
+    let request = format!(
+        "POST {target} HTTP/1.1\r\nhost: localhost\r\ncontent-length: {}\r\n\
+         connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).expect("write");
+    let mut text = String::new();
+    stream.read_to_string(&mut text).expect("read response");
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((text.as_str(), ""));
+    (
+        head.lines().next().unwrap_or("").to_string(),
+        body.to_string(),
+    )
 }

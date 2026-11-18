@@ -373,7 +373,14 @@ fn serve_connection(
             }
         }
         let (status, body, dispatched) = if text_entry {
-            av_handle_text(source, &entry, wall_ms, &path, &request.query)
+            av_handle_text(
+                source,
+                &entry,
+                wall_ms,
+                &path,
+                &request.query,
+                &request.body,
+            )
         } else {
             av_handle(&program, &entry, wall_ms, &path)
         };
@@ -796,6 +803,7 @@ fn av_handle_text(
     wall_ms: Option<u64>,
     path: &str,
     query: &str,
+    body: &str,
 ) -> (&'static str, String, bool) {
     use auto_lang_core::{run_ace_text, AceEngineChoice, AceOutcome, AceRequest};
     let wall = wall_ms.map(std::time::Duration::from_millis);
@@ -804,8 +812,9 @@ fn av_handle_text(
         wall,
         ..AceRequest::simple(source)
     };
-    // 同一编译产物、逐请求文本数据：整个 query 作为唯一文本实参。
-    let texts: [&[u8]; 1] = [query.as_bytes()];
+    // 同一编译产物、逐请求文本数据：`texts[0]` = 查询串，`texts[1]` = 请求体。
+    // handler 按签名位置接收：`fn main(q str, body str) int {…}`。
+    let texts: [&[u8]; 2] = [query.as_bytes(), body.as_bytes()];
     let report = run_ace_text(AceEngineChoice::AceAV, &request, &texts);
     match &report.outcome {
         AceOutcome::Success { value, steps } => {
