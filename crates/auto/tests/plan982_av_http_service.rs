@@ -251,3 +251,38 @@ fn p982_av_service_closes_its_listener_after_shutdown() {
     assert!(refused, "the listener is closed after shutdown: {receipt}");
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 150）：**请求上下文真的进了 AV 程序**——每个请求重新合成的源码
+/// 带 `__av_request_path_len()` / `__av_request_method_len()`，handler 直接返回它。
+/// 同一个进程内两个不同路径 ⇒ 两个不同结果，证明注入是**逐请求**的，不是常量。
+#[test]
+fn p982_av_service_hands_request_context_to_the_program() {
+    let project = scratch("ctx");
+    let mut service = start(
+        &project,
+        "fn main() int { return __av_request_path_len() + __av_request_method_len() }\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "2")],
+    );
+    let addr = wait_ready(&service);
+
+    // GET (3) + "/hello" (6) = 9；GET + "/x" (2) = 5。
+    let (first_status, first_body) = request(addr, "/hello");
+    let (second_status, second_body) = request(addr, "/x");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: ctx1={first_status} {first_body:?}");
+    eprintln!("p982: ctx2={second_status} {second_body:?}");
+    assert_eq!(first_status, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(
+        first_body.starts_with("9"),
+        "the first request carries its own path length: {first_body}"
+    );
+    assert!(
+        second_body.starts_with("5"),
+        "the second request carries a different one: {second_body}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=2") && receipt.contains("legacy_dispatches=0"),
+        "both requests dispatched to AV and never to the VM: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}

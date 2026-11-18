@@ -149,14 +149,21 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         if n == 0 {
             continue;
         }
-        let path = request
+        let (method, path) = request
             .lines()
             .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .unwrap_or("/")
-            .to_string();
+            .map(|line| {
+                let mut parts = line.split_whitespace();
+                (
+                    parts.next().unwrap_or("GET").to_string(),
+                    parts.next().unwrap_or("/").to_string(),
+                )
+            })
+            .unwrap_or_else(|| ("GET".to_string(), "/".to_string()));
 
-        let (status, body, dispatched) = av_handle(&source, &entry, wall_ms, &path);
+        // 每个请求**重新合成**源码：请求上下文以常量函数注入（见 inject_request_context）。
+        let program = inject_request_context(&method, &path, &source);
+        let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
         if dispatched {
             av_dispatches += 1;
         }
@@ -189,7 +196,27 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     Ok(0)
 }
 
-/// 一个请求的 AV 执行：返回 `(状态行, 响应体, 是否真的派发到 AV)`。
+/// 把一个请求的上下文注入到 AV 程序：**源码常量**（第一阶段的契约）。
+///
+/// 现状：AV 车道还没有把请求内容送进程序的宿主面（`AceRequest` 的 args/input 在
+/// AV 侧是具名拒绝，`platform.input/1` 尚未实现）。第一阶段用**每次请求重新合成的
+/// 源码**承载请求上下文：程序可以调用
+///
+/// - `__av_request_path_len() int` —— 请求路径的字节长度；
+/// - `__av_request_method_len() int` —— 方法名的字节长度。
+///
+/// 这两个名字是**服务契约的一部分**（不是内部细节）：api.at 可以按它分支。下一阶段
+/// 用 `platform.input/1` 把整段请求文本送进程序后，这两个常量函数继续保留为
+/// 轻量便捷面。
+fn inject_request_context(method: &str, path: &str, source: &str) -> String {
+    format!(
+        "fn __av_request_path_len() int {{ return {} }}\n\
+         fn __av_request_method_len() int {{ return {} }}\n\
+         {source}",
+        path.len(),
+        method.len()
+    )
+}
 fn av_handle(
     source: &str,
     entry: &str,
