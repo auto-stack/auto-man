@@ -148,54 +148,51 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
 
     let mut served = 0u64;
     let mut av_dispatches = 0u64;
-    loop {
-        let (mut stream, _peer) = match listener.accept() {
+    'accept: loop {
+        let (stream, _peer) = match listener.accept() {
             Ok(pair) => pair,
             Err(e) => return Err(format!("ace.service/accept: {e}")),
         };
-        let mut buf = [0u8; 4096];
-        let n = stream
-            .read(&mut buf)
-            .map_err(|e| format!("ace.service/read: {e}"))?;
-        let request = String::from_utf8_lossy(&buf[..n]).to_string();
-        // 就绪探针（只连不发）不消耗请求、也不派发——真实 HTTP 客户端总会先说话。
-        if n == 0 {
-            continue;
-        }
-        let (method, path) = request
-            .lines()
-            .next()
-            .map(|line| {
-                let mut parts = line.split_whitespace();
-                (
-                    parts.next().unwrap_or("GET").to_string(),
-                    parts.next().unwrap_or("/").to_string(),
-                )
-            })
-            .unwrap_or_else(|| ("GET".to_string(), "/".to_string()));
-
-        // 每个请求**重新合成**源码：请求上下文以常量函数注入（见 inject_request_context）。
-        let program = inject_request_context(&method, &path, &source);
-        // 路由：固定入口（默认）或按 (method, path) 派生。
-        let entry = if derive_routes {
-            entry_for(&method, &path)
-        } else {
-            fixed_entry.clone()
-        };
-        let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
-        if dispatched {
-            av_dispatches += 1;
-        }
-        let response = format!(
-            "HTTP/1.1 {status}\r\ncontent-type: text/plain; charset=utf-8\r\n\
-             content-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(response.as_bytes());
-        let _ = stream.flush();
-        served += 1;
-        if max_requests.is_some_and(|max| served >= max) {
-            break;
+        let mut reader = std::io::BufReader::new(stream);
+        let mut stream = None;
+        // **keep-alive**：同一连接上按 `connection` 头连续服务多个请求。
+        loop {
+            let request = match read_request(&mut reader) {
+                Ok(Some(request)) => request,
+                // 就绪探针（只连不发）：不消耗请求、不派发。
+                Ok(None) => break,
+                Err(_) => break,
+            };
+            let method = request.method.clone();
+            let path = request.path.clone();
+            let program = inject_request_context(&method, &path, &source, &request);
+            let entry = if derive_routes {
+                entry_for(&method, &path)
+            } else {
+                fixed_entry.clone()
+            };
+            let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
+            if dispatched {
+                av_dispatches += 1;
+            }
+            let keep_alive =
+                request.keep_alive && !max_requests.is_some_and(|max| served + 1 >= max);
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: text/plain; charset=utf-8\r\n\
+                 content-length: {}\r\nconnection: {}\r\n\r\n{body}",
+                body.len(),
+                if keep_alive { "keep-alive" } else { "close" }
+            );
+            let io = stream.get_or_insert(request.stream);
+            let _ = io.write_all(response.as_bytes());
+            let _ = io.flush();
+            served += 1;
+            if max_requests.is_some_and(|max| served >= max) {
+                break 'accept;
+            }
+            if !keep_alive {
+                break;
+            }
         }
     }
     drop(listener);
@@ -215,6 +212,87 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     Ok(0)
 }
 
+/// 一个已解析的请求（最小 HTTP/1.1 面：请求行 + 头 + 按 `content-length` 的体）。
+struct AvRequest {
+    method: String,
+    /// 请求行里的原始目标（含查询串）。
+    target: String,
+    path: String,
+    query: String,
+    body: String,
+    keep_alive: bool,
+    stream: std::net::TcpStream,
+}
+
+/// 从连接里读一个完整请求；`Ok(None)` 表示对端没说话就关了（就绪探针）。
+fn read_request(
+    reader: &mut std::io::BufReader<std::net::TcpStream>,
+) -> Result<Option<AvRequest>, String> {
+    use std::io::BufRead;
+
+    let mut line = String::new();
+    if reader
+        .read_line(&mut line)
+        .map_err(|e| format!("ace.service/read: {e}"))?
+        == 0
+    {
+        return Ok(None);
+    }
+    let mut parts = line.split_whitespace();
+    let method = parts.next().unwrap_or("GET").to_string();
+    let target = parts.next().unwrap_or("/").to_string();
+    let (path, query) = match target.split_once('?') {
+        Some((path, query)) => (path.to_string(), query.to_string()),
+        None => (target.clone(), String::new()),
+    };
+
+    let mut content_length = 0usize;
+    let mut keep_alive = true;
+    loop {
+        let mut header = String::new();
+        if reader
+            .read_line(&mut header)
+            .map_err(|e| format!("ace.service/read: {e}"))?
+            == 0
+        {
+            break;
+        }
+        let trimmed = header.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            let value = value.trim();
+            match name.trim().to_ascii_lowercase().as_str() {
+                "content-length" => content_length = value.parse().unwrap_or(0),
+                "connection" => {
+                    keep_alive = !value.eq_ignore_ascii_case("close");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut body = String::new();
+    if content_length > 0 {
+        let mut rest = vec![0u8; content_length];
+        reader
+            .read_exact(&mut rest)
+            .map_err(|e| format!("ace.service/read: {e}"))?;
+        body = String::from_utf8_lossy(&rest).to_string();
+    }
+    let stream = reader.get_ref().try_clone().map_err(|e| e.to_string())?;
+    Ok(Some(AvRequest {
+        method,
+        target,
+        path,
+        query,
+        body,
+        keep_alive,
+        stream,
+    }))
+}
+
 /// 把一个请求的上下文注入到 AV 程序：**源码常量**（第一阶段的契约）。
 ///
 /// 现状：AV 车道还没有把请求内容送进程序的宿主面（`AceRequest` 的 args/input 在
@@ -227,13 +305,19 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
 /// 这两个名字是**服务契约的一部分**（不是内部细节）：api.at 可以按它分支。下一阶段
 /// 用 `platform.input/1` 把整段请求文本送进程序后，这两个常量函数继续保留为
 /// 轻量便捷面。
-fn inject_request_context(method: &str, path: &str, source: &str) -> String {
+fn inject_request_context(method: &str, path: &str, source: &str, request: &AvRequest) -> String {
     format!(
         "fn __av_request_path_len() int {{ return {} }}\n\
          fn __av_request_method_len() int {{ return {} }}\n\
+         fn __av_request_query_len() int {{ return {} }}\n\
+         fn __av_request_body_len() int {{ return {} }}\n\
+         fn __av_request_target_len() int {{ return {} }}\n\
          {source}",
         path.len(),
-        method.len()
+        method.len(),
+        request.query.len(),
+        request.body.len(),
+        request.target.len()
     )
 }
 /// 路由派生：`(method, path)` ⇒ def 名（`AUTO_AV_ROUTES=derive` 时启用）。

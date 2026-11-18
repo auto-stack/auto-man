@@ -340,3 +340,62 @@ fn p982_av_service_routes_by_method_and_path() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 152）：**请求体与查询串进了程序**，并且同一连接上 **keep-alive**
+/// 连续服务两个请求——`POST /x?a=1&b=22` 的 handler 能读到查询串与体的长度。
+#[test]
+fn p982_av_service_reads_query_and_body_and_keeps_the_connection() {
+    let project = scratch("body");
+    let mut service = start(
+        &project,
+        "fn x_post() int {\n  return __av_request_query_len() + __av_request_body_len()\n}\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "2"),
+            ("AUTO_AV_ROUTES", "derive"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    // 同一连接上两个请求（第二个带 connection: close）。
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(120)))
+        .expect("read timeout");
+    let body = "{\"n\":5}"; // 7 字节
+    let first = format!(
+        "POST /x?a=1&b=22 HTTP/1.1\r\nhost: localhost\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(first.as_bytes()).expect("write first");
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).expect("read first response");
+    let first_response = String::from_utf8_lossy(&buf[..n]).to_string();
+
+    let second = "POST /x?a=1&b=22 HTTP/1.1\r\nhost: localhost\r\ncontent-length: 7\r\n\
+                  connection: close\r\n\r\n{\"n\":5}";
+    stream.write_all(second.as_bytes()).expect("write second");
+    let mut buf2 = [0u8; 4096];
+    let n2 = stream.read(&mut buf2).expect("read second response");
+    let second_response = String::from_utf8_lossy(&buf2[..n2]).to_string();
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: body first={first_response:?}");
+    eprintln!("p982: body second={second_response:?}");
+    // 查询串 "a=1&b=22" = 8 字节，体 7 字节 ⇒ 15。
+    assert!(
+        first_response.contains("15"),
+        "the handler read both the query and the body: {first_response}"
+    );
+    assert!(
+        first_response.contains("connection: keep-alive"),
+        "the first response keeps the connection: {first_response}"
+    );
+    assert!(
+        second_response.contains("connection: close"),
+        "the second response closes it: {second_response}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=2") && receipt.contains("legacy_dispatches=0"),
+        "both requests ran on AV and never on the VM: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
