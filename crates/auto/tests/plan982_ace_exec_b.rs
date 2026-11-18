@@ -1,6 +1,8 @@
 //! PLAN-982（982/EXEC 切片，I/V 第一步）：候选腿的**命令面边界**。
 //!
-//! 候选腿当前只服务裸脚本入口（`auto <script.at>`，A 切片）。EXEC 的
+//! 已接通的命令面（截至 round 187）：裸脚本（A 切片）、脚本 stdin／`config`
+//! 文档参数（round 185）、无过滤词 `test`（round 186）、非 agent `debug` 与
+//! `req`/`serve`（round 187）。EXEC 的
 //! "未知目标不能 legacy fallback" 要求：一旦选中候选，**没有 ACE 实现的 run 家族
 //! 子命令必须具名拒绝**，而不是静默落回旧执行器。本文件用真实 CLI 证明这一点，
 //! 并用"未选中候选"的控制臂证明拒绝来自候选选择本身（不是命令本来就坏）。
@@ -37,16 +39,25 @@ fn run(dir: &PathBuf, args: &[&str], candidate: bool) -> std::process::Output {
     cmd.output().expect("run auto")
 }
 
-/// 选中候选后，`auto run`（项目运行）不是候选腿能服务的命令：必须非零退出 +
+/// 选中候选后，未迁移的 run 家族子命令必须非零退出 +
 /// 具名 `ace.exec/unsupported-command`，且**不写任何产物**。
+///
+/// 边界随 EXEC 推进收窄：round 186 起无过滤词 `test` 分派接通；round 187 起
+/// 非 agent `debug` 与 `req`（匿名 one-shot 走会话宿主、会话化走 wire 客户端）
+/// 接通——它们的正面行为由 `plan982_exec_test_cli`／`plan982_exec_debug_cli`／
+/// `plan982_exec_req_cli` 各自证明；本测试钉住**仍未迁移**的集合。
 #[test]
 fn p982_exec_unsupported_commands_refuse_by_name() {
-    // `debug` 需要脚本路径（clap 层就要），单独一臂；其余子命令无必填参数。
     for (command, args) in [
         ("run", vec!["run"]),
-        ("req", vec!["req"]),
-        ("test", vec!["test"]),
-        ("debug", vec!["debug", "no_such_script.at"]),
+        ("service", vec!["service", "--server", "vm"]),
+        (
+            "service-export",
+            vec!["service-export", "--delivery-root", "out"],
+        ),
+        ("test", vec!["test", "--filter", "x"]),
+        ("test-ui", vec!["test:ui"]),
+        ("debug", vec!["debug", "--agent", "no_such_script.at"]),
     ] {
         let dir = temp_dir(command);
         let before: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();

@@ -130,8 +130,16 @@ fn candidate_unsupported_command(command: Option<&Commands>) -> Option<&'static 
             Some(Commands::Test { filter: None, .. }) => None,
             Some(Commands::Test { .. }) => Some("test"),
             Some(Commands::TestUi { .. }) => Some("test-ui"),
+            // PLAN-982（EXEC，round 187）：**`auto debug` 分派接通**——候选腿
+            // 经 ACE 调试门（971 形状：入口断点 + continue 到终态）。交互式
+            // GDB 面与 agent 协议保持具名拒绝（未迁移）。
+            Some(Commands::Debug { agent: false, .. }) => None,
             Some(Commands::Debug { .. }) => Some("debug"),
-            Some(Commands::Req { .. }) => Some("req"),
+            // PLAN-982（EXEC，round 187）：**`auto req` 分派接通**——候选腿
+            // 的匿名 one-shot 走 ACE 会话宿主（`run_req_one_shot`），会话化
+            // 形态是 wire 客户端（ACE daemon 由候选腿 `serve` 起，legacy
+            // 方法名协议兼容），无 legacy 求值分派。
+            Some(Commands::Req { .. }) => None,
             _ => None,
         }
     }
@@ -1004,6 +1012,20 @@ fn real_main(cli: Cli) -> Result<()> {
             max_sessions,
             timeout,
         }) => {
+            // PLAN-982（EXEC，round 187）：候选腿的 `auto serve`——ACE 会话
+            // daemon（970 T-03：管道/stdio JSONL，legacy 方法名兼容旧 wire
+            // 客户端）。此前候选环境下 serve 静默落旧 daemon（round-20 拒绝
+            // 清单漏列），本刀起由 ACE daemon 承接；非候选构建走既有 legacy
+            // daemon。max_sessions/timeout 归 legacy 配置面，ACE 宿主用默认
+            // 限额（CLI 调参面未迁移，具名边界见计划台账）。
+            #[cfg(feature = "ace-candidate")]
+            {
+                if crate::ace_candidate::selected() {
+                    let _ = (max_sessions, timeout);
+                    crate::ace_candidate::run_serve(foreground, stdio, &pipe_name)?;
+                    return Ok(());
+                }
+            }
             cmd_req::serve(cmd_req::ServeArgs {
                 foreground,
                 stdio,
@@ -1026,6 +1048,25 @@ fn real_main(cli: Cli) -> Result<()> {
             json,
             code,
         }) => {
+            // PLAN-982（EXEC，round 187）：候选腿只分岔**匿名 one-shot** 求值
+            // （legacy 面在此调 `eval_one_shot`＝旧 VM 进程内求值；候选腿改
+            // 走 ACE 会话宿主的临时会话）。其余 req 形态（--session/--list/
+            // --new-session）是 wire 客户端，与 daemon 实现解耦：ACE daemon
+            // 由候选腿 `auto serve` 起，协议 legacy 方法名兼容。
+            #[cfg(feature = "ace-candidate")]
+            {
+                if crate::ace_candidate::selected()
+                    && session.is_none()
+                    && !new_session
+                    && !list
+                    && code.is_some()
+                {
+                    if let Some(code) = code.as_deref() {
+                        crate::ace_candidate::run_req_one_shot(json, code)?;
+                        return Ok(());
+                    }
+                }
+            }
             cmd_req::req(cmd_req::ReqArgs {
                 session,
                 pipe_name,
@@ -1045,6 +1086,16 @@ fn real_main(cli: Cli) -> Result<()> {
             if agent {
                 auto_lang_core::debug_file_agent(&file).map_err(to_miette_err)?;
             } else {
+                // PLAN-982（EXEC）：候选腿的 `auto debug` 分派——ACE 调试门
+                // （971 形状：入口断点 + continue 到终态）；非候选构建走既有
+                // 交互式 GDB 面。
+                #[cfg(feature = "ace-candidate")]
+                {
+                    if crate::ace_candidate::selected() {
+                        crate::ace_candidate::run_debug(ai_mode, &file)?;
+                        return Ok(());
+                    }
+                }
                 println!("----------------------");
                 println!("Debugging Auto {}", file);
                 println!("----------------------");

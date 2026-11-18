@@ -724,3 +724,204 @@ pub(crate) fn run_tests(ai_mode: bool, dir: Option<String>) -> miette::Result<()
     }
     Ok(())
 }
+
+/// PLAN-982（EXEC · round 187）：候选腿的 `auto debug <file>`——ACE 调试门
+/// （971 形状：**入口断点 + continue 到终态**，非交互）。交互式 GDB 面与
+/// agent 协议保持具名拒绝（未迁移）。失败码：目标缺失/编译拒/资源/取消 ⇒
+/// 非零退出（与 test 的失败码纪律同族）。
+pub(crate) fn run_debug(ai_mode: bool, file: &str) -> miette::Result<()> {
+    use auto_lang_core::{
+        start_ace_debug, AceDebugCommand, AceDebugRequest, AceEngineChoice, AceModuleSpec,
+        AceProjectOutcome,
+    };
+
+    let path = std::path::Path::new(file);
+    if !path.is_file() {
+        return refuse(
+            ai_mode,
+            "ace.debug/target-missing",
+            &format!("'{file}' not found"),
+            None,
+        );
+    }
+    let source =
+        std::fs::read_to_string(path).map_err(|e| miette::miette!("Failed to read {file}: {e}"))?;
+    let id = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "main".to_string());
+    let spec = AceModuleSpec {
+        package: "app",
+        version: "1.0.0",
+        id: &id,
+        source: &source,
+    };
+    let entry_module = format!("app::{id}");
+    // 包线显式能力键（packages 前门合同；缺位 = source.module-capability 具名拒）。
+    let capabilities = vec!["ac.source.modules.packages/v1".to_string()];
+    // 无显式断点：会话的起点 stop 即入口断点（start 在入口首指令前暂停）。
+    let specs = [spec];
+    let request = AceDebugRequest::simple(&specs, &entry_module, &capabilities, &[]);
+    let mut session = match start_ace_debug(AceEngineChoice::AceAV, &request) {
+        Ok(session) => session,
+        Err(e) => {
+            // 编译拒/链接拒/入口不可暂停都是具名失败（diagnostic 是第一现场）。
+            let detail = e
+                .diagnostic
+                .as_ref()
+                .map(|d| format!(" ({}) {}", d.stage, d.message))
+                .unwrap_or_default();
+            return refuse(ai_mode, &e.code, &format!("{}{detail}", e.message), None);
+        }
+    };
+    // 入口停：报出生产者自己的源级位置（模块/函数，原始 span 坐标系）。
+    let entry = session.snapshot();
+    match entry.frames.first() {
+        Some(frame) => println!(
+            "ACE debug: entry stop at {}::{}",
+            frame.module, frame.function
+        ),
+        None => println!("ACE debug: entry stop (steps {})", entry.steps),
+    }
+    println!("ACE debug: continuing to the terminal state");
+    // 无断点 ⇒ 一次 continue 内部即跑到终态（finish/cancel/wall）。
+    let terminal = session.resume(AceDebugCommand::Continue);
+    session.close();
+    match terminal.outcome {
+        Some(AceProjectOutcome::Success { value, steps }) => {
+            println!(
+                "ACE debug: finished in {steps} steps, value = {}",
+                ace_value_repr(value)
+            );
+            Ok(())
+        }
+        Some(AceProjectOutcome::Diagnostic { code, message, .. }) => refuse(
+            ai_mode,
+            &format!("ace.debug/{code}"),
+            &format!("the debugged program was rejected: {message}"),
+            None,
+        ),
+        Some(AceProjectOutcome::Denied { code, message }) => refuse(ai_mode, &code, &message, None),
+        Some(AceProjectOutcome::ResourceDenied { kind, message }) => refuse(
+            ai_mode,
+            &format!("ace.debug/resource-{kind}"),
+            &message,
+            None,
+        ),
+        Some(AceProjectOutcome::Cancelled) => refuse(
+            ai_mode,
+            "ace.debug/cancelled",
+            "the debug session observed cancellation",
+            None,
+        ),
+        Some(AceProjectOutcome::HostFailure { code, message }) => {
+            refuse(ai_mode, &code, &message, None)
+        }
+        None => refuse(
+            ai_mode,
+            "ace.debug/no-terminal-outcome",
+            "the session ended without a terminal outcome",
+            None,
+        ),
+    }
+}
+
+/// PLAN-982（EXEC · round 187）：候选腿的 `auto serve`——ACE 会话 daemon
+/// （970 T-03：管道/stdio JSONL，legacy 方法名；会话宿主为 970 桥）。前台/
+/// stdio/后台三形态与 legacy serve 同形；会话生命周期＝daemon 进程（与
+/// legacy 一致，不挂 T-08 store——重启即清，留作后续显式面）。
+pub(crate) fn run_serve(foreground: bool, stdio: bool, pipe_name: &str) -> miette::Result<()> {
+    let _guard = install_default_session_host()?;
+    if stdio {
+        auto_lang_core::AceDaemon::new().run_stdio();
+    } else if foreground {
+        auto_lang_core::AceDaemon::new().run_pipe(pipe_name);
+    } else {
+        // 后台形态：与 legacy serve 同一 spawn 纪律（分离进程、管道名透传）。
+        let exe = std::env::current_exe()
+            .map_err(|e| miette::miette!("Cannot find auto executable: {}", e))?;
+        let mut spec = auto_tool_execution::ExecutionSpec::new([
+            exe.as_os_str().to_os_string(),
+            "serve".into(),
+            "--foreground".into(),
+            "--pipe-name".into(),
+            pipe_name.into(),
+        ]);
+        spec.stdin = auto_tool_execution::StdioPolicy::Inherit;
+        spec.stdout = auto_tool_execution::StdioPolicy::Inherit;
+        spec.stderr = auto_tool_execution::StdioPolicy::Inherit;
+        #[cfg(windows)]
+        {
+            spec.windows_creation_flags = 0x0800_0000; // CREATE_NO_WINDOW
+        }
+        auto_tool_execution::spawn_detached(&spec)
+            .map_err(|e| miette::miette!("Failed to start daemon: {}", e))?;
+        println!("ACE session daemon started (pipe: {pipe_name})");
+    }
+    Ok(())
+}
+
+/// Install the ACE session host with default limits (the CLI face carries
+/// no tuning flags yet; named failure on install — never a legacy route).
+fn install_default_session_host(
+) -> miette::Result<auto_lang_ace_host::session_bridge::SessionHostGuard> {
+    auto_lang_ace_host::session_bridge::install_session_host(
+        auto_lang_core::AceSessionLimits::default(),
+    )
+    .map_err(|e| miette::miette!("ace.session/host-install: {e}"))
+}
+
+/// PLAN-982（EXEC · round 187）：候选腿 `auto req` 的**匿名 one-shot** 腿
+/// ——legacy 面在此调用 `eval_one_shot`（旧 VM 进程内求值）；候选腿改为
+/// 进程内装 ACE 会话宿主，临时会话求值后即关（输出/退出形状与 legacy 面
+/// 零改：值/JSON 形状、错误走 stderr、退出 0）。会话化路径（--session/
+/// --list/--new-session）不经此——它们是 wire 客户端，talks to whichever
+/// daemon answers the pipe（ACE daemon 由 `run_serve` 起）。
+pub(crate) fn run_req_one_shot(json: bool, code: &str) -> miette::Result<()> {
+    use auto_lang_core::{AceSessionOp, AceSessionOutcome, AceSessionValue};
+
+    let _guard = install_default_session_host()?;
+    let created = auto_lang_core::ace_session_create(None, None);
+    let Some(session) = created.session.clone() else {
+        return Err(miette::miette!(
+            "ace.session/create: no session id in report (outcome={:?})",
+            created.outcome
+        ));
+    };
+    let report = auto_lang_core::ace_session_op(
+        &session,
+        AceSessionOp::Eval {
+            input: code,
+            wall: None,
+            cancel: None,
+        },
+    );
+    let _ = auto_lang_core::ace_session_op(&session, AceSessionOp::Close);
+    let ok = matches!(report.outcome, AceSessionOutcome::Ok);
+    let value = match report.value {
+        AceSessionValue::Int(n) => n.to_string(),
+        AceSessionValue::Bool(b) => b.to_string(),
+        AceSessionValue::None => match &report.outcome {
+            AceSessionOutcome::Diagnostic { diagnostics, .. } => diagnostics
+                .first()
+                .map(|d| d.message.clone())
+                .unwrap_or_default(),
+            AceSessionOutcome::Denied { message, .. }
+            | AceSessionOutcome::ResourceDenied { message, .. }
+            | AceSessionOutcome::HostFailure { message, .. } => message.clone(),
+            _ => String::new(),
+        },
+    };
+    if json {
+        let status = if ok { "ok" } else { "error" };
+        println!(
+            "{}",
+            serde_json::json!({ "status": status, "value": value })
+        );
+    } else if ok {
+        println!("{}", value);
+    } else {
+        eprintln!("{}", value);
+    }
+    Ok(())
+}
