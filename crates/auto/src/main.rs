@@ -156,6 +156,9 @@ fn real_main(cli: Cli) -> Result<()> {
         }
         crate::ace_candidate::install_rust_renderer();
         crate::ace_candidate::install_script_renderer();
+        // PLAN-982（982/C）：包级 A2C 渲染器——`auto build` 的 C 目标在
+        // `AUTO_ACE_C=1` 时经它整工程一次编译；缺席（无特性构建）⇒ 具名拒绝。
+        crate::ace_candidate::install_c_renderer();
     }
     // PLAN-982 EXEC：候选腿只服务裸脚本入口。它没有实现的 run 家族子命令在
     // 选中候选后**具名拒绝**，不静默落回旧执行器（未知目标不 legacy fallback）。

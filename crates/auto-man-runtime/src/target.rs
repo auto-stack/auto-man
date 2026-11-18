@@ -98,6 +98,10 @@ impl TargetEffects for Target {
             return transpile_rust_project_multi(self);
         }
 
+        // PLAN-982（982/C）：包级 A2C 把整个工程**一次**编译成一个 fileset——
+        // 循环里第二个及以后的 `.at` 不再重复渲染。
+        let mut ace_c_package_done = false;
+
         // Create progress bar for transpilation
         let pb = ProgressBar::new(self.autos.len() as u64);
         pb.set_message("Transpiling Auto files");
@@ -185,56 +189,92 @@ impl TargetEffects for Target {
                 }
                 self.srcs.insert(AutoStr::from(ts_path.clone()));
             } else {
-                // PLAN-982（982/C）：C 目标走**哪条腿**必须可观测——legacy `CTrans`
-                // 每次派发都记账，`CTrans=0` 的验收才不是自报。
-                if crate::c_engine::renderer_installed() && crate::c_engine::ace_a2c_selected() {
-                    // 新版 A2C 渲染器已安装且被显式选中：下面仍用 legacy 面生成，
-                    // 直到本文件切到 fileset 消费（下一轮），但**如实记账**为 ACE。
-                    crate::c_engine::note_ace_a2c_dispatch();
-                    let files = crate::c_engine::render_files(&content, fname.as_str(), "main")
-                        .map_err(|(code, message)| format!("{code}: {message}"))?;
-                    for (name, text) in files {
-                        let out_path = Path::new(path.as_str())
-                            .parent()
-                            .map(|d| d.join(&name))
-                            .unwrap_or_else(|| PathBuf::from(&name));
-                        std::fs::write(&out_path, text).map_err(|e| {
-                            format!("Failed to write '{}': {e}", out_path.display())
-                        })?;
-                        self.srcs
-                            .insert(AutoStr::from(out_path.to_string_lossy().to_string()));
+                // PLAN-982（982/C）：C 目标走**哪条腿**必须可观测。
+                // - **显式选 ACE**（`AUTO_ACE_C=1`）⇒ 包级 A2C 渲染器把整个工程
+                //   （全部 `.at` 模块 + 冻结标准库）一次编译成 fileset；渲染器
+                //   缺席 ⇒ **具名失败**，绝不静默回退旧 `CTrans`；
+                // - 未选中 ⇒ legacy `CTrans` 每次派发都记账（`CTrans=0` 的验收
+                //   才不是自报）。
+                if crate::c_engine::ace_a2c_selected() {
+                    if !crate::c_engine::renderer_installed() {
+                        return Err(format!(
+                            "ace.c/renderer-unavailable: AUTO_ACE_C selects the A2C renderer, \
+                             but this build has none (build the auto CLI with the \
+                             ace-candidate feature); refusing instead of silently serving the \
+                             legacy CTrans"
+                        )
+                        .into());
                     }
-                    return Ok(());
-                }
-                crate::c_engine::note_legacy_dispatch();
-                let mut c_code = transpile_c(fname, &content)
-                    .map_err(|e| format!("Failed to transpile '{}' to c: {}", path, e))?;
-
-                // Generate output file paths
-                let c_path = path.as_str().replace(".at", ".c");
-                let h_path = path.as_str().replace(".at", ".h");
-
-                // Write C file
-                let c_content = c_code.done()?;
-                if !c_content.is_empty() {
-                    std::fs::write(Path::new(c_path.as_str()), c_content)
-                        .map_err(|e| format!("Failed to write C file '{}': {}", c_path, e))?;
-                    self.srcs.insert(AutoStr::from(c_path.clone()));
-                    info!("Generated {}", c_path);
-                }
-
-                // Write header file
-                if !c_code.header.is_empty() {
-                    std::fs::write(Path::new(h_path.as_str()), c_code.header)
-                        .map_err(|e| format!("Failed to write header file '{}': {}", h_path, e))?;
-
-                    if let Some(d) = Path::new(h_path.as_str()).parent() {
-                        let d: AutoStr = d.to_str().unwrap().into();
-                        if !d.is_empty() {
-                            self.incs.insert(d);
+                    if !ace_c_package_done {
+                        let mut modules: Vec<(String, String)> =
+                            Vec::with_capacity(self.autos.len());
+                        for module_path in self.autos.iter() {
+                            let source =
+                                std::fs::read_to_string(module_path.as_str()).map_err(|e| {
+                                    format!(
+                                        "Failed to read Auto file '{}': {}",
+                                        module_path.as_str(),
+                                        e
+                                    )
+                                })?;
+                            let module = AutoPath::new(module_path.as_str())
+                                .basename()
+                                .as_str()
+                                .to_string();
+                            modules.push((module, source));
                         }
+                        let files = crate::c_engine::render_package_files(&modules, "main")
+                            .map_err(|(code, message)| format!("{code}: {message}"))?;
+                        crate::c_engine::note_ace_a2c_dispatch();
+                        let root = Path::new(path.as_str())
+                            .parent()
+                            .map(|d| d.to_path_buf())
+                            .unwrap_or_else(|| PathBuf::from("."));
+                        for (name, text) in &files {
+                            let out_path = root.join(name);
+                            std::fs::write(&out_path, text).map_err(|e| {
+                                format!("Failed to write '{}': {e}", out_path.display())
+                            })?;
+                            self.srcs
+                                .insert(AutoStr::from(out_path.to_string_lossy().to_string()));
+                        }
+                        // 回执在派发后落盘：显式选中 ⇒ a2c_dispatches=1、
+                        // legacy_dispatches=0（外部可见证，不自报）。
+                        crate::c_engine::write_proof_if_requested();
+                        ace_c_package_done = true;
                     }
-                    info!("Generated {}", h_path);
+                } else {
+                    crate::c_engine::note_legacy_dispatch();
+                    let mut c_code = transpile_c(fname, &content)
+                        .map_err(|e| format!("Failed to transpile '{}' to c: {}", path, e))?;
+
+                    // Generate output file paths
+                    let c_path = path.as_str().replace(".at", ".c");
+                    let h_path = path.as_str().replace(".at", ".h");
+
+                    // Write C file
+                    let c_content = c_code.done()?;
+                    if !c_content.is_empty() {
+                        std::fs::write(Path::new(c_path.as_str()), c_content)
+                            .map_err(|e| format!("Failed to write C file '{}': {}", c_path, e))?;
+                        self.srcs.insert(AutoStr::from(c_path.clone()));
+                        info!("Generated {}", c_path);
+                    }
+
+                    // Write header file
+                    if !c_code.header.is_empty() {
+                        std::fs::write(Path::new(h_path.as_str()), c_code.header).map_err(|e| {
+                            format!("Failed to write header file '{}': {}", h_path, e)
+                        })?;
+
+                        if let Some(d) = Path::new(h_path.as_str()).parent() {
+                            let d: AutoStr = d.to_str().unwrap().into();
+                            if !d.is_empty() {
+                                self.incs.insert(d);
+                            }
+                        }
+                        info!("Generated {}", h_path);
+                    }
                 }
             }
 
@@ -242,6 +282,10 @@ impl TargetEffects for Target {
         }
 
         pb.finish_with_message("Transpilation complete");
+
+        // PLAN-982（982/C）：legacy 腿也留回执（只在 `AUTO_ACE_C_PROOF` 请求时
+        // 写）——"零 legacy 派发"因此可以被外部见证，而不是自报。
+        crate::c_engine::write_proof_if_requested();
 
         // Recursively transpile dependencies
         for dep in self.deps.iter_mut() {

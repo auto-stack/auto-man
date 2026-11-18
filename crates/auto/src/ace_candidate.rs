@@ -387,6 +387,23 @@ pub(crate) fn install_script_renderer() {
             .map_err(|e| (e.code.to_string(), e.message))
     });
 }
+/// PLAN-982（982/C）：把宿主**包级 A2C** 驱动注册成 C 目标可见的渲染器。
+///
+/// 与 `install_rust_renderer` 同一理由（运行时 crate 不能依赖宿主桥）。跨模块
+/// 限定调用只在包级成立，因此渲染器吃**整工程**（`(模块名, 源码)` 列表）。
+pub(crate) fn install_c_renderer() {
+    auto_man_runtime::c_engine::install_renderer(|modules, entry| {
+        auto_lang_ace_host::c_transpile::transpile_package_c(modules, entry)
+            .map(|fileset| {
+                fileset
+                    .files
+                    .into_iter()
+                    .map(|f| (f.name, f.text))
+                    .collect()
+            })
+            .map_err(|(code, message)| (code.to_string(), message))
+    });
+}
 /// Console grants the candidate leg requests (explicit, per run).
 fn console_grants() -> Vec<String> {
     vec!["console.stdout".to_string(), "console.stderr".to_string()]

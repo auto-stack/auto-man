@@ -283,3 +283,121 @@ fn p982_service_stack_web_is_an_alias_that_requires_an_explicit_source() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// PLAN-982（C0 · AV CLI 负例）：坏 **HTTP 配置**——CLI 实际消费的那份
+/// （`--http-config-inline` / `--http-config`）——必须**具名失败**：诊断点名
+/// `http-service config`，非零退出，**不进入服务循环**（无启动横幅、无
+/// ready 行），工程目录**字节级零写**。VM pac.at 路径的旧用例保持 ignore，
+/// 两条路径各自记账（用户裁定 round 180）。
+#[test]
+fn p982_av_bad_http_config_fails_by_name_with_zero_writes() {
+    let dir = scratch("badhttp");
+    write_project(&dir, "name: \"c0\"\n", "fn main() int { return 5 }\n");
+    let api = dir.join("src").join("back").join("api.at");
+    let before = snapshot(&dir);
+    let before_bytes = content_snapshot(&dir);
+
+    // (1) 坏 JSON：inline 配置（CLI 直接读取的那份）。
+    let inline = Command::new(env!("CARGO_BIN_EXE_auto"))
+        .args([
+            "service",
+            "--dir",
+            dir.to_str().unwrap(),
+            "--server",
+            "av",
+            "--api",
+            api.to_str().unwrap(),
+            "--http-config-inline",
+            "{not json",
+        ])
+        .output()
+        .expect("run auto service with a broken inline config");
+    let inline_log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&inline.stdout),
+        String::from_utf8_lossy(&inline.stderr)
+    );
+    eprintln!(
+        "p982 bad-http-config inline: status={:?} log={inline_log:?}",
+        inline.status
+    );
+    assert!(
+        !inline.status.success(),
+        "a broken inline config fails the command"
+    );
+    assert!(
+        inline_log.contains("http-service config error"),
+        "the failure names the HTTP config: {inline_log}"
+    );
+    assert!(
+        !inline_log.contains("AUTO_SERVICE_READY"),
+        "no readiness is reported: {inline_log}"
+    );
+    assert!(
+        !inline_log.contains("auto serve:"),
+        "the failure happens before the serve banner: {inline_log}"
+    );
+    assert_eq!(
+        before,
+        snapshot(&dir),
+        "a broken inline config adds no file to the project"
+    );
+    assert_eq!(
+        before_bytes,
+        content_snapshot(&dir),
+        "a broken inline config rewrites no existing file"
+    );
+
+    // (2) 坏值：`--http-config` 文件变体（未知 profile 具名）。配置文件放在
+    // 工程目录**之外**，保持工程快照纯净。
+    let cfg_dir = scratch("badhttp-cfg");
+    let bad_json = cfg_dir.join("bad.json");
+    std::fs::write(&bad_json, "{\"profile\":\"nope\"}").expect("write bad.json");
+    let file_leg = Command::new(env!("CARGO_BIN_EXE_auto"))
+        .args([
+            "service",
+            "--dir",
+            dir.to_str().unwrap(),
+            "--server",
+            "av",
+            "--api",
+            api.to_str().unwrap(),
+            "--http-config",
+            bad_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run auto service with a broken config file");
+    let file_log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&file_leg.stdout),
+        String::from_utf8_lossy(&file_leg.stderr)
+    );
+    eprintln!(
+        "p982 bad-http-config file: status={:?} log={file_log:?}",
+        file_leg.status
+    );
+    assert!(
+        !file_leg.status.success(),
+        "an unknown profile fails the command"
+    );
+    assert!(
+        file_log.contains("http-service config error") && file_log.contains("profile"),
+        "the failure names the profile field: {file_log}"
+    );
+    assert!(
+        !file_log.contains("AUTO_SERVICE_READY"),
+        "no readiness is reported: {file_log}"
+    );
+    assert_eq!(
+        before,
+        snapshot(&dir),
+        "a broken config file adds no file to the project"
+    );
+    assert_eq!(
+        before_bytes,
+        content_snapshot(&dir),
+        "a broken config file rewrites no existing file"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&cfg_dir);
+}

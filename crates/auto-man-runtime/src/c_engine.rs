@@ -54,11 +54,15 @@ pub fn note_legacy_dispatch() {
     LEGACY_DISPATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
-/// A2C 文件渲染器（由 `auto` crate 在启动时注入宿主驱动）。
+/// 包级 A2C 文件渲染器（由 `auto` crate 在启动时注入宿主驱动）。
 ///
-/// 参数：`(source, module, entry)`；返回 `(文件名, 文本)` 列表或 `(code, message)`。
-/// 运行时 crate 不能依赖 `auto-lang-ace-host`（分层），因此用**注册**而不是直接调用。
-pub type CRenderer = fn(&str, &str, &str) -> Result<Vec<(String, String)>, (String, String)>;
+/// 参数：`(modules, entry)`——`modules` = `(模块名, 源码)` 列表（工程全部
+/// `.at`），`entry` = 入口模块名。C 的跨模块语义（`use util` + 限定调用）
+/// **只在包级成立**：逐文件渲染无法解析跨模块引用。返回 `(文件名, 文本)`
+/// 列表或 `(code, message)`。运行时 crate 不能依赖 `auto-lang-ace-host`
+/// （分层），因此用**注册**而不是直接调用。
+pub type CRenderer =
+    fn(&[(String, String)], &str) -> Result<Vec<(String, String)>, (String, String)>;
 
 static CRENDERER: std::sync::Mutex<Option<CRenderer>> = std::sync::Mutex::new(None);
 
@@ -77,10 +81,9 @@ pub fn renderer_installed() -> bool {
     CRENDERER.lock().map(|slot| slot.is_some()).unwrap_or(false)
 }
 
-/// 通过安装的渲染器渲染一个单模块工程（未安装 ⇒ 具名错误，不静默）。
-pub fn render_files(
-    source: &str,
-    module: &str,
+/// 通过安装的渲染器把**整个工程**一次渲染成 C fileset（未安装 ⇒ 具名错误）。
+pub fn render_package_files(
+    modules: &[(String, String)],
     entry: &str,
 ) -> Result<Vec<(String, String)>, (String, String)> {
     let renderer = *CRENDERER
@@ -98,7 +101,7 @@ pub fn render_files(
                 "no A2C renderer is installed in this build".to_string(),
             )
         })?;
-    renderer(source, module, entry)
+    renderer(modules, entry)
 }
 /// 回执文件名（测试钩子）：写 `{engine, a2c_dispatches, legacy_dispatches}`。
 pub const C_PROOF_ENV: &str = "AUTO_ACE_C_PROOF";
