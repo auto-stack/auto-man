@@ -173,6 +173,9 @@ impl Service {
     }
 }
 
+fn expected_body(root: &str) -> String {
+    serde_json::json!({ "root": root, "wiki_dir": format!("{root}\\wiki") }).to_string()
+}
 fn slash(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
@@ -253,5 +256,89 @@ fn c1_open_get_restart_share_one_persisted_workspace_config() {
 
     eprintln!(
         "✓ C1 receipt: POST open → GET → restart → GET share one persisted config (env fallback {a}, persisted {b})"
+    );
+}
+
+/// PLAN-983 r15 永久回归：**目标索引准备失败**时必须保旧工作区/配置/旧索引。
+///
+/// 故障夹具：目标目录内预建 `jade-garden-index.json` 为**非空目录**（写索引
+/// 必失败）+ 标记文件；目标 `wiki` 尚未创建。期望：POST ⇒ 500 且 error 以
+/// `workspace.index-rebuild-failed:` 开头；GET/重启 GET ⇒ 旧工作区；配置字节
+/// 与旧索引字节不变；标记文件原样；目标 wiki 已创建（允许的副作用）。
+///
+/// 当前实现（r14 子集：配置持久化 + POST，尚未生成索引/原子提交）不满足本
+/// 回归，先以 `#[ignore]` 固定；C1 完整语义（982 组合入口）落地后去掉 ignore。
+#[test]
+#[ignore = "PLAN-983 r15: C1 index preparation + atomic config commit pending (982 combined entry)"]
+fn c1_index_failure_keeps_the_old_workspace_and_config() {
+    let source = consumer_source();
+    let base = tempfile::Builder::new().prefix("p983c1i").tempdir().unwrap();
+    let project = tempfile::Builder::new().prefix("p983c1ip").tempdir().unwrap();
+    let config = base.path().join("workspace-config.json");
+    let old = base.path().join("old-workspace");
+    let target = base.path().join("target-workspace");
+    std::fs::create_dir_all(old.join("wiki")).unwrap();
+    std::fs::write(old.join("wiki/hello.ad"), "# Hello\n").unwrap();
+    std::fs::create_dir_all(target.join("jade-garden-index.json")).unwrap();
+    std::fs::write(target.join("jade-garden-index.json/keep.txt"), "keep").unwrap();
+
+    let old_text = slash(&old);
+    let target_text = slash(&target);
+    let config_text = slash(&config);
+
+    let service = Service::start(&source, project.path(), &config_text, &target_text);
+    // 先打开旧工作区（最终实现会在此生成旧索引；当前实现仅写配置）。
+    let reply = service.post_open(&old_text);
+    assert!(reply.starts_with("HTTP/1.1 200"), "open old workspace: {reply}");
+    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+    let config_before = std::fs::read(&config).unwrap_or_default();
+    let old_index_path = old.join("jade-garden-index.json");
+    let old_index_before = std::fs::read(&old_index_path).ok();
+    let reply = service.get_workspace();
+    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+
+    // 目标索引写不进去 ⇒ 500 具名；旧工作区/配置/旧索引保持。
+    let reply = service.post_open(&target_text);
+    assert!(reply.starts_with("HTTP/1.1 500"), "{reply}");
+    let body = body_of(&reply);
+    let parsed: serde_json::Value = serde_json::from_str(body).expect("error JSON");
+    assert!(
+        parsed["error"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("workspace.index-rebuild-failed:"),
+        "named index failure: {body}"
+    );
+    let reply = service.get_workspace();
+    assert_eq!(body_of(&reply), expected_body(&old_text), "{reply}");
+    assert_eq!(
+        std::fs::read(&config).unwrap_or_default(),
+        config_before,
+        "config bytes unchanged on index failure"
+    );
+    assert_eq!(
+        std::fs::read(&old_index_path).ok(),
+        old_index_before,
+        "old index bytes unchanged"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("jade-garden-index.json/keep.txt")).unwrap(),
+        "keep",
+        "marker file untouched"
+    );
+    let wiki_created = target.join("wiki").is_dir();
+    service.shutdown();
+
+    // 重启后 GET 仍返回旧工作区（失败不得改动持久配置）。
+    let service = Service::start(&source, project.path(), &config_text, &target_text);
+    let reply = service.get_workspace();
+    assert_eq!(
+        body_of(&reply),
+        expected_body(&old_text),
+        "restart keeps the old workspace after a failed index rebuild: {reply}"
+    );
+    service.shutdown();
+    eprintln!(
+        "✓ C1 index-failure receipt: 500 named, old workspace/config/index preserved; target wiki created = {wiki_created}"
     );
 }
