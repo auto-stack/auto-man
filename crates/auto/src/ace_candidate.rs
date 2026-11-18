@@ -433,7 +433,10 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
         provider: None,
         wall: None,
         cancel: None,
-        console: false,
+        // PLAN-982（Q-982-2 第二步）: console 面——脚本可用 print/eprint/say，
+        // 捕获回 AceConsoleReport 后按 A 片纪律再发（与 console 腿同
+        // observable；待生产者 console 面切片落地后生效）。
+        console: true,
         args: &args,
         input: None,
     };
@@ -444,6 +447,19 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
     let report = auto_lang_ace_host::run_sys_script(&request);
     match &report.outcome {
         AceOutcome::Success { value, .. } => {
+            if let Some(console) = &report.console {
+                use std::io::Write;
+                if !console.stdout.is_empty() {
+                    let mut out = std::io::stdout();
+                    let _ = out.write_all(&console.stdout);
+                    let _ = out.flush();
+                }
+                if !console.stderr.is_empty() {
+                    let mut err = std::io::stderr();
+                    let _ = err.write_all(&console.stderr);
+                    let _ = err.flush();
+                }
+            }
             crate::diag::output_success(ai_mode, &ace_value_repr(*value));
             if !ai_mode {
                 println!();
