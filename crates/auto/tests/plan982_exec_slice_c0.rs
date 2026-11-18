@@ -225,10 +225,10 @@ fn p982_exec_bad_config_writes_nothing_and_fails_by_name() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
-/// PLAN-982（C0）：`--stack web` 是**显式**选择，且当前 auto-web 面还没暴露
-/// `new_with_grants`/`receipt`/配置映射时，必须是**具名拒绝**（不静默退回原生车道）。
+/// PLAN-982（C0）：`--stack web` 是 `--server av --api <source>` 的**别名**——
+/// 缺 `--api` 时具名拒绝（不让栈去猜业务源），未知栈同样具名。
 #[test]
-fn p982_service_stack_web_is_a_named_refusal_until_983_publishes_its_surface() {
+fn p982_service_stack_web_is_an_alias_that_requires_an_explicit_source() {
     let dir = scratch("stack");
     write_project(&dir, "name: \"c0\"\n", "fn main() int { return 5 }\n");
     let out = Command::new(env!("CARGO_BIN_EXE_auto"))
@@ -251,11 +251,11 @@ fn p982_service_stack_web_is_a_named_refusal_until_983_publishes_its_surface() {
     eprintln!("p982 stack web: status={:?} log={log:?}", out.status);
     assert!(
         !out.status.success(),
-        "`--stack web` is refused, not ignored"
+        "`--stack web` without --api is refused"
     );
     assert!(
-        log.contains("ace.service/stack-web-unavailable"),
-        "the refusal names the missing auto-web surface: {log}"
+        log.contains("ace.service/stack-web-needs-api"),
+        "the refusal names the missing explicit source: {log}"
     );
 
     // 未知 stack 也是具名拒绝（不是静默落到默认车道）。

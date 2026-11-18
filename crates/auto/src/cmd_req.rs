@@ -21,41 +21,41 @@ pub(crate) fn serve(a: ServeArgs) -> miette::Result<()> {
         max_sessions,
         timeout,
     } = a;
-let mut daemon =
-    auto_lang_core::autovm_daemon::AutovmDaemon::new_with_config(max_sessions, timeout);
-if stdio {
-    daemon.run_stdio();
-} else if foreground {
-    daemon.run_pipe(&pipe_name);
-} else {
-    // Background mode: spawn self with --foreground to listen on named pipe.
-    // PLAN-816 T-06：daemon 化 spawn 走设施 spawn_detached（分离
-    // 语义=不持有归属，CREATE_NO_WINDOW 经 windows_creation_flags
-    // 透传；协议/管道语义不动——契约基线 §3）。
-    let exe = std::env::current_exe()
-        .map_err(|e| miette::miette!("Cannot find auto executable: {}", e))?;
-    let mut spec = auto_tool_execution::ExecutionSpec::new([
-        exe.as_os_str().to_os_string(),
-        "serve".into(),
-        "--foreground".into(),
-        "--pipe-name".into(),
-        pipe_name.clone().into(),
-    ]);
-    spec.stdin = auto_tool_execution::StdioPolicy::Inherit;
-    spec.stdout = auto_tool_execution::StdioPolicy::Inherit;
-    spec.stderr = auto_tool_execution::StdioPolicy::Inherit;
-    // F-816-B-R1-03：创建标志按平台消费——Windows 保持
-    // CREATE_NO_WINDOW（旧行为），Unix 分离 spawn 不设标志
-    //（旧代码在 Unix 本就不传 creation_flags；设施对非
-    // Windows 非零值保持 InvalidSpec 负控）。
-    #[cfg(windows)]
-    {
-        spec.windows_creation_flags = 0x0800_0000; // CREATE_NO_WINDOW
+    let mut daemon =
+        auto_lang_core::autovm_daemon::AutovmDaemon::new_with_config(max_sessions, timeout);
+    if stdio {
+        daemon.run_stdio();
+    } else if foreground {
+        daemon.run_pipe(&pipe_name);
+    } else {
+        // Background mode: spawn self with --foreground to listen on named pipe.
+        // PLAN-816 T-06：daemon 化 spawn 走设施 spawn_detached（分离
+        // 语义=不持有归属，CREATE_NO_WINDOW 经 windows_creation_flags
+        // 透传；协议/管道语义不动——契约基线 §3）。
+        let exe = std::env::current_exe()
+            .map_err(|e| miette::miette!("Cannot find auto executable: {}", e))?;
+        let mut spec = auto_tool_execution::ExecutionSpec::new([
+            exe.as_os_str().to_os_string(),
+            "serve".into(),
+            "--foreground".into(),
+            "--pipe-name".into(),
+            pipe_name.clone().into(),
+        ]);
+        spec.stdin = auto_tool_execution::StdioPolicy::Inherit;
+        spec.stdout = auto_tool_execution::StdioPolicy::Inherit;
+        spec.stderr = auto_tool_execution::StdioPolicy::Inherit;
+        // F-816-B-R1-03：创建标志按平台消费——Windows 保持
+        // CREATE_NO_WINDOW（旧行为），Unix 分离 spawn 不设标志
+        //（旧代码在 Unix 本就不传 creation_flags；设施对非
+        // Windows 非零值保持 InvalidSpec 负控）。
+        #[cfg(windows)]
+        {
+            spec.windows_creation_flags = 0x0800_0000; // CREATE_NO_WINDOW
+        }
+        auto_tool_execution::spawn_detached(&spec)
+            .map_err(|e| miette::miette!("Failed to start daemon: {}", e))?;
+        println!("AutoVM daemon started (pipe: {})", pipe_name);
     }
-    auto_tool_execution::spawn_detached(&spec)
-        .map_err(|e| miette::miette!("Failed to start daemon: {}", e))?;
-    println!("AutoVM daemon started (pipe: {})", pipe_name);
-}
     Ok(())
 }
 
@@ -87,114 +87,113 @@ pub(crate) fn req(a: ReqArgs) -> miette::Result<()> {
         code,
     } = a;
 
-let mut client =
-    AutovmClient::connect(&pipe_name).map_err(|e| miette::miette!("{}", e))?;
+    let mut client = AutovmClient::connect(&pipe_name).map_err(|e| miette::miette!("{}", e))?;
 
-if list {
-    let resp = client.list().map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        match &resp.data {
-            Some(d) => println!("Sessions: {}", d),
-            None => println!("No sessions"),
-        }
-    }
-    return Ok(());
-}
-
-if new_session {
-    let ses_id = client.new_session().map_err(|e| miette::miette!("{}", e))?;
-    println!("{}", ses_id);
-    return Ok(());
-}
-
-let ses_id = match &session {
-    Some(s) => s.clone(),
-    None => {
-        // Anonymous mode: create temp session, eval, delete
-        if let Some(code) = &code {
-            let (value, ok) = auto_lang_core::autovm_client::eval_one_shot(code);
-            if json {
-                let status = if ok { "ok" } else { "error" };
-                println!("{}", serde_json::json!({"status": status, "value": value}));
-            } else {
-                if ok {
-                    println!("{}", value);
-                } else {
-                    eprintln!("{}", value);
-                }
+    if list {
+        let resp = client.list().map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            match &resp.data {
+                Some(d) => println!("Sessions: {}", d),
+                None => println!("No sessions"),
             }
-            return Ok(());
         }
-        eprintln!("Error: provide --session <id>, --new-session, or code to evaluate");
+        return Ok(());
+    }
+
+    if new_session {
+        let ses_id = client.new_session().map_err(|e| miette::miette!("{}", e))?;
+        println!("{}", ses_id);
+        return Ok(());
+    }
+
+    let ses_id = match &session {
+        Some(s) => s.clone(),
+        None => {
+            // Anonymous mode: create temp session, eval, delete
+            if let Some(code) = &code {
+                let (value, ok) = auto_lang_core::autovm_client::eval_one_shot(code);
+                if json {
+                    let status = if ok { "ok" } else { "error" };
+                    println!("{}", serde_json::json!({"status": status, "value": value}));
+                } else {
+                    if ok {
+                        println!("{}", value);
+                    } else {
+                        eprintln!("{}", value);
+                    }
+                }
+                return Ok(());
+            }
+            eprintln!("Error: provide --session <id>, --new-session, or code to evaluate");
+            std::process::exit(1);
+        }
+    };
+
+    if inspect {
+        let resp = client
+            .inspect(&ses_id)
+            .map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            if resp.status == "ok" {
+                if let Some(data) = &resp.data {
+                    println!("{}", serde_json::to_string_pretty(data).unwrap());
+                }
+            } else {
+                eprintln!("Error: {}", resp.message.unwrap_or_default());
+            }
+        }
+    } else if reset {
+        let resp = client
+            .reset(&ses_id)
+            .map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            println!("Session {} reset", ses_id);
+        }
+    } else if delete {
+        let resp = client
+            .delete(&ses_id)
+            .map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            println!("Session {} deleted", ses_id);
+        }
+    } else if snapshot {
+        let resp = client
+            .snapshot(&ses_id)
+            .map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            match &resp.value {
+                Some(src) => println!("{}", src),
+                None => eprintln!("Error: {}", resp.message.unwrap_or_default()),
+            }
+        }
+    } else if let Some(code) = &code {
+        let resp = client
+            .eval(&ses_id, code)
+            .map_err(|e| miette::miette!("{}", e))?;
+        if json {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+        } else {
+            if resp.status == "ok" {
+                if let Some(val) = &resp.value {
+                    println!("{}", val);
+                }
+            } else {
+                eprintln!("Error: {}", resp.message.unwrap_or_default());
+            }
+        }
+    } else {
+        eprintln!("Error: provide code to evaluate or an action flag (--inspect, --reset, --delete, --snapshot)");
         std::process::exit(1);
     }
-};
-
-if inspect {
-    let resp = client
-        .inspect(&ses_id)
-        .map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        if resp.status == "ok" {
-            if let Some(data) = &resp.data {
-                println!("{}", serde_json::to_string_pretty(data).unwrap());
-            }
-        } else {
-            eprintln!("Error: {}", resp.message.unwrap_or_default());
-        }
-    }
-} else if reset {
-    let resp = client
-        .reset(&ses_id)
-        .map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        println!("Session {} reset", ses_id);
-    }
-} else if delete {
-    let resp = client
-        .delete(&ses_id)
-        .map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        println!("Session {} deleted", ses_id);
-    }
-} else if snapshot {
-    let resp = client
-        .snapshot(&ses_id)
-        .map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        match &resp.value {
-            Some(src) => println!("{}", src),
-            None => eprintln!("Error: {}", resp.message.unwrap_or_default()),
-        }
-    }
-} else if let Some(code) = &code {
-    let resp = client
-        .eval(&ses_id, code)
-        .map_err(|e| miette::miette!("{}", e))?;
-    if json {
-        println!("{}", serde_json::to_string(&resp).unwrap());
-    } else {
-        if resp.status == "ok" {
-            if let Some(val) = &resp.value {
-                println!("{}", val);
-            }
-        } else {
-            eprintln!("Error: {}", resp.message.unwrap_or_default());
-        }
-    }
-} else {
-    eprintln!("Error: provide code to evaluate or an action flag (--inspect, --reset, --delete, --snapshot)");
-    std::process::exit(1);
-}
     Ok(())
 }

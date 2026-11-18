@@ -5,38 +5,30 @@
 use crate::cli_spec::TransTarget;
 use crate::diag::{format_error_json, output_success, to_miette_err};
 
-pub(crate) fn c(
-    ai_mode: bool,
-    path: String,
-    target: Option<String>,
-) -> miette::Result<()> {
-if let Some(target_val) = target {
-    // SAFETY: set_var is safe in single-threaded context during CLI startup
-    #[allow(deprecated)]
-    unsafe {
-        std::env::set_var("AUTO_TARGET", target_val);
+pub(crate) fn c(ai_mode: bool, path: String, target: Option<String>) -> miette::Result<()> {
+    if let Some(target_val) = target {
+        // SAFETY: set_var is safe in single-threaded context during CLI startup
+        #[allow(deprecated)]
+        unsafe {
+            std::env::set_var("AUTO_TARGET", target_val);
+        }
     }
-}
-let c = auto_lang_core::trans_c(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
-    }
-    to_miette_err(e)
-})?;
-output_success(ai_mode, &c);
+    let c = auto_lang_core::trans_c(path.as_str()).map_err(|e| {
+        if ai_mode {
+            eprintln!("{}", format_error_json(&e));
+            std::process::exit(1);
+        }
+        to_miette_err(e)
+    })?;
+    output_success(ai_mode, &c);
     Ok(())
 }
 
 /// A2R 的 `--merge` 面：渲染三件套 → 内联合并 → 写文件/打印。
 #[cfg(feature = "ace-candidate")]
-fn rust_merged_via_a2r(
-    ai_mode: bool,
-    path: &str,
-    output: Option<&str>,
-) -> miette::Result<()> {
-    let source = std::fs::read_to_string(path)
-        .map_err(|e| miette::miette!("Failed to read file: {e}"))?;
+fn rust_merged_via_a2r(ai_mode: bool, path: &str, output: Option<&str>) -> miette::Result<()> {
+    let source =
+        std::fs::read_to_string(path).map_err(|e| miette::miette!("Failed to read file: {e}"))?;
     auto_man_runtime::rust_engine::note_ace_a2r_dispatch();
     auto_man_runtime::rust_engine::write_proof_if_requested();
     let module = std::path::Path::new(path)
@@ -50,8 +42,7 @@ fn rust_merged_via_a2r(
         .map_err(|e| miette::miette!("{}: {}", e.code, e.message))?;
     match output {
         Some(out) => {
-            std::fs::write(out, &merged)
-                .map_err(|e| miette::miette!("Failed to write: {e}"))?;
+            std::fs::write(out, &merged).map_err(|e| miette::miette!("Failed to write: {e}"))?;
             if !ai_mode {
                 println!("[trans] {path} -> {out} (merged, a2r)");
             }
@@ -62,11 +53,7 @@ fn rust_merged_via_a2r(
 }
 
 #[cfg(not(feature = "ace-candidate"))]
-fn rust_merged_via_a2r(
-    _ai_mode: bool,
-    _path: &str,
-    _output: Option<&str>,
-) -> miette::Result<()> {
+fn rust_merged_via_a2r(_ai_mode: bool, _path: &str, _output: Option<&str>) -> miette::Result<()> {
     Err(miette::miette!(
         "ace.rust/executor-unavailable: AUTO_ACE_RUST selects A2R but this build has no ACE host"
     ))
@@ -145,134 +132,18 @@ pub(crate) fn rust(ai_mode: bool, path: String) -> miette::Result<()> {
     }
     auto_man_runtime::rust_engine::note_legacy_dispatch();
     auto_man_runtime::rust_engine::write_proof_if_requested();
-let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
-    }
-    to_miette_err(e)
-})?;
-output_success(ai_mode, &r);
+    let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
+        if ai_mode {
+            eprintln!("{}", format_error_json(&e));
+            std::process::exit(1);
+        }
+        to_miette_err(e)
+    })?;
+    output_success(ai_mode, &r);
     Ok(())
 }
 
 pub(crate) fn python(ai_mode: bool, path: String) -> miette::Result<()> {
-let py = auto_lang_core::trans_python(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
-    }
-    to_miette_err(e)
-})?;
-output_success(ai_mode, &py);
-    Ok(())
-}
-
-pub(crate) fn javascript(ai_mode: bool, path: String) -> miette::Result<()> {
-let js = auto_lang_core::trans_javascript(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
-    }
-    to_miette_err(e)
-})?;
-output_success(ai_mode, &js);
-    Ok(())
-}
-
-pub(crate) fn gdscript(ai_mode: bool, path: String) -> miette::Result<()> {
-let gd = auto_lang_core::trans_gdscript(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
-    }
-    to_miette_err(e)
-})?;
-output_success(ai_mode, &gd);
-    Ok(())
-}
-
-pub(crate) fn trans(
-    ai_mode: bool,
-    path: String,
-    target: TransTarget,
-) -> miette::Result<()> {
-    match target {
-TransTarget::Ts { output } => {
-    let out_path = output.unwrap_or_else(|| {
-        std::path::Path::new(&path)
-            .with_extension("ts")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let msg = auto_lang_core::trans_typescript_to(&path, &out_path).map_err(|e| {
-        if ai_mode {
-            eprintln!("{}", format_error_json(&e));
-            std::process::exit(1);
-        }
-        to_miette_err(e)
-    })?;
-    println!("{}", msg);
-}
-TransTarget::C { output } => {
-    let c = auto_lang_core::trans_c(path.as_str()).map_err(|e| {
-        if ai_mode {
-            eprintln!("{}", format_error_json(&e));
-            std::process::exit(1);
-        }
-        to_miette_err(e)
-    })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &c)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[trans] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &c);
-    }
-}
-TransTarget::Rust { output, merge } => {
-    // 同一回执面：这条路径也把真实派发记下来（旧路径不静默）。
-    if !auto_man_runtime::rust_engine::ace_a2r_selected() {
-        auto_man_runtime::rust_engine::note_legacy_dispatch();
-        auto_man_runtime::rust_engine::write_proof_if_requested();
-    }
-    if merge {
-        // PLAN-982 982/RUST：A2R 的 merge 面 = 三件套**模块内联**成单个 .rs
-        //（生成文本一字不改；只过滤 wrapper 的模块声明与 use）。
-        if auto_man_runtime::rust_engine::ace_a2r_selected() {
-            return rust_merged_via_a2r(ai_mode, path.as_str(), output.as_deref());
-        }
-        let merged = auto_lang_core::trans_rust_merged(path.as_str()).map_err(|e| {
-            if ai_mode {
-                eprintln!("{}", format_error_json(&e));
-                std::process::exit(1);
-            }
-            to_miette_err(e)
-        })?;
-        let content = String::from_utf8_lossy(&merged);
-        if let Some(out) = output {
-            std::fs::write(&out, &*merged)
-                .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-            println!("[trans] {} -> {} (merged)", path, out);
-        } else {
-            output_success(ai_mode, &content);
-        }
-    } else {
-        let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
-            if ai_mode {
-                eprintln!("{}", format_error_json(&e));
-                std::process::exit(1);
-            }
-            to_miette_err(e)
-        })?;
-        if let Some(_out) = output {
-            println!("{}", r);
-        } else {
-            output_success(ai_mode, &r);
-        }
-    }
-}
-TransTarget::Python { output } => {
     let py = auto_lang_core::trans_python(path.as_str()).map_err(|e| {
         if ai_mode {
             eprintln!("{}", format_error_json(&e));
@@ -280,15 +151,11 @@ TransTarget::Python { output } => {
         }
         to_miette_err(e)
     })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &py)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[trans] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &py);
-    }
+    output_success(ai_mode, &py);
+    Ok(())
 }
-TransTarget::Js { output } => {
+
+pub(crate) fn javascript(ai_mode: bool, path: String) -> miette::Result<()> {
     let js = auto_lang_core::trans_javascript(path.as_str()).map_err(|e| {
         if ai_mode {
             eprintln!("{}", format_error_json(&e));
@@ -296,15 +163,11 @@ TransTarget::Js { output } => {
         }
         to_miette_err(e)
     })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &js)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[trans] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &js);
-    }
+    output_success(ai_mode, &js);
+    Ok(())
 }
-TransTarget::Gd { output } => {
+
+pub(crate) fn gdscript(ai_mode: bool, path: String) -> miette::Result<()> {
     let gd = auto_lang_core::trans_gdscript(path.as_str()).map_err(|e| {
         if ai_mode {
             eprintln!("{}", format_error_json(&e));
@@ -312,79 +175,191 @@ TransTarget::Gd { output } => {
         }
         to_miette_err(e)
     })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &gd)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[trans] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &gd);
-    }
+    output_success(ai_mode, &gd);
+    Ok(())
 }
-TransTarget::Tscn { output } => {
-    let tscn = auto_lang_core::trans_tscn(path.as_str()).map_err(|e| {
-        if ai_mode {
-            eprintln!("{}", format_error_json(&e));
-            std::process::exit(1);
+
+pub(crate) fn trans(ai_mode: bool, path: String, target: TransTarget) -> miette::Result<()> {
+    match target {
+        TransTarget::Ts { output } => {
+            let out_path = output.unwrap_or_else(|| {
+                std::path::Path::new(&path)
+                    .with_extension("ts")
+                    .to_string_lossy()
+                    .into_owned()
+            });
+            let msg = auto_lang_core::trans_typescript_to(&path, &out_path).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            println!("{}", msg);
         }
-        to_miette_err(e)
-    })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &tscn)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[trans] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &tscn);
-    }
-}
-TransTarget::Godot { output: _ } => {
-    // trans_godot writes <base>.tscn and <base>.gd next to the source.
-    let msg = auto_lang_core::trans_godot(path.as_str()).map_err(|e| {
-        if ai_mode {
-            eprintln!("{}", format_error_json(&e));
-            std::process::exit(1);
+        TransTarget::C { output } => {
+            let c = auto_lang_core::trans_c(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &c).map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[trans] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &c);
+            }
         }
-        to_miette_err(e)
-    })?;
-    output_success(ai_mode, &msg);
-}
-// Plan 555 T07: Auto → Auto（s2s 改写器；W1 identity passthrough）
-TransTarget::Auto { output } => {
-    let lowered = auto_lang_core::trans_auto_s2s(path.as_str()).map_err(|e| {
-        if ai_mode {
-            eprintln!("{}", format_error_json(&e));
-            std::process::exit(1);
+        TransTarget::Rust { output, merge } => {
+            // 同一回执面：这条路径也把真实派发记下来（旧路径不静默）。
+            if !auto_man_runtime::rust_engine::ace_a2r_selected() {
+                auto_man_runtime::rust_engine::note_legacy_dispatch();
+                auto_man_runtime::rust_engine::write_proof_if_requested();
+            }
+            if merge {
+                // PLAN-982 982/RUST：A2R 的 merge 面 = 三件套**模块内联**成单个 .rs
+                //（生成文本一字不改；只过滤 wrapper 的模块声明与 use）。
+                if auto_man_runtime::rust_engine::ace_a2r_selected() {
+                    return rust_merged_via_a2r(ai_mode, path.as_str(), output.as_deref());
+                }
+                let merged = auto_lang_core::trans_rust_merged(path.as_str()).map_err(|e| {
+                    if ai_mode {
+                        eprintln!("{}", format_error_json(&e));
+                        std::process::exit(1);
+                    }
+                    to_miette_err(e)
+                })?;
+                let content = String::from_utf8_lossy(&merged);
+                if let Some(out) = output {
+                    std::fs::write(&out, &*merged)
+                        .map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                    println!("[trans] {} -> {} (merged)", path, out);
+                } else {
+                    output_success(ai_mode, &content);
+                }
+            } else {
+                let r = auto_lang_core::trans_rust(path.as_str()).map_err(|e| {
+                    if ai_mode {
+                        eprintln!("{}", format_error_json(&e));
+                        std::process::exit(1);
+                    }
+                    to_miette_err(e)
+                })?;
+                if let Some(_out) = output {
+                    println!("{}", r);
+                } else {
+                    output_success(ai_mode, &r);
+                }
+            }
         }
-        to_miette_err(e)
-    })?;
-    if let Some(out) = output {
-        std::fs::write(&out, &lowered)
-            .map_err(|e| miette::miette!("Failed to write: {}", e))?;
-        println!("[s2s] {} -> {}", path, out);
-    } else {
-        output_success(ai_mode, &lowered);
-    }
-}
+        TransTarget::Python { output } => {
+            let py = auto_lang_core::trans_python(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &py).map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[trans] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &py);
+            }
+        }
+        TransTarget::Js { output } => {
+            let js = auto_lang_core::trans_javascript(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &js).map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[trans] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &js);
+            }
+        }
+        TransTarget::Gd { output } => {
+            let gd = auto_lang_core::trans_gdscript(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &gd).map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[trans] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &gd);
+            }
+        }
+        TransTarget::Tscn { output } => {
+            let tscn = auto_lang_core::trans_tscn(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &tscn)
+                    .map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[trans] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &tscn);
+            }
+        }
+        TransTarget::Godot { output: _ } => {
+            // trans_godot writes <base>.tscn and <base>.gd next to the source.
+            let msg = auto_lang_core::trans_godot(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            output_success(ai_mode, &msg);
+        }
+        // Plan 555 T07: Auto → Auto（s2s 改写器；W1 identity passthrough）
+        TransTarget::Auto { output } => {
+            let lowered = auto_lang_core::trans_auto_s2s(path.as_str()).map_err(|e| {
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&e));
+                    std::process::exit(1);
+                }
+                to_miette_err(e)
+            })?;
+            if let Some(out) = output {
+                std::fs::write(&out, &lowered)
+                    .map_err(|e| miette::miette!("Failed to write: {}", e))?;
+                println!("[s2s] {} -> {}", path, out);
+            } else {
+                output_success(ai_mode, &lowered);
+            }
+        }
     }
     Ok(())
 }
 
-pub(crate) fn r2a(
-    ai_mode: bool,
-    path: String,
-    output: Option<String>,
-) -> miette::Result<()> {
-let r = auto_lang_core::transpile_r2a_file(path.as_str()).map_err(|e| {
-    if ai_mode {
-        eprintln!("{}", format_error_json(&e));
-        std::process::exit(1);
+pub(crate) fn r2a(ai_mode: bool, path: String, output: Option<String>) -> miette::Result<()> {
+    let r = auto_lang_core::transpile_r2a_file(path.as_str()).map_err(|e| {
+        if ai_mode {
+            eprintln!("{}", format_error_json(&e));
+            std::process::exit(1);
+        }
+        to_miette_err(e)
+    })?;
+    if let Some(out) = output {
+        std::fs::write(&out, &r).map_err(|e| miette::miette!("Failed to write: {}", e))?;
+        println!("[r2a] {} -> {}", path, out);
+    } else {
+        output_success(ai_mode, &r);
     }
-    to_miette_err(e)
-})?;
-if let Some(out) = output {
-    std::fs::write(&out, &r).map_err(|e| miette::miette!("Failed to write: {}", e))?;
-    println!("[r2a] {} -> {}", path, out);
-} else {
-    output_success(ai_mode, &r);
-}
     Ok(())
 }

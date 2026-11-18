@@ -21,15 +21,11 @@ pub(crate) fn run(action: WizardAction) -> miette::Result<()> {
             let templates = [
                 (
                     "pac.at",
-                    include_str!(
-                        "../../../crates/autoui-skill/templates/new-project/pac.at.tmpl"
-                    ),
+                    include_str!("../../../crates/autoui-skill/templates/new-project/pac.at.tmpl"),
                 ),
                 (
                     "src/front/app.at",
-                    include_str!(
-                        "../../../crates/autoui-skill/templates/new-project/app.at.tmpl"
-                    ),
+                    include_str!("../../../crates/autoui-skill/templates/new-project/app.at.tmpl"),
                 ),
                 (
                     "src/front/store.at",
