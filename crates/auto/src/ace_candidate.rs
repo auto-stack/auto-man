@@ -846,14 +846,34 @@ pub(crate) fn run_debug(ai_mode: bool, file: &str) -> miette::Result<()> {
 /// （970 T-03：管道/stdio JSONL，legacy 方法名；会话宿主为 970 桥）。前台/
 /// stdio/后台三形态与 legacy serve 同形；会话生命周期＝daemon 进程（与
 /// legacy 一致，不挂 T-08 store——重启即清，留作后续显式面）。
-pub(crate) fn run_serve(foreground: bool, stdio: bool, pipe_name: &str) -> miette::Result<()> {
-    let _guard = install_default_session_host()?;
+pub(crate) fn run_serve(
+    foreground: bool,
+    stdio: bool,
+    pipe_name: &str,
+    max_sessions: usize,
+    timeout_secs: u64,
+) -> miette::Result<()> {
+    // PLAN-982（EXEC · round 190）：legacy `--max-sessions`/`--timeout` 的 1:1
+    // 映射（两旗标的语义与默认值——20 会话／1800s 空闲——本就与
+    // `AceSessionLimits::default()` 一致）；legacy `--timeout 0`＝不过期 ⇒
+    // u64::MAX 秒（宿主清扫按秒比较）。
+    let limits = auto_lang_core::AceSessionLimits {
+        max_sessions: max_sessions.max(1),
+        idle_timeout_secs: if timeout_secs == 0 {
+            u64::MAX
+        } else {
+            timeout_secs
+        },
+        ..auto_lang_core::AceSessionLimits::default()
+    };
+    let _guard = install_session_host(limits)?;
     if stdio {
         auto_lang_core::AceDaemon::new().run_stdio();
     } else if foreground {
         auto_lang_core::AceDaemon::new().run_pipe(pipe_name);
     } else {
-        // 后台形态：与 legacy serve 同一 spawn 纪律（分离进程、管道名透传）。
+        // 后台形态：与 legacy serve 同一 spawn 纪律（分离进程、管道名与
+        // 限额旗标透传给前台子进程）。
         let exe = std::env::current_exe()
             .map_err(|e| miette::miette!("Cannot find auto executable: {}", e))?;
         let mut spec = auto_tool_execution::ExecutionSpec::new([
@@ -862,6 +882,10 @@ pub(crate) fn run_serve(foreground: bool, stdio: bool, pipe_name: &str) -> miett
             "--foreground".into(),
             "--pipe-name".into(),
             pipe_name.into(),
+            "--max-sessions".into(),
+            max_sessions.to_string().into(),
+            "--timeout".into(),
+            timeout_secs.to_string().into(),
         ]);
         spec.stdin = auto_tool_execution::StdioPolicy::Inherit;
         spec.stdout = auto_tool_execution::StdioPolicy::Inherit;
@@ -877,14 +901,13 @@ pub(crate) fn run_serve(foreground: bool, stdio: bool, pipe_name: &str) -> miett
     Ok(())
 }
 
-/// Install the ACE session host with default limits (the CLI face carries
-/// no tuning flags yet; named failure on install — never a legacy route).
-fn install_default_session_host(
+/// Install the ACE session host (named failure on install — never a legacy
+/// route). Round 190：serve 腿带 CLI 限额；one-shot 腿用默认限额。
+fn install_session_host(
+    limits: auto_lang_core::AceSessionLimits,
 ) -> miette::Result<auto_lang_ace_host::session_bridge::SessionHostGuard> {
-    auto_lang_ace_host::session_bridge::install_session_host(
-        auto_lang_core::AceSessionLimits::default(),
-    )
-    .map_err(|e| miette::miette!("ace.session/host-install: {e}"))
+    auto_lang_ace_host::session_bridge::install_session_host(limits)
+        .map_err(|e| miette::miette!("ace.session/host-install: {e}"))
 }
 
 /// PLAN-982（EXEC · round 187）：候选腿 `auto req` 的**匿名 one-shot** 腿
@@ -896,7 +919,7 @@ fn install_default_session_host(
 pub(crate) fn run_req_one_shot(json: bool, code: &str) -> miette::Result<()> {
     use auto_lang_core::{AceSessionOp, AceSessionOutcome, AceSessionValue};
 
-    let _guard = install_default_session_host()?;
+    let _guard = install_session_host(auto_lang_core::AceSessionLimits::default())?;
     let created = auto_lang_core::ace_session_create(None, None);
     let Some(session) = created.session.clone() else {
         return Err(miette::miette!(

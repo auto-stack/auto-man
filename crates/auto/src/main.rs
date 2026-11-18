@@ -1014,17 +1014,23 @@ fn real_main(cli: Cli) -> Result<()> {
             max_sessions,
             timeout,
         }) => {
-            // PLAN-982（EXEC，round 187）：候选腿的 `auto serve`——ACE 会话
+            // PLAN-982（EXEC，round 187/190）：候选腿的 `auto serve`——ACE 会话
             // daemon（970 T-03：管道/stdio JSONL，legacy 方法名兼容旧 wire
             // 客户端）。此前候选环境下 serve 静默落旧 daemon（round-20 拒绝
             // 清单漏列），本刀起由 ACE daemon 承接；非候选构建走既有 legacy
-            // daemon。max_sessions/timeout 归 legacy 配置面，ACE 宿主用默认
-            // 限额（CLI 调参面未迁移，具名边界见计划台账）。
+            // daemon。round 190 起 `--max-sessions`/`--timeout` 一并接线
+            //（1:1 映射 `AceSessionLimits`——语义与默认值（20/1800s）与
+            // legacy 对齐；`--timeout 0`＝不过期 ⇒ u64::MAX 秒）。
             #[cfg(feature = "ace-candidate")]
             {
                 if crate::ace_candidate::selected() {
-                    let _ = (max_sessions, timeout);
-                    crate::ace_candidate::run_serve(foreground, stdio, &pipe_name)?;
+                    crate::ace_candidate::run_serve(
+                        foreground,
+                        stdio,
+                        &pipe_name,
+                        max_sessions,
+                        timeout,
+                    )?;
                     return Ok(());
                 }
             }
