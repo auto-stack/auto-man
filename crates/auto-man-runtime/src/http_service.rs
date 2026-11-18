@@ -146,56 +146,64 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
         config.profile.as_str()
     );
 
-    let mut served = 0u64;
-    let mut av_dispatches = 0u64;
-    'accept: loop {
+    // 并发：**每连接一个线程**（服务器本身仍是单 accept 循环）；计数用原子量共享。
+    let served = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let av_dispatches = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let max_body = std::env::var("AUTO_SERVICE_MAX_BODY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(AV_MAX_BODY);
+    // 非阻塞 accept：这样"已服务的请求数达到上限"能在**没有新连接**时被观察到，
+    // 进程才能按上限自然关停（否则会一直阻塞在 accept 上）。
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("ace.service/accept: {e}"))?;
+    let mut workers = Vec::new();
+    loop {
+        if max_requests.is_some_and(|max| served.load(std::sync::atomic::Ordering::SeqCst) >= max) {
+            break;
+        }
         let (stream, _peer) = match listener.accept() {
-            Ok(pair) => pair,
+            Ok(pair) => {
+                let _ = pair.0.set_nonblocking(false);
+                pair
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                continue;
+            }
             Err(e) => return Err(format!("ace.service/accept: {e}")),
         };
-        let mut reader = std::io::BufReader::new(stream);
-        let mut stream = None;
-        // **keep-alive**：同一连接上按 `connection` 头连续服务多个请求。
-        loop {
-            let request = match read_request(&mut reader) {
-                Ok(Some(request)) => request,
-                // 就绪探针（只连不发）：不消耗请求、不派发。
-                Ok(None) => break,
-                Err(_) => break,
-            };
-            let method = request.method.clone();
-            let path = request.path.clone();
-            let program = inject_request_context(&method, &path, &source, &request);
-            let entry = if derive_routes {
-                entry_for(&method, &path)
-            } else {
-                fixed_entry.clone()
-            };
-            let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
-            if dispatched {
-                av_dispatches += 1;
-            }
-            let keep_alive =
-                request.keep_alive && !max_requests.is_some_and(|max| served + 1 >= max);
-            let response = format!(
-                "HTTP/1.1 {status}\r\ncontent-type: text/plain; charset=utf-8\r\n\
-                 content-length: {}\r\nconnection: {}\r\n\r\n{body}",
-                body.len(),
-                if keep_alive { "keep-alive" } else { "close" }
-            );
-            let io = stream.get_or_insert(request.stream);
-            let _ = io.write_all(response.as_bytes());
-            let _ = io.flush();
-            served += 1;
-            if max_requests.is_some_and(|max| served >= max) {
-                break 'accept;
-            }
-            if !keep_alive {
-                break;
-            }
+        if max_requests.is_some_and(|max| served.load(std::sync::atomic::Ordering::SeqCst) >= max) {
+            // 超过上限后不再接新连接（已接的连接照常服务完）。
+            drop(stream);
+            break;
         }
+        let source = source.clone();
+        let fixed_entry = fixed_entry.clone();
+        let served = std::sync::Arc::clone(&served);
+        let av_dispatches = std::sync::Arc::clone(&av_dispatches);
+        workers.push(std::thread::spawn(move || {
+            serve_connection(
+                stream,
+                &source,
+                &fixed_entry,
+                derive_routes,
+                wall_ms,
+                max_requests,
+                max_body,
+                &served,
+                &av_dispatches,
+            );
+        }));
     }
     drop(listener);
+    for worker in workers {
+        let _ = worker.join();
+    }
+
+    let served = served.load(std::sync::atomic::Ordering::SeqCst);
+    let av_dispatches = av_dispatches.load(std::sync::atomic::Ordering::SeqCst);
 
     let legacy = crate::config_engine::observation().legacy_dispatches;
     let same = legacy == 0 && av_dispatches >= 1;
@@ -212,6 +220,79 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     Ok(0)
 }
 
+/// 服务端请求体上限的默认值（1 MiB）；`AUTO_SERVICE_MAX_BODY` 可覆盖。
+const AV_MAX_BODY: usize = 1024 * 1024;
+
+/// 一条连接的完整服务过程（**每连接一个线程**）：keep-alive + 逐请求派发 AV。
+#[allow(clippy::too_many_arguments)]
+fn serve_connection(
+    stream: std::net::TcpStream,
+    source: &str,
+    fixed_entry: &str,
+    derive_routes: bool,
+    wall_ms: Option<u64>,
+    max_requests: Option<u64>,
+    max_body: usize,
+    served: &std::sync::atomic::AtomicU64,
+    av_dispatches: &std::sync::atomic::AtomicU64,
+) {
+    use std::io::Write;
+    use std::sync::atomic::Ordering;
+
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
+    let mut reader = std::io::BufReader::new(stream);
+    let mut stream = None;
+    loop {
+        let request = match read_request(&mut reader, max_body) {
+            Ok(Some(request)) => request,
+            // 就绪探针（只连不发）或对端提前关闭：本连接结束。
+            Ok(None) => break,
+            Err(_) => break,
+        };
+        // 超限体：直接 413，不派发（也绝不读体）。
+        if request.oversize {
+            let body = "ace.service/body-too-large: content-length exceeds the configured cap\n";
+            let response = format!(
+                "HTTP/1.1 413 Payload Too Large\r\ncontent-type: text/plain; charset=utf-8\r\n\
+                 content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let io = request.stream;
+            let mut io = io;
+            let _ = io.write_all(response.as_bytes());
+            let _ = io.flush();
+            served.fetch_add(1, Ordering::SeqCst);
+            break;
+        }
+        let method = request.method.clone();
+        let path = request.path.clone();
+        let program = inject_request_context(&method, &path, source, &request);
+        let entry = if derive_routes {
+            entry_for(&method, &path)
+        } else {
+            fixed_entry.to_string()
+        };
+        let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
+        if dispatched {
+            av_dispatches.fetch_add(1, Ordering::SeqCst);
+        }
+        let done = served.fetch_add(1, Ordering::SeqCst) + 1;
+        let keep_alive = request.keep_alive && !max_requests.is_some_and(|max| done >= max);
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: text/plain; charset=utf-8\r\n\
+             content-length: {}\r\nconnection: {}\r\n\r\n{body}",
+            body.len(),
+            if keep_alive { "keep-alive" } else { "close" }
+        );
+        let io = stream.get_or_insert(request.stream);
+        let _ = io.write_all(response.as_bytes());
+        let _ = io.flush();
+        if !keep_alive {
+            break;
+        }
+    }
+}
+
 /// 一个已解析的请求（最小 HTTP/1.1 面：请求行 + 头 + 按 `content-length` 的体）。
 struct AvRequest {
     method: String,
@@ -221,12 +302,15 @@ struct AvRequest {
     query: String,
     body: String,
     keep_alive: bool,
+    /// `content-length` 超过服务端上限：不读体、不派发，直接 413。
+    oversize: bool,
     stream: std::net::TcpStream,
 }
 
 /// 从连接里读一个完整请求；`Ok(None)` 表示对端没说话就关了（就绪探针）。
 fn read_request(
     reader: &mut std::io::BufReader<std::net::TcpStream>,
+    max_body: usize,
 ) -> Result<Option<AvRequest>, String> {
     use std::io::BufRead;
 
@@ -273,7 +357,22 @@ fn read_request(
         }
     }
 
+    let oversize = content_length > max_body;
     let mut body = String::new();
+    if oversize {
+        // 超限：不读体（避免被一个声称超大的 content-length 拖住内存）。
+        let stream = reader.get_ref().try_clone().map_err(|e| e.to_string())?;
+        return Ok(Some(AvRequest {
+            method,
+            target,
+            path,
+            query,
+            body: String::new(),
+            keep_alive: false,
+            oversize: true,
+            stream,
+        }));
+    }
     if content_length > 0 {
         let mut rest = vec![0u8; content_length];
         reader
@@ -289,6 +388,7 @@ fn read_request(
         query,
         body,
         keep_alive,
+        oversize: false,
         stream,
     }))
 }

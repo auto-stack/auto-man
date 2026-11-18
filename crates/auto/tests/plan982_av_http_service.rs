@@ -399,3 +399,58 @@ fn p982_av_service_reads_query_and_body_and_keeps_the_connection() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 153）：**并发连接**与**体上限**。
+/// 1. 两个并发连接同时被服务（每连接一线程），都拿到 200；
+/// 2. `content-length` 超过 `AUTO_SERVICE_MAX_BODY` ⇒ **413** + 具名 code，且**不派发**。
+#[test]
+fn p982_av_service_serves_concurrent_connections_and_refuses_oversize_bodies() {
+    let project = scratch("conc");
+    let mut service = start(
+        &project,
+        "fn main() int { return 5 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "3"),
+            ("AUTO_SERVICE_MAX_BODY", "16"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    // (1) 两个并发连接：同时发出请求，都能在超时内拿到 200。
+    let a = std::thread::spawn(move || request(addr, "/a"));
+    let b = std::thread::spawn(move || request(addr, "/b"));
+    let (status_a, body_a) = a.join().expect("thread a");
+    let (status_b, body_b) = b.join().expect("thread b");
+    assert_eq!(status_a, "HTTP/1.1 200 OK", "{body_a}");
+    assert_eq!(status_b, "HTTP/1.1 200 OK", "{body_b}");
+
+    // (2) 超限体：content-length 17 > 16 ⇒ 413，且不派发。
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("read timeout");
+    let oversize = "POST /big HTTP/1.1\r\nhost: localhost\r\ncontent-length: 17\r\n\r\n";
+    stream.write_all(oversize.as_bytes()).expect("write");
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).expect("read 413");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: oversize = {response:?}");
+    assert!(
+        response.starts_with("HTTP/1.1 413"),
+        "an oversize body is refused before dispatch: {response}"
+    );
+    assert!(
+        response.contains("ace.service/body-too-large"),
+        "the refusal is named: {response}"
+    );
+    assert!(
+        receipt.contains("served=3") && receipt.contains("av_dispatches=2"),
+        "two dispatches + one refused (no dispatch): {receipt}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
