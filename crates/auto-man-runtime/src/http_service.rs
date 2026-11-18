@@ -335,6 +335,7 @@ fn serve_av(
         .unwrap_or_else(|| {
             vec![
                 "platform.file".to_string(),
+                "platform.file.path".to_string(),
                 "platform.mem".to_string(),
                 "platform.env".to_string(),
             ]
@@ -349,9 +350,21 @@ fn serve_av(
         config.profile.as_str()
     );
 
-    let mut transport = auto_web::http_transport::TransportConfig::from_env();
-    transport.service = None;
+    // 真实的 `HttpServiceConfig` → transport 映射（auto-web 公开单一来源：
+    // 预算/超时/排水取自配置；策略面 ServiceRuntime 一并装配——982 `--stack
+    // web` 的同一入口）。
+    let transport = auto_web::http_transport::TransportConfig::from_service_config_with_policy(
+        std::sync::Arc::new(config.clone()),
+    );
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    if let Some(service) = &transport.service {
+        if !service.bind_shutdown(shutdown_tx.clone()) {
+            return Err(
+                "ace.service/shutdown-bound: the service runtime shutdown channel is already bound"
+                    .into(),
+            );
+        }
+    }
     let handle = std::thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .name("auto-av-http-service".into())
@@ -1539,3 +1552,4 @@ mod tests {
         assert!(err.contains("unknown --server"), "{err}");
     }
 }
+
