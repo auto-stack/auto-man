@@ -107,7 +107,21 @@ fn candidate_unsupported_command(command: Option<&Commands>) -> Option<&'static 
             return None;
         }
         match command {
-            Some(Commands::Run { .. }) => Some("run"),
+            // PLAN-982（U0，2026-11-18 用户指令）：**Vue 目标的 run 分派接通**——
+            // 显式 `--render vue` 走既有 `run_vue`（`UiOps::vue_run` →
+            // auto-ui-tool：980 负责生成产物与 a2x_rt，本腿负责启动与构建
+            // 诊断回传）；其它目标（vm/rust 等未迁移腿）保持具名拒绝。
+            Some(Commands::Run { render, .. }) => {
+                let vue = render
+                    .as_deref()
+                    .map(|r| r.trim().eq_ignore_ascii_case("vue"))
+                    .unwrap_or(false);
+                if vue {
+                    None
+                } else {
+                    Some("run")
+                }
+            }
             Some(Commands::Service { .. }) => Some("service"),
             Some(Commands::ServiceExport { .. }) => Some("service-export"),
             Some(Commands::Test { .. }) => Some("test"),
@@ -402,6 +416,21 @@ fn real_main(cli: Cli) -> Result<()> {
             merged,
             args,
         }) => {
+            // PLAN-982（U0）：候选腿的 **Vue run 分派**——把 ACE 生成选择显式
+            // 传给 auto-ui-tool（`AUTO_UI_ACE_VUE=1`）。工具侧读该键走 980 的
+            // lane 生成（`generate_sfc_with_lane_product`）；lane 缺席时工具必须
+            // **具名拒绝**，不静默落 legacy（980 接线时对签本合同）。
+            #[cfg(feature = "ace-candidate")]
+            if crate::ace_candidate::selected() {
+                if render
+                    .as_deref()
+                    .map(|r| r.trim().eq_ignore_ascii_case("vue"))
+                    .unwrap_or(false)
+                {
+                    std::env::set_var("AUTO_UI_ACE_VUE", "1");
+                    println!("  ACE vue lane: AUTO_UI_ACE_VUE=1 (generation via auto-ui-tool)");
+                }
+            }
             cmd_run::run_project(
                 ai_mode,
                 cmd_run::ProjectArgs {
