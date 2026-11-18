@@ -150,6 +150,11 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
     let served = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let av_dispatches = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let declared = std::sync::Arc::new(declared_fns(&source));
+    // PLAN-982（983 文本面）：`AUTO_AV_TEXT=1` 时走**受检文本入口**——查询文本
+    // 作为运行时数据交给 handler 的借用 `str` 形参（同一编译产物、逐请求数据）。
+    let text_entry = std::env::var("AUTO_AV_TEXT")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
     let max_body = std::env::var("AUTO_SERVICE_MAX_BODY")
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
@@ -223,6 +228,7 @@ fn serve_av(project_dir: &Path, config: HttpServiceConfig) -> Result<i32, String
                 max_body,
                 max_header,
                 max_line,
+                text_entry,
                 &declared_worker,
                 &served,
                 &av_dispatches,
@@ -274,6 +280,7 @@ fn serve_connection(
     max_body: usize,
     max_header: usize,
     max_line: usize,
+    text_entry: bool,
     declared: &std::collections::BTreeSet<String>,
     served: &std::sync::atomic::AtomicU64,
     av_dispatches: &std::sync::atomic::AtomicU64,
@@ -365,7 +372,11 @@ fn serve_connection(
                 break;
             }
         }
-        let (status, body, dispatched) = av_handle(&program, &entry, wall_ms, &path);
+        let (status, body, dispatched) = if text_entry {
+            av_handle_text(source, &entry, wall_ms, &path, &request.query)
+        } else {
+            av_handle(&program, &entry, wall_ms, &path)
+        };
         if dispatched {
             av_dispatches.fetch_add(1, Ordering::SeqCst);
         }
@@ -776,6 +787,59 @@ fn allowed_methods(declared: &std::collections::BTreeSet<String>, path: &str) ->
         .collect()
 }
 
+/// PLAN-982（983 文本面）：**受检文本入口**的一次请求——查询文本作为运行时数据
+/// 交给 handler 的借用 `str` 形参（`run_ace_text` ⇒ Text profile ⇒
+/// `execute_entry_text`）。返回 `(状态行, 响应体, 是否真的派发到 AV)`。
+fn av_handle_text(
+    source: &str,
+    entry: &str,
+    wall_ms: Option<u64>,
+    path: &str,
+    query: &str,
+) -> (&'static str, String, bool) {
+    use auto_lang_core::{run_ace_text, AceEngineChoice, AceOutcome, AceRequest};
+    let wall = wall_ms.map(std::time::Duration::from_millis);
+    let request = AceRequest {
+        entry_def_id: entry,
+        wall,
+        ..AceRequest::simple(source)
+    };
+    // 同一编译产物、逐请求文本数据：整个 query 作为唯一文本实参。
+    let texts: [&[u8]; 1] = [query.as_bytes()];
+    let report = run_ace_text(AceEngineChoice::AceAV, &request, &texts);
+    match &report.outcome {
+        AceOutcome::Success { value, steps } => {
+            let rendered = render_ace_value(value);
+            let body = format!("{rendered}\npath={path} steps={steps} mode=text");
+            ("200 OK", body, true)
+        }
+        AceOutcome::Cancelled => (
+            "504 Gateway Timeout",
+            "ace.service/timeout: the AV budget was exhausted\n".to_string(),
+            true,
+        ),
+        AceOutcome::Diagnostic { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-diagnostic: {code}\n"),
+            true,
+        ),
+        AceOutcome::HostFailure { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-host-failure: {code}\n"),
+            true,
+        ),
+        AceOutcome::Denied { code, .. } => (
+            "500 Internal Server Error",
+            format!("ace.service/handler-denied: {code}\n"),
+            true,
+        ),
+        AceOutcome::ResourceDenied { kind, .. } => (
+            "504 Gateway Timeout",
+            format!("ace.service/budget-exhausted: {kind}\n"),
+            true,
+        ),
+    }
+}
 fn av_handle(
     source: &str,
     entry: &str,

@@ -753,3 +753,51 @@ fn p982_av_service_answers_405_when_the_path_exists_for_another_method() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（983 文本面，用户步骤 2）：**真实 HTTP 查询文本进 handler**——同一份
+/// 编译产物在两次请求里收到**字节长度相同、内容不同**的 `中文` 与 `日文`，按内容
+/// 返回不同结果；`av_dispatches=2`、`legacy_dispatches=0`、`same_sdk=true`。
+#[test]
+fn p982_av_service_serves_chinese_and_japanese_query_text() {
+    let project = scratch("text");
+    let mut service = start(
+        &project,
+        "fn main(q str) int {\n  if q == \"中文\" {\n    return 1\n  }\n  return 2\n}\n",
+        &[("AUTO_SERVICE_MAX_REQUESTS", "2"), ("AUTO_AV_TEXT", "1")],
+    );
+    let addr = wait_ready(&service);
+
+    // 两个查询串**字节长度相同**（各 6 字节），内容不同。
+    let (zh_status, zh_body) = request(addr, "/t?中文");
+    let (ja_status, ja_body) = request(addr, "/t?日文");
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: text zh={zh_status} {zh_body:?}");
+    eprintln!("p982: text ja={ja_status} {ja_body:?}");
+    assert_eq!(zh_status, "HTTP/1.1 200 OK", "{receipt}");
+    assert_eq!(ja_status, "HTTP/1.1 200 OK", "{receipt}");
+    assert!(
+        zh_body.starts_with("1"),
+        "the handler recognised 中文 by content: {zh_body}"
+    );
+    assert!(
+        ja_body.starts_with("2"),
+        "the same artifact treated 日文 differently: {ja_body}"
+    );
+    assert!(
+        zh_body.contains("mode=text") && ja_body.contains("mode=text"),
+        "both requests went through the text entry"
+    );
+    assert!(
+        receipt.contains("av_dispatches=2"),
+        "both requests dispatched to AV: {receipt}"
+    );
+    assert!(
+        receipt.contains("legacy_dispatches=0"),
+        "the legacy VM never dispatched: {receipt}"
+    );
+    assert!(
+        receipt.contains("same_sdk=true"),
+        "one SDK served both legs: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
