@@ -68,10 +68,36 @@ pub fn serve_project(
     match server {
         "vm" => serve_vm(project_dir, config),
         "rust" => serve_rust(project_dir, config),
+        // PLAN-982（形状 A，用户裁定）：`av` 轨＝Rust HTTP 宿主 + **ACE AV** 执行
+        // handler。宿主能力（`platform.http-service/1`）尚在实现中，因此这里先给
+        // **具名拒绝**：让 983 能显式选中该轨并拿到可编程判断的错误，而不是
+        // "unknown --server" 这种配置错误。
+        "av" | "ace" => serve_av(project_dir, config),
         other => Err(format!(
-            "unknown --server `{other}` (expected `vm` or `rust`)"
+            "unknown --server `{other}` (expected `vm`, `rust` or `av`)"
         )),
     }
+}
+
+/// PLAN-982：`av` 轨——**Rust 负责 HTTP，ACE AV 负责 handler**。
+///
+/// 现状（round 130）：能力面 `platform.http-service/1` 与宿主接线在 982 内逐步
+/// 交付；在宿主面就绪前，这里**显式具名拒绝**，绝不回退到 `vm` 轨（旧执行器）。
+fn serve_av(project_dir: &Path, _config: HttpServiceConfig) -> Result<i32, String> {
+    // 桥必须**由产品装配**（`auto` 启动时已 `install()`；本 crate 不依赖宿主桥，
+    // 分层同 `rust_engine`/`script_engine`）。无桥 ⇒ 同一具名拒绝，绝不静默回退。
+    if !auto_lang_core::ace_executor_installed() {
+        return Err(
+            "ace.service/bridge-unavailable: the ACE bridge could not be installed in this build"
+                .to_string(),
+        );
+    }
+    Err(format!(
+        "ace.service/host-unavailable: the AV service host (`platform.http-service/1`) is not \
+         implemented yet; `auto service --server av` never falls back to the legacy VM track \
+         (project: {})",
+        project_dir.display()
+    ))
 }
 
 // ============================================================================
