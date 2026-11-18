@@ -676,3 +676,41 @@ fn p982_av_service_hands_numeric_body_fields_to_the_handler() {
     );
     let _ = std::fs::remove_dir_all(&project);
 }
+/// PLAN-982（round 158）：**请求行上限**——超长 URI ⇒ 414 `ace.service/uri-too-long`，
+/// 且在派发前拒绝。
+#[test]
+fn p982_av_service_refuses_an_oversize_request_line_before_dispatch() {
+    let project = scratch("uriline");
+    let mut service = start(
+        &project,
+        "fn main() int { return 3 }\n",
+        &[
+            ("AUTO_SERVICE_MAX_REQUESTS", "1"),
+            ("AUTO_SERVICE_MAX_REQUEST_LINE", "32"),
+        ],
+    );
+    let addr = wait_ready(&service);
+
+    let long_path = format!("/{}", "a".repeat(64));
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("read timeout");
+    let line = format!("GET {long_path} HTTP/1.1\r\nhost: localhost\r\n\r\n");
+    stream.write_all(line.as_bytes()).expect("write");
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).expect("read 414");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    let receipt = finish(&mut service);
+
+    eprintln!("p982: uriline = {response:?}");
+    assert!(
+        response.starts_with("HTTP/1.1 414") && response.contains("ace.service/uri-too-long"),
+        "an oversize request line is refused before dispatch: {response}"
+    );
+    assert!(
+        receipt.contains("av_dispatches=0") && receipt.contains("legacy_dispatches=0"),
+        "nothing dispatched: {receipt}"
+    );
+    let _ = std::fs::remove_dir_all(&project);
+}
