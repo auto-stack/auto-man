@@ -72,3 +72,37 @@ fn p982_clib_template_materializes_under_ace_with_a_node_position_limitation() {
     eprintln!("p982: re-reading the generated clib pac.at fails by name — {message}");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// PLAN-982（用户裁定 ①B 的端到端验收）：**开关打开时**，`clib` 模板的节点位真的
+/// 插值——生成的 `pac.at` **可以被读回**（上面那条默认模式的限制在开关下消失）。
+#[test]
+fn p982_clib_template_node_positions_interpolate_under_the_switch() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    auto_lang_ace_host::install().expect("bridge");
+
+    let root = scratch("switch");
+    let project = root.join("clibproj");
+    std::fs::create_dir_all(&project).expect("project dir");
+
+    std::env::set_var("AUTO_ACE_TEMPLATE", "ace");
+    std::env::set_var("AUTO_ACE_TEMPLATE_NODE_INTERP", "1");
+    auto_man_runtime::Templates::copy("clib", project.to_str().unwrap())
+        .expect("the clib template materializes under the switch");
+    std::env::remove_var("AUTO_ACE_TEMPLATE_NODE_INTERP");
+    std::env::remove_var("AUTO_ACE_TEMPLATE");
+
+    let pac = project.join("pac.at");
+    let text = std::fs::read_to_string(&pac).expect("pac text");
+    eprintln!("p982: switched clib pac.at = {text:?}");
+    assert!(
+        !text.contains("${name}"),
+        "with the switch on, no placeholder survives: {text}"
+    );
+
+    let args = auto_val::Obj::new();
+    let config = auto_man_runtime::config_engine::parse_file(&pac, &args)
+        .expect("the generated document loads under the switch");
+    let pac = auto_man_runtime::Pac::new(config);
+    assert_eq!(pac.name.as_str(), "clibproj");
+    let _ = std::fs::remove_dir_all(&root);
+}
