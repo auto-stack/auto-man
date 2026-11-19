@@ -100,6 +100,49 @@ pub fn render_files(
         })?;
     renderer(source, module, entry)
 }
+/// PLAN-982（982/RUST · round 200）：**包级** A2R 渲染器——参数
+/// `(modules, entry)`（工程全部 `.at` 的 `(模块名, 源码)` ＋入口模块名）；
+/// 返回 `(文件名, 文本)` 列表或 `(code, message)`。与单模块渲染器同一分层
+/// 理由（运行时 crate 不能依赖 `auto-lang-ace-host`，注册注入）。
+pub type PackageRustRenderer =
+    fn(&[(String, String)], &str) -> Result<Vec<(String, String)>, (String, String)>;
+
+static PACKAGE_RENDERER: std::sync::Mutex<Option<PackageRustRenderer>> =
+    std::sync::Mutex::new(None);
+
+/// 安装包级渲染器（幂等；返回是否首次安装）。
+pub fn install_package_renderer(renderer: PackageRustRenderer) -> bool {
+    let mut slot = PACKAGE_RENDERER.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_some() {
+        return false;
+    }
+    *slot = Some(renderer);
+    true
+}
+
+/// 通过安装的包级渲染器渲染整个多模块工程（未安装 ⇒ 具名错误，不静默）。
+pub fn render_package_files(
+    modules: &[(String, String)],
+    entry: &str,
+) -> Result<Vec<(String, String)>, (String, String)> {
+    let renderer = *PACKAGE_RENDERER
+        .lock()
+        .map_err(|_| {
+            (
+                "ace.rust/renderer-poisoned".to_string(),
+                "the A2R package renderer registry is poisoned".to_string(),
+            )
+        })?
+        .as_ref()
+        .ok_or_else(|| {
+            (
+                "ace.rust/renderer-unavailable".to_string(),
+                "no A2R package renderer is installed in this build".to_string(),
+            )
+        })?;
+    renderer(modules, entry)
+}
+
 /// 回执文件名（测试钩子）：写 `{engine, a2r_dispatches, legacy_dispatches}`。
 pub const RUST_PROOF_ENV: &str = "AUTO_ACE_RUST_PROOF";
 

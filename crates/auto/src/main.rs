@@ -182,6 +182,9 @@ fn real_main(cli: Cli) -> Result<()> {
             eprintln!("auto.ace/install-failed: {message}");
         }
         crate::ace_candidate::install_rust_renderer();
+        // PLAN-982（982/RUST · round 200）：包级 A2R 渲染器——多模块工程的
+        // rust 目标在 `AUTO_ACE_RUST=ace` 时整工程一次编译；缺席 ⇒ 具名拒绝。
+        crate::ace_candidate::install_rust_package_renderer();
         crate::ace_candidate::install_script_renderer();
         // PLAN-982（982/C）：包级 A2C 渲染器——`auto build` 的 C 目标在
         // `AUTO_ACE_C=1` 时经它整工程一次编译；缺席（无特性构建）⇒ 具名拒绝。

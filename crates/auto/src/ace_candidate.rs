@@ -688,6 +688,23 @@ fn run_sys_script_lane(
 ///
 /// 运行时 crate 不能依赖 `auto-lang-ace-host`（分层），因此由这里在启动时注入。
 /// 幂等：重复调用只装一次。
+/// PLAN-982（982/RUST · round 200）：包级 A2R 渲染器——多模块工程经
+/// `transpile_package_rust`（packages 前门 + `RustTargetProvider`）整工程
+/// 一次编译成完整 file set（与 A2C 包级驱动同族）。
+pub(crate) fn install_rust_package_renderer() {
+    auto_man_runtime::rust_engine::install_package_renderer(|modules, entry| {
+        auto_lang_ace_host::rust_transpile::transpile_package_rust(modules, entry)
+            .map(|fileset| {
+                fileset
+                    .files
+                    .into_iter()
+                    .map(|f| (f.name, f.text))
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|(code, message)| (code.to_string(), message))
+    });
+}
+
 pub(crate) fn install_rust_renderer() {
     auto_man_runtime::rust_engine::install_renderer(|source, module, entry| {
         auto_lang_ace_host::rust_transpile::transpile_scalar_source(source, module, entry)

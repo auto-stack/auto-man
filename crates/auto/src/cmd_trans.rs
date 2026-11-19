@@ -72,6 +72,72 @@ fn rust_via_a2r(ai_mode: bool, path: String) -> miette::Result<()> {
     })?;
     auto_man_runtime::rust_engine::note_ace_a2r_dispatch();
     auto_man_runtime::rust_engine::write_proof_if_requested();
+    // PLAN-982（982/RUST · round 200）：**非 UI 多模块工程面**——入口同目录
+    // 的兄弟 `.at` 即工程模块集（legacy `transpile_rust_project` 的同一发现
+    // 语义）；多模块 ⇒ 包级车道（packages 前门＋`RustTargetProvider`）整工程
+    // 一次编译，写**完整工程树** `rust/src/`（Cargo.toml 归 builder——与
+    // legacy Target 写盘同形状）；单文件保持既有打印面。
+    // 相对入口（`auto rust main.at`）的 parent 是空串——按当前目录发现兄弟。
+    let entry_dir = std::path::Path::new(&path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let mut siblings: Vec<std::path::PathBuf> = match std::fs::read_dir(&entry_dir) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|e| e == "at").unwrap_or(false))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    siblings.sort();
+    if siblings.len() > 1 {
+        let mut modules: Vec<(String, String)> = Vec::with_capacity(siblings.len());
+        for file in &siblings {
+            let text = std::fs::read_to_string(file).map_err(|e| {
+                let err = auto_lang_core::error::AutoError::Io(format!("Failed to read file: {e}"));
+                if ai_mode {
+                    eprintln!("{}", format_error_json(&err));
+                    std::process::exit(1);
+                }
+                to_miette_err(err)
+            })?;
+            let name = file
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            modules.push((name, text));
+        }
+        let entry = std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "trans".to_string());
+        let files = auto_man_runtime::rust_engine::render_package_files(&modules, &entry).map_err(
+            |(code, message)| {
+                if ai_mode {
+                    eprintln!(
+                        "{}",
+                        serde_json::json!({"status": "error", "code": code, "message": message})
+                    );
+                    std::process::exit(1);
+                }
+                miette::miette!("{code}: {message}")
+            },
+        )?;
+        std::fs::create_dir_all("rust/src")
+            .map_err(|e| miette::miette!("Failed to create dir 'rust/src': {e}"))?;
+        for (name, text) in files {
+            let target = format!("rust/src/{name}");
+            std::fs::write(&target, text)
+                .map_err(|e| miette::miette!("Failed to write '{target}': {e}"))?;
+        }
+        println!(
+            "[a2r] project form: {} modules -> rust/src (entry `{entry}`)",
+            modules.len()
+        );
+        return Ok(());
+    }
     let module = std::path::Path::new(&path)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())

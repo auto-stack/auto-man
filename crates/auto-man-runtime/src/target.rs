@@ -67,14 +67,47 @@ impl TargetEffects for Target {
         // crate 边界尚未迁移），绝不静默用旧转译。
         if self.lang.as_str() == "rust" && crate::rust_engine::ace_a2r_selected() {
             crate::rust_engine::write_proof_if_requested();
+            // PLAN-982（982/RUST · round 200）：**多模块包级车道**——整工程一次
+            // 编译（packages 前门 + `RustTargetProvider`，跨模块 `use` 由绑定图
+            // 承载）成完整 file set，逐文件写 `rust/src/`（Cargo.toml 由
+            // CargoBuilder 生成——与 legacy 多模块路径同一形状）。非 UI 面；
+            // Iced 工程另留 1074 联合验收。
             if self.autos.len() > 1 {
-                return Err(format!(
-                    "ace.rust/project-multi-unsupported: the A2R candidate leg does not serve \
-                     multi-module project transpilation yet ({} files to rust); unset \
-                     AUTO_ACE_RUST to use the legacy transpiler",
-                    self.autos.len()
-                )
-                .into());
+                let entry_path = self
+                    .autos
+                    .iter()
+                    .find(|p| p.as_str().ends_with("main.at"))
+                    .cloned()
+                    .unwrap_or_else(|| self.autos[0].clone());
+                let entry_module = AutoPath::new(entry_path.as_str())
+                    .basename()
+                    .as_str()
+                    .to_string();
+                let mut modules: Vec<(String, String)> = Vec::with_capacity(self.autos.len());
+                for path in &self.autos {
+                    let source = std::fs::read_to_string(path.as_str()).map_err(|e| {
+                        format!("Failed to read Auto file '{}': {}", path.as_str(), e)
+                    })?;
+                    let module = AutoPath::new(path.as_str()).basename().as_str().to_string();
+                    modules.push((module, source));
+                }
+                let files = crate::rust_engine::render_package_files(&modules, &entry_module)
+                    .map_err(|(code, message)| format!("{code}: {message}"))?;
+                crate::rust_engine::note_ace_a2r_dispatch();
+                std::fs::create_dir_all("rust/src")
+                    .map_err(|e| format!("Failed to create dir 'rust/src': {e}"))?;
+                for (name, text) in files {
+                    let target = format!("rust/src/{name}");
+                    if let Some(parent) = Path::new(&target).parent() {
+                        std::fs::create_dir_all(parent).map_err(|e| {
+                            format!("Failed to create dir '{}': {}", parent.display(), e)
+                        })?;
+                    }
+                    std::fs::write(&target, text)
+                        .map_err(|e| format!("Failed to write '{target}': {e}"))?;
+                    self.srcs.insert(AutoStr::from(target.clone()));
+                }
+                return Ok(());
             }
             let path = &self.autos[0];
             let source = std::fs::read_to_string(path.as_str())
