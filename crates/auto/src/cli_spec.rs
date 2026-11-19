@@ -217,6 +217,15 @@ pub(crate) enum TransTarget {
     Auto {
         #[arg(short, long, help = "Output file path (default: stdout)")]
         output: Option<String>,
+        /// PLAN-982（982/REVERSE · round 202，消费 977 面）：行级 source map
+        /// sidecar（JSON：`[{output_line, source_line}…]`）。给出时产物用
+        /// **ACE 规范方言**（`lower_source_for_ace`——签名无历史 `->`，sys
+        /// 车道原生形）；未给出保持历史方言面不变。
+        #[arg(
+            long,
+            help = "Line-level source map sidecar (implies the ACE canonical dialect)"
+        )]
+        map: Option<String>,
     },
 }
 

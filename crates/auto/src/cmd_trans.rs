@@ -393,7 +393,44 @@ pub(crate) fn trans(ai_mode: bool, path: String, target: TransTarget) -> miette:
             output_success(ai_mode, &msg);
         }
         // Plan 555 T07: Auto → Auto（s2s 改写器；W1 identity passthrough）
-        TransTarget::Auto { output } => {
+        // PLAN-982（982/REVERSE · round 202）：`--map` ⇒ 977 面——**ACE 规范
+        // 方言**产物＋行级 source map sidecar（诊断位置经
+        // `auto_lang_core::trans::emit::source_line_for_output` 映回原源行）。
+        TransTarget::Auto { output, map } => {
+            if let Some(map_path) = map {
+                let src_text = std::fs::read_to_string(&path)
+                    .map_err(|e| miette::miette!("Failed to read {}: {}", path, e))?;
+                let (canonical, entries) = auto_lang_core::trans::auto_s2s::lower_source_for_ace(
+                    &src_text,
+                )
+                .map_err(|e| {
+                    if ai_mode {
+                        eprintln!("{}", format_error_json(&e));
+                        std::process::exit(1);
+                    }
+                    to_miette_err(e)
+                })?;
+                let out_path = output.clone().unwrap_or_else(|| {
+                    // sidecar 形态必须有产物文件：缺省落在输入旁的 .s2s.at。
+                    format!("{}.s2s.at", path.trim_end_matches(".at"))
+                });
+                std::fs::write(&out_path, &canonical)
+                    .map_err(|e| miette::miette!("Failed to write {}: {}", out_path, e))?;
+                let sidecar = serde_json::json!(entries
+                    .iter()
+                    .map(|e| serde_json::json!({
+                        "output_line": e.output_line,
+                        "source_line": e.source_line,
+                    }))
+                    .collect::<Vec<_>>());
+                std::fs::write(&map_path, serde_json::to_string_pretty(&sidecar).unwrap())
+                    .map_err(|e| miette::miette!("Failed to write {}: {}", map_path, e))?;
+                println!(
+                    "[s2s] {} -> {} (ACE canonical dialect, map: {})",
+                    path, out_path, map_path
+                );
+                return Ok(());
+            }
             let lowered = auto_lang_core::trans_auto_s2s(path.as_str()).map_err(|e| {
                 if ai_mode {
                     eprintln!("{}", format_error_json(&e));

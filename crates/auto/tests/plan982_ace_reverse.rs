@@ -68,9 +68,14 @@ fn p982_reverse_r2a_runs_the_generated_auto() {
     );
 
     // 生成物必须**真的能跑**（这是 V 的核心，不是文本比对）。
+    // PLAN-982 round 199/202：r2a 产物是 **legacy 方言**形（`fn main() {`
+    // 无返回注解）——sys 车道入口冻结面要求注解 ⇒ 默认 sys 腿对其具名拒；
+    // 本腿钉**显式 legacy 引擎**跑（r2a 语义面＝legacy VM；sys 面对 r2a
+    // 形状的承接属后续切片）。
     let run = Command::new(auto_bin())
         .arg(out_at.to_str().unwrap())
         .current_dir(&dir)
+        .env("AUTO_ACE_CANDIDATE", "0")
         .output()
         .expect("spawn auto <generated>");
     assert!(

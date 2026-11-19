@@ -9,6 +9,132 @@ use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
 
+/// PLAN-982（982/TEMPLATE · round 202）：模板取消旗标——
+/// `AUTO_ACE_TEMPLATE_CANCEL_AFTER_MS`（毫秒）：
+/// - `Some(0)` ⇒ **立即取消**（同步置旗——确定性语义，宿主/测试可依赖）；
+/// - `Some(ms>0)` ⇒ watchdog 线程在 ms 后置旗（与 EXEC 腿同款纪律）；
+/// - 未设 ⇒ 不取消。
+/// 写盘段在**写前与逐文件之间**检查；取消 ⇒ 具名 `ace.template/cancelled`
+/// ＋回滚（见 [`materialize_transactional`]）。
+static TEMPLATE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub const TEMPLATE_CANCEL_ENV: &str = "AUTO_ACE_TEMPLATE_CANCEL_AFTER_MS";
+
+fn arm_template_cancel_watchdog() {
+    // 每次物化都是独立 run：先清旗（不继承上一 run 的取消信号——进程内
+    // 串行多次 copy 不残留）。
+    TEMPLATE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    let ms = match std::env::var(TEMPLATE_CANCEL_ENV) {
+        Ok(v) => match v.trim().parse::<u64>() {
+            Ok(ms) => ms,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
+    if ms == 0 {
+        TEMPLATE_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        TEMPLATE_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+}
+
+fn template_cancelled() -> bool {
+    TEMPLATE_CANCEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// PLAN-982（982/TEMPLATE · round 202）：**事务式写盘段**——取消通道＋中断
+/// 回滚，[`Templates::copy`] 与 [`Templates::copy_user`] 共用。
+///
+/// - 回滚账本：本 run **新建的文件**删除；**既有文件按字节还原**（`File::
+///   create` 会截断——覆盖前先快照原字节）；本 run **新建的目录**（已空）
+///   按逆序移除。失败/取消后已有工作区**逐字节不变**，绝无半成品。
+/// - 失败具名：`ace.template/cancelled`（取消）、`ace.template/write: <路径>
+///   （<原因>）`（写盘中断）；回滚自身的失败附在同一消息里（best-effort，
+///   绝不吞掉首因）。
+fn materialize_transactional(rendered: Vec<(std::path::PathBuf, String)>) -> Result<(), AutoError> {
+    arm_template_cancel_watchdog();
+    if template_cancelled() {
+        return Err("ace.template/cancelled: the template materialization observed                     cancellation before any write"
+            .into());
+    }
+    let mut backups: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
+    let mut created_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut created_dirs: Vec<std::path::PathBuf> = Vec::new();
+    let outcome = (|| -> Result<(), AutoError> {
+        for (out, text) in rendered {
+            if template_cancelled() {
+                return Err("ace.template/cancelled: the template materialization                             observed cancellation mid-write"
+                    .into());
+            }
+            if let Some(parent) = out.parent() {
+                // 记录本 run 新建的目录链（create_dir_all 不告知哪些是新建）。
+                let mut missing: Vec<std::path::PathBuf> = Vec::new();
+                let mut probe = parent.to_path_buf();
+                while !probe.as_os_str().is_empty() && !probe.exists() {
+                    missing.push(probe.clone());
+                    match probe.parent() {
+                        Some(p) => probe = p.to_path_buf(),
+                        None => break,
+                    }
+                }
+                create_dir_all(parent)
+                    .map_err(|e| format!("ace.template/write: {} ({e})", parent.display()))?;
+                created_dirs.extend(missing);
+            }
+            // 快照只对**常规文件**做：产物位若被目录等非常规项占用，后续
+            // create 自会具名失败（读目录在 Windows 上是 os error 5）。
+            if out.is_file() {
+                let bytes = std::fs::read(&out)?;
+                backups.push((out.clone(), bytes));
+            } else {
+                created_files.push(out.clone());
+            }
+            let mut f = File::create(&out)
+                .map_err(|e| format!("ace.template/write: {} ({e})", out.display()))?;
+            f.write_all(text.as_bytes())
+                .map_err(|e| format!("ace.template/write: {} ({e})", out.display()))?;
+        }
+        Ok(())
+    })();
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(first) => {
+            // 回滚：还原既有字节 → 删除新建文件 → 逆序移除新建（已空）目录。
+            let mut rollback_notes: Vec<String> = Vec::new();
+            for (path, bytes) in backups.iter().rev() {
+                if let Err(e) = std::fs::write(path, bytes) {
+                    rollback_notes.push(format!("restore {}: {e}", path.display()));
+                }
+            }
+            for path in created_files.iter().rev() {
+                if let Err(e) = std::fs::remove_file(path) {
+                    rollback_notes.push(format!("remove {}: {e}", path.display()));
+                }
+            }
+            for path in created_dirs.iter() {
+                if path
+                    .read_dir()
+                    .map(|mut d| d.next().is_none())
+                    .unwrap_or(false)
+                {
+                    if let Err(e) = std::fs::remove_dir(path) {
+                        rollback_notes.push(format!("rmdir {}: {e}", path.display()));
+                    }
+                }
+            }
+            let note = if rollback_notes.is_empty() {
+                String::new()
+            } else {
+                format!("; rollback issues: {}", rollback_notes.join(", "))
+            };
+            Err(format!("{first}{note}").into())
+        }
+    }
+}
+
 /// 模板脚手架兼容门面（PLAN-803）：资源唯一来源在
 /// `crates/auto-man-assets`（`TemplateAssets`）。本类型保留旧公开面——
 /// inherent `copy` 与 `RustEmbed` 的 get/iter 转发；不再 derive 第二份
@@ -78,15 +204,8 @@ impl Templates {
             }
         }
         rendered.sort_by(|a, b| a.0.cmp(&b.0));
-        // 写盘阶段：所有渲染都已成功。
-        for (out, text) in rendered {
-            if let Some(parent) = out.parent() {
-                create_dir_all(parent)?;
-            }
-            let mut f = File::create(&out)?;
-            f.write_all(text.as_bytes())?;
-        }
-        Ok(())
+        // 写盘阶段：所有渲染都已成功——事务式（round 202：取消＋中断回滚）。
+        materialize_transactional(rendered)
     }
     pub fn copy(template: &str, path: &str) -> Result<(), AutoError> {
         let path = Path::new(path);
@@ -127,14 +246,12 @@ impl Templates {
             rendered.push((sub_path, code));
         }
         rendered.sort_by(|a, b| a.0.cmp(&b.0));
-        for (sub_path, code) in rendered {
-            let (dir, _) = split_last(sub_path.as_ref(), '/');
-            create_dir_all(path.join(dir))?;
-            let mut f = File::create(path.join(sub_path))?;
-            eprintln!("code: {}", code);
-            f.write_all(code.as_bytes())?;
-        }
-        Ok(())
+        // 写盘阶段：所有渲染都已成功——事务式（round 202：取消＋中断回滚）。
+        let planned: Vec<(std::path::PathBuf, String)> = rendered
+            .into_iter()
+            .map(|(sub_path, code)| (path.join(sub_path), code))
+            .collect();
+        materialize_transactional(planned)
     }
 }
 

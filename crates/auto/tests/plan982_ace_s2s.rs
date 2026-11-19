@@ -66,14 +66,20 @@ fn p982_s2s_output_still_runs_with_the_same_semantics() {
     );
     assert!(lowered.is_file(), "the lowered file is written");
 
+    // PLAN-982 round 199/202：历史方言产物（双 fn＋非 ACE 规范形）＝legacy
+    // 语义面——sys 车道入口冻结面（单 `fn main`＋注解）对其具名拒；两腿
+    // 钉**显式 legacy 引擎**（改写器语义不变的对照在 legacy 上成立；sys
+    // 面的可执行由 `plan982_ace_s2s_map_cli` 的规范形腿持有）。
     let direct = Command::new(auto_bin())
         .arg(src.to_str().unwrap())
         .current_dir(&dir)
+        .env("AUTO_ACE_CANDIDATE", "0")
         .output()
         .expect("run the source");
     let rewritten = Command::new(auto_bin())
         .arg(lowered.to_str().unwrap())
         .current_dir(&dir)
+        .env("AUTO_ACE_CANDIDATE", "0")
         .output()
         .expect("run the lowered source");
     assert!(
