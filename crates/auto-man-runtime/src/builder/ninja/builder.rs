@@ -46,14 +46,29 @@ pub struct NinjaBuilder {
     pub compiler: Option<CompilerConfig>,
     memory_mode: bool,
     memory_output: Vec<u8>,
+    /// PLAN-982（982/EXPORT · round 201）：源引用前缀——build.ninja 相对
+    /// **构建目录**引用工程源。构建目录是子目录（如 `build/`）⇒ `../`；
+    /// 构建目录就是工程根（`build_location: "."`，内联 port 声明的缺省）⇒
+    /// 无前缀。此前硬编码 `../`，根布局下 ninja 报「源缺失」（A2C/legacy
+    /// 两车道同病）。
+    src_prefix: String,
 }
 
 impl NinjaBuilder {
     pub fn new(path: AutoPath) -> Self {
         let gen = Self::new_gen(&path);
+        // 源前缀随构建目录推导：`build/build.ninja` 的 parent 是 `build` ⇒
+        // `../`；`./build.ninja` 的 parent 是 `.` ⇒ 无前缀。
+        let parent = path.parent().path().to_string_lossy().replace('\\', "/");
+        let src_prefix = if parent == "." || parent.is_empty() {
+            String::new()
+        } else {
+            "../".to_string()
+        };
         Self {
             gen,
             path,
+            src_prefix,
             out: Box::new(std::io::sink()),
             compiler: None,
             memory_mode: false,
@@ -127,8 +142,9 @@ impl NinjaBuilder {
                     &format!("{}", src).into()
                 };
                 println!("add build rule for {}", src);
-                self.out
-                    .write(format!("build {}: cc ../{}\n", ofile, path).as_bytes())?;
+                self.out.write(
+                    format!("build {}: cc {}{}\n", ofile, self.src_prefix, path).as_bytes(),
+                )?;
                 objs.push(ofile);
             }
         }
@@ -136,10 +152,10 @@ impl NinjaBuilder {
     }
 
     /// 构建include标志
-    fn build_includes(_compiler: &CompilerConfig, paths: Vec<AutoStr>) -> String {
+    fn build_includes(_compiler: &CompilerConfig, paths: Vec<AutoStr>, src_prefix: &str) -> String {
         let includes: Vec<String> = paths
             .iter()
-            .map(|p| format!("-I../{}", AutoPath::new(p.as_str())))
+            .map(|p| format!("-I{}{}", src_prefix, AutoPath::new(p.as_str())))
             .collect();
         includes.join(" ")
     }
@@ -229,7 +245,7 @@ impl Builder for NinjaBuilder {
         self.reset_ninja_file()?;
 
         // 构建标志（all_incs在这里被move）
-        let includes = Self::build_includes(&compiler, all_incs);
+        let includes = Self::build_includes(&compiler, all_incs, &self.src_prefix.clone());
         let defines_flags = Self::build_defines(&compiler, &defines);
         let cflags = Self::build_cflags(&compiler);
 
