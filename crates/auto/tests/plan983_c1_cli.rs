@@ -571,10 +571,17 @@ fn c1_config_commit_failure_keeps_the_old_workspace() {
     perms.set_readonly(false);
     std::fs::set_permissions(&config, perms).unwrap();
     let reply = service.post_open(&target_text);
-    assert!(reply.starts_with("HTTP/1.1 200"), "post-fix open succeeds: {reply}");
+    assert!(
+        reply.starts_with("HTTP/1.1 200"),
+        "post-fix open succeeds: {reply}"
+    );
     let target_body = body_of(&reply).to_string();
     let reply = service.get_workspace();
-    assert_eq!(body_of(&reply), target_body, "post-fix GET returns the new root: {reply}");
+    assert_eq!(
+        body_of(&reply),
+        target_body,
+        "post-fix GET returns the new root: {reply}"
+    );
     let config_after = std::fs::read_to_string(&config).expect("config rewritten");
     let cfg_value: serde_json::Value = serde_json::from_str(&config_after).expect("config JSON");
     let opened: serde_json::Value = serde_json::from_str(&target_body).expect("reply JSON");
