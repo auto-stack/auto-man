@@ -76,10 +76,46 @@ pub(crate) const CANCEL_AFTER_MS_ENV: &str = "AUTO_ACE_CANCEL_AFTER_MS";
 
 /// True when the candidate leg is explicitly selected.
 pub(crate) fn selected() -> bool {
-    match std::env::var(SELECT_ENV) {
-        Ok(v) => matches!(v.trim(), "1" | "true" | "yes"),
-        Err(_) => false,
+    explicitly_selected()
+}
+
+/// Whether `AUTO_ACE_CANDIDATE` explicitly names the candidate (vs the
+/// round-199 Windows default-on of the SCRIPT face).
+pub(crate) fn explicitly_selected() -> bool {
+    std::env::var(SELECT_ENV)
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+/// PLAN-982（Q-982-2 车道裁定 (a) 第二步收官，round 199 默认切换收尾刀）：
+/// **脚本面**（`auto <file.at>`）的默认执行入口在 Windows（本 feature 构建内、
+/// `AUTO_ACE_CANDIDATE` 未设）翻转为 ACE **sys 车道**——round-198 完整兼容门
+/// 收据（stdin＋argv 同脚本、same_sdk、wall/cancel、回归族）已闭合裁定的切换
+/// 条件。显式非真值（`0|false|no` 等）＝显式 legacy **回退钮**；其余候选闸
+/// （test/serve/req/run 家族）保持显式 opt-in（[`selected`] 语义不变）。
+pub(crate) fn script_face_selected() -> bool {
+    explicitly_selected()
+        || (std::env::var(SELECT_ENV).is_err() && cfg!(all(feature = "ace-candidate", windows)))
+}
+
+/// Whether the sys-stdlib packages lane serves this script call. Round 199:
+/// the DEFAULT（两键均未设——含新的脚本面默认）⇒ sys；显式候选
+/// （`AUTO_ACE_CANDIDATE=1`）未设 SYS 时保持**旧形状**＝console 候选腿（既有
+/// 显式合同逐字节保留）；`AUTO_ACE_SCRIPT_SYS=1` ⇒ sys（带车道标记的显式
+/// 形状）；`=0` ⇒ console 候选腿。
+pub(crate) fn sys_lane_selected() -> bool {
+    match std::env::var("AUTO_ACE_SCRIPT_SYS") {
+        Ok(v) => v.trim() != "0",
+        Err(_) => !explicitly_selected(),
     }
+}
+
+/// Whether the sys lane was EXPLICITLY selected (`AUTO_ACE_SCRIPT_SYS=1`)——
+/// 只有显式形状打印车道标记行（默认路径与 legacy 可观察**字节兼容**：不添行）。
+pub(crate) fn sys_lane_explicit() -> bool {
+    std::env::var("AUTO_ACE_SCRIPT_SYS")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false)
 }
 
 /// Run the script through the explicit ACE candidate leg.
@@ -93,15 +129,11 @@ pub(crate) fn run_script(
     script_args: &[String],
     dump_lowered: bool,
 ) -> miette::Result<()> {
-    // PLAN-982（Q-982-2 裁定 (a) 第一步）：**显式候选入口** `AUTO_ACE_SCRIPT_SYS=1`
-    // ⇒ 脚本走 sys-stdlib 包车道（`process.args()` 公开面＋宿主供
-    // `[argv0, ...args]`、逐执行隔离；无参/有参同一条路径）。默认（未设）
-    // 保持 console 腿不动——第二步兼容门（stdout/退出码/stdin 组合/same_sdk/
-    // 零回退）通过后再统一切换默认。
-    if std::env::var("AUTO_ACE_SCRIPT_SYS")
-        .map(|v| v.trim() == "1")
-        .unwrap_or(false)
-    {
+    // PLAN-982（Q-982-2 裁定 (a) 第二步收官，round 199）：sys-stdlib 包车道
+    // （`process.args()` 公开面＋宿主供 `[argv0, ...args]`、逐执行隔离）——
+    // **脚本面默认**（Windows 两键未设）即此腿；显式 `AUTO_ACE_SCRIPT_SYS=1`
+    // 同腿但带车道标记；`=0` 回 console 候选腿（旧显式形状）。
+    if sys_lane_selected() {
         if dump_lowered {
             return refuse(
                 ai_mode,
@@ -110,7 +142,7 @@ pub(crate) fn run_script(
                 None,
             );
         }
-        return run_sys_script_lane(ai_mode, path, script_args);
+        return run_sys_script_lane(ai_mode, path, script_args, sys_lane_explicit());
     }
     // The AV lane has no argv surface (PLAN-969 T-08 named refusal). The A
     // slice refuses by name instead of dropping the arguments.
@@ -118,9 +150,9 @@ pub(crate) fn run_script(
         return refuse(
             ai_mode,
             "ace.args/unsupported",
-            "the console lane has no argv surface; the sys lane \
-             (AUTO_ACE_SCRIPT_SYS=1) carries script arguments, or re-run without \
-             the candidate selection",
+            "the console lane has no argv surface; the sys lane carries script \
+             arguments (the script-face default, or AUTO_ACE_SCRIPT_SYS=1), or \
+             re-run without the candidate selection",
             None,
         );
     }
@@ -426,7 +458,12 @@ fn main_takes_single_str_param(source: &str) -> bool {
 /// 裁定④补现场）；②管道 stdin 按**受检入口签名**预读交 `fn main(input
 /// str)`（request.input ⇒ 入口借用 `str` 实参，`ac.runtime.text.v1` 谱系）；
 /// ③same_sdk 见证收据（配置腿/执行腿/实际服务引擎同一 SDK＋零旧 VM 分派）。
-fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> miette::Result<()> {
+fn run_sys_script_lane(
+    ai_mode: bool,
+    path: &str,
+    script_args: &[String],
+    explicit_sys: bool,
+) -> miette::Result<()> {
     use crate::diag::output_success;
     use auto_lang_core::{AceOutcome, AceRequest};
 
@@ -505,11 +542,15 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
         args: &args,
         input: stdin_text.as_deref(),
     };
-    println!(
-        "  ACE sys lane: AUTO_ACE_SCRIPT_SYS=1 (sys-stdlib packages lane, argv x{}, stdin {} bytes)",
-        args.len(),
-        stdin_bytes
-    );
+    // Round 199（默认切换）：车道标记只在**显式**形状打印——默认路径与
+    // legacy 可观察字节兼容（不添行）；车道身份仍进收据（AUTO_ACE_PROOF_RECEIPT）。
+    if explicit_sys {
+        println!(
+            "  ACE sys lane: AUTO_ACE_SCRIPT_SYS=1 (sys-stdlib packages lane, argv x{}, stdin {} bytes)",
+            args.len(),
+            stdin_bytes
+        );
+    }
     let report = auto_lang_ace_host::run_sys_script(&request);
 
     // One SDK means: both legs mint their identity from this crate AND the
@@ -591,13 +632,17 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
                 );
             }
             if let Some(console) = &report.console {
-                use std::io::Write;
+                // Round 199（默认切换）：stdout 再发复刻 legacy 的
+                // `println!("{}", stdout)` 语义（stdout 块后带换行——对拍字节
+                // 级一致）；stderr 是 sys 车道自己的可观察合同（legacy 整个
+                // 丢弃 eprint——按裁定④「验 stderr」再发，不随 legacy 的缺口）。
                 if !console.stdout.is_empty() {
-                    let mut out = std::io::stdout();
-                    let _ = out.write_all(&console.stdout);
-                    let _ = out.flush();
+                    println!("{}", String::from_utf8_lossy(&console.stdout));
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
                 }
                 if !console.stderr.is_empty() {
+                    use std::io::Write;
                     let mut err = std::io::stderr();
                     let _ = err.write_all(&console.stderr);
                     let _ = err.flush();

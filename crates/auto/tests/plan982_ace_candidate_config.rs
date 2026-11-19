@@ -95,7 +95,10 @@ fn run(script: &Path, candidate: bool, extra: &[&str], envs: &[(&str, &str)]) ->
     if candidate {
         cmd.env("AUTO_ACE_CANDIDATE", "1");
     } else {
-        cmd.env_remove("AUTO_ACE_CANDIDATE");
+        // PLAN-982 round 199（默认切换）：脚本面默认已是 ACE sys 车道——legacy
+        // oracle 臂显式按回退钮（`AUTO_ACE_CANDIDATE=0`），语义不变（「legacy
+        // 引擎跑同一命令」）。
+        cmd.env("AUTO_ACE_CANDIDATE", "0");
     }
     // The budget hooks are inherited environment state: clear them so an
     // operator's exported values can never turn the non-vacuity guard red.

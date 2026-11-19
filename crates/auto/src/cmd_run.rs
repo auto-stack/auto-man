@@ -32,16 +32,41 @@ pub(crate) fn run_script_file(ai_mode: bool, s: ScriptArgs) -> miette::Result<bo
     // 面（含 `--dump-lowered` 审查面）都由候选腿服务；任何拒绝具名返回，绝不
     // 落到下面的旧执行器/旧审查面（无 fallback、无静默引擎切换）。本检查必须
     // 早于 dump-lowered 早退，否则候选会把旧 lowering 当成功输出。
+    //
+    // PLAN-982 round 199（默认切换收尾刀，Q-982-2 裁定 (a) 第二步收官）：
+    // **脚本面默认**（Windows、`AUTO_ACE_CANDIDATE` 未设）翻转为 ACE sys
+    // 车道（round-198 完整兼容门收据闭合切换条件）。两个**命名边界**保持
+    // 各自车道（不是回退）：①UI 关键字脚本在默认下仍走 legacy 动态 UI 车道
+    //（sys 车道不服务 UI 面——显式候选选 UI 脚本仍由候选腿具名拒）；②
+    // `--dump-lowered` 是 legacy 审查面：默认下保持 legacy 审查路径，显式候选
+    // 仍具名拒（A 切片无回退合同不变）。
     #[cfg(feature = "ace-candidate")]
-    if crate::ace_candidate::selected() {
-        if let Some(path) = file {
-            if !ai_mode {
-                println!("----------------------");
-                println!("Running Auto {} ", path);
-                println!("----------------------");
-            }
-            return crate::ace_candidate::run_script(ai_mode, &path, &script_args, dump_lowered)
+    if crate::ace_candidate::script_face_selected() {
+        if let Some(path) = file.as_ref() {
+            #[cfg(feature = "ui-extra")]
+            let ui_lane = std::fs::read_to_string(path)
+                .map(|code| auto_ui_runtime::has_ui_keywords(&code))
+                .unwrap_or(false);
+            #[cfg(not(feature = "ui-extra"))]
+            let ui_lane = false;
+            // 边界只属**默认**路径：显式候选选中的调用永不顺延（A 片无回退
+            // 合同——UI 面/审查面由候选腿具名拒，绝不静默落 legacy）。
+            let explicit_candidate = crate::ace_candidate::explicitly_selected();
+            let defers_to_legacy_lane = !explicit_candidate && (ui_lane || dump_lowered);
+            if !defers_to_legacy_lane {
+                if !ai_mode {
+                    println!("----------------------");
+                    println!("Running Auto {} ", path);
+                    println!("----------------------");
+                }
+                return crate::ace_candidate::run_script(
+                    ai_mode,
+                    &path,
+                    &script_args,
+                    dump_lowered,
+                )
                 .map(|()| true);
+            }
         }
     }
 
