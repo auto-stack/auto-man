@@ -162,44 +162,6 @@ pub(crate) fn run_script(
 fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
     use auto_lang_core::{run_ace, run_ace_text, AceEngineChoice, AceOutcome, AceRequest};
 
-    /// PLAN-982（EXEC · 脚本 stdin）：管道 stdin 预读（非 TTY 且非空才取——与
-    /// `auto config` 的 CLI 侧同款判据）。
-    fn read_piped_stdin() -> Option<String> {
-        if <std::io::Stdin as std::io::IsTerminal>::is_terminal(&std::io::stdin()) {
-            return None;
-        }
-        use std::io::Read;
-        let mut input = String::new();
-        let _ = std::io::stdin().read_to_string(&mut input);
-        if input.is_empty() {
-            None
-        } else {
-            Some(input)
-        }
-    }
-
-    /// PLAN-982（EXEC · 脚本 stdin）：入口形判据——`fn main(<name> str)`（恰一个
-    /// 借用 `str` 形参）的脚本把管道 stdin 作为该形参的运行时文本（round-182
-    /// 受检通道）；**其它形状的脚本不受影响**（stdin 保持既有"不可读"边界，
-    /// 不静默改变语义）。机械文本扫描（与服务路由的 `text_route_param` 同纪律，
-    /// 不引入第二解析器）。
-    fn main_takes_single_str_param(source: &str) -> bool {
-        let needle = "fn main(";
-        let Some(at) = source.find(needle) else {
-            return false;
-        };
-        let open = at + needle.len();
-        let Some(rel) = source[open..].find(')') else {
-            return false;
-        };
-        let close = open + rel;
-        let params = source[open..close].trim();
-        let mut words = params.split_whitespace();
-        let _name = words.next();
-        let ty = words.next();
-        matches!(ty, Some("str")) && words.next().is_none()
-    }
-
     use crate::diag::output_success;
 
     // Explicit host installation: an unregistered executor is a named host
@@ -415,38 +377,219 @@ fn run_script_on_ace(ai_mode: bool, path: &str) -> miette::Result<()> {
     }
 }
 
+/// PLAN-982（EXEC · 脚本 stdin，round 198 起两腿共用）：管道 stdin 预读
+/// （非 TTY 且非空才取——与 `auto config` 的 CLI 侧同款判据）。
+fn read_piped_stdin() -> Option<String> {
+    if <std::io::Stdin as std::io::IsTerminal>::is_terminal(&std::io::stdin()) {
+        return None;
+    }
+    use std::io::Read;
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    if input.is_empty() {
+        None
+    } else {
+        Some(input)
+    }
+}
+
+/// PLAN-982（EXEC · 脚本 stdin，round 198 起两腿共用）：入口形判据——
+/// `fn main(<name> str)`（恰一个借用 `str` 形参）的脚本把管道 stdin 作为该
+/// 形参的运行时文本（round-182 受检通道）；**其它形状的脚本不受影响**
+/// （stdin 保持既有"不可读"边界，不静默改变语义）。机械文本扫描（与服务
+/// 路由的 `text_route_param` 同纪律，不引入第二解析器）；**运行端是权威**
+/// ——sys 腿的入口单元核对（`ac.runtime.text.v1`＋全 `StrView` 签名）与
+/// console 腿的 MIR entry-sig 各自把守。
+fn main_takes_single_str_param(source: &str) -> bool {
+    let needle = "fn main(";
+    let Some(at) = source.find(needle) else {
+        return false;
+    };
+    let open = at + needle.len();
+    let Some(rel) = source[open..].find(')') else {
+        return false;
+    };
+    let close = open + rel;
+    let params = source[open..close].trim();
+    let mut words = params.split_whitespace();
+    let _name = words.next();
+    let ty = words.next();
+    matches!(ty, Some("str")) && words.next().is_none()
+}
+
 /// PLAN-982（Q-982-2 裁定 (a) 第一步）：`AUTO_ACE_SCRIPT_SYS=1` 的显式候选
 /// 入口——sys-stdlib 包车道（宿主桥 `run_sys_script`）。argv＝`[argv0,
 /// ...args]`（宿主进程 argv[0] 沿用 legacy 契约），逐执行隔离；`fn main()`
 /// 入口 ABI 不变，脚本经 stdlib `process.args()` 读参。失败按具名码退出。
+/// round 198（aggregates 文本入口裁定）起：①wall/cancel 接线
+/// （`AUTO_ACE_WALL_MS`/`AUTO_ACE_CANCEL_AFTER_MS` 与 console 腿同款——
+/// 裁定④补现场）；②管道 stdin 按**受检入口签名**预读交 `fn main(input
+/// str)`（request.input ⇒ 入口借用 `str` 实参，`ac.runtime.text.v1` 谱系）；
+/// ③same_sdk 见证收据（配置腿/执行腿/实际服务引擎同一 SDK＋零旧 VM 分派）。
 fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> miette::Result<()> {
+    use crate::diag::output_success;
     use auto_lang_core::{AceOutcome, AceRequest};
 
-    let source = std::fs::read_to_string(path)
-        .map_err(|e| miette::miette!("Failed to read {path}: {e}"))?;
+    let started_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default();
+    let source =
+        std::fs::read_to_string(path).map_err(|e| miette::miette!("Failed to read {path}: {e}"))?;
     let args: Vec<&str> = script_args.iter().map(|s| s.as_str()).collect();
+
+    // ---- Leg 1: configuration through the SDK's designated config owner (the
+    // same_sdk witness's config leg; a bad configuration refuses BEFORE the run).
+    let config_leg = auto_lang_core::sdk_identity::config_owner_identity();
+    let execution_leg = auto_lang_core::sdk_identity::execution_owner_identity();
+    let legs_same_sdk = auto_lang_core::sdk_identity::same_sdk(&config_leg, &execution_leg);
+    let config = match read_project_config(path) {
+        Ok(config) => config,
+        Err(e) => {
+            let receipt = json!({
+                "schema": auto_lang_core::sdk_identity::SDK_IDENTITY_SCHEMA,
+                "sdk": auto_lang_core::sdk_identity::sdk_identity(),
+                "same_sdk": legs_same_sdk,
+                "lane": "sys",
+                "config": {
+                    "owner": config_leg,
+                    "present": true,
+                    "error": e,
+                },
+                "execution": { "outcome": "not-started" },
+                "script": path,
+                "script_bytes": source.len(),
+                "started_unix_ms": started_unix_ms,
+            });
+            return refuse(
+                ai_mode,
+                "ace.config/invalid",
+                "configuration error",
+                Some(receipt),
+            );
+        }
+    };
+
+    // ---- Leg 2 budgets (ruling ④: the real CLI wires AUTO_ACE_WALL_MS and the
+    // cancel signal into the sys candidate request — same discipline as the
+    // console leg; the door owns the budgets).
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Some(ms) = env_millis(CANCEL_AFTER_MS_ENV) {
+        let flag = Arc::clone(&cancel);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(ms));
+            flag.store(true, Ordering::SeqCst);
+        });
+    }
+    let wall = env_millis(WALL_MS_ENV).map(Duration::from_millis);
+
+    // ---- stdin by the CHECKED entry shape (ruling ①): the CLI pre-reads the
+    // pipe only when the entry is exactly-one-borrowed-`str` (mechanical scan,
+    // `text_route_param` discipline); the RUNTIME is the authority — the door's
+    // entry-unit check (`ac.runtime.text.v1` + all-StrView) names any mismatch.
+    let stdin_text = read_piped_stdin().filter(|_| main_takes_single_str_param(&source));
+    let stdin_bytes = stdin_text.as_ref().map(|t| t.len()).unwrap_or(0);
+
     let request = AceRequest {
         source: &source,
         entry_def_id: "d_main",
         capabilities: &[],
         grants: &[],
         provider: None,
-        wall: None,
-        cancel: None,
+        wall,
+        cancel: Some(cancel.as_ref()),
         // PLAN-982（Q-982-2 第二步）: console 面——脚本可用 print/eprint/say，
         // 捕获回 AceConsoleReport 后按 A 片纪律再发（与 console 腿同
         // observable；待生产者 console 面切片落地后生效）。
         console: true,
         args: &args,
-        input: None,
+        input: stdin_text.as_deref(),
     };
     println!(
-        "  ACE sys lane: AUTO_ACE_SCRIPT_SYS=1 (sys-stdlib packages lane, argv x{})",
-        args.len()
+        "  ACE sys lane: AUTO_ACE_SCRIPT_SYS=1 (sys-stdlib packages lane, argv x{}, stdin {} bytes)",
+        args.len(),
+        stdin_bytes
     );
     let report = auto_lang_ace_host::run_sys_script(&request);
+
+    // One SDK means: both legs mint their identity from this crate AND the
+    // engine that actually served the run is the engine that identity names.
+    let same_sdk =
+        legs_same_sdk && report.engine == auto_lang_core::sdk_identity::EXECUTION_ENGINE_ID;
+
+    let (stdout, stderr) = report
+        .console
+        .as_ref()
+        .map(|c| (c.stdout.clone(), c.stderr.clone()))
+        .unwrap_or_default();
+
+    let (outcome_tag, value_repr) = match &report.outcome {
+        AceOutcome::Success { value, .. } => ("success", Some(ace_value_repr(*value))),
+        AceOutcome::Diagnostic {
+            stage, code, span, ..
+        } => (
+            "diagnostic",
+            Some(format!(
+                "stage={stage} code={code} span={:?}",
+                span.map(|s| (s.start, s.end))
+            )),
+        ),
+        AceOutcome::Denied { code, .. } => ("denied", Some(code.clone())),
+        AceOutcome::ResourceDenied { kind, .. } => ("resource-denied", Some(kind.clone())),
+        AceOutcome::Cancelled => ("cancelled", None),
+        AceOutcome::HostFailure { code, .. } => ("host-failure", Some(code.clone())),
+    };
+
+    let receipt = json!({
+        "schema": auto_lang_core::sdk_identity::SDK_IDENTITY_SCHEMA,
+        "sdk": auto_lang_core::sdk_identity::sdk_identity(),
+        "same_sdk": same_sdk,
+        "lane": "sys",
+        "config": {
+            "owner": config_leg,
+            "path": config.pac_path.as_ref().map(|p| p.display().to_string()),
+            "present": config.present,
+            "values": config.values,
+            "deps": config.deps,
+            "targets": config.targets,
+            // 实际引擎与派发计数（不是自报标签）——same_sdk 收据核对
+            // 「配置与实际执行的 SDK 身份」＋「零旧 VM 分派」。
+            "engine": auto_man_runtime::config_engine::engine_name(),
+            "legacy_dispatch": auto_man_runtime::config_engine::observation().legacy_dispatches,
+        },
+        "execution": {
+            "owner": execution_leg,
+            "engine": report.engine,
+            "engine_is_identity_engine":
+                report.engine == auto_lang_core::sdk_identity::EXECUTION_ENGINE_ID,
+            "outcome": outcome_tag,
+            "detail": value_repr,
+            "steps": match &report.outcome {
+                AceOutcome::Success { steps, .. } => Some(*steps),
+                _ => None,
+            },
+            "stdout_bytes": stdout.len(),
+            "stderr_bytes": stderr.len(),
+            "dispatches": report.console.as_ref().map(|c| c.dispatches),
+            "argv_count": args.len(),
+            "stdin_bytes": stdin_bytes,
+        },
+        "script": path,
+        "script_bytes": source.len(),
+        "started_unix_ms": started_unix_ms,
+    });
+
     match &report.outcome {
         AceOutcome::Success { value, .. } => {
+            if !same_sdk {
+                return refuse(
+                    ai_mode,
+                    "ace.sdk/identity-mismatch",
+                    "the config leg, the execution leg and the serving engine did not \
+                     report one SDK identity; the candidate run is refused",
+                    Some(receipt),
+                );
+            }
             if let Some(console) = &report.console {
                 use std::io::Write;
                 if !console.stdout.is_empty() {
@@ -460,7 +603,8 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
                     let _ = err.flush();
                 }
             }
-            crate::diag::output_success(ai_mode, &ace_value_repr(*value));
+            write_receipt(&receipt);
+            output_success(ai_mode, &ace_value_repr(*value));
             if !ai_mode {
                 println!();
             }
@@ -475,22 +619,23 @@ fn run_sys_script_lane(ai_mode: bool, path: &str, script_args: &[String]) -> mie
             ai_mode,
             &format!("ace.sys/{stage}/{code}"),
             &format!("{message} (original span {span:?})"),
-            None,
+            Some(receipt),
         ),
-        AceOutcome::Denied { code, message } => refuse(ai_mode, code, message, None),
+        AceOutcome::Denied { code, message } => refuse(ai_mode, code, message, Some(receipt)),
         AceOutcome::ResourceDenied { kind, message } => refuse(
             ai_mode,
             &format!("ace.sys/resource-{kind}"),
             message,
-            None,
+            Some(receipt),
         ),
         AceOutcome::Cancelled => refuse(
             ai_mode,
             "ace.sys/cancelled",
-            "the sys-lane run observed cancellation",
-            None,
+            "the sys-lane run observed cancellation; the run is refused (never retried \
+             on the legacy engine)",
+            Some(receipt),
         ),
-        AceOutcome::HostFailure { code, message } => refuse(ai_mode, code, message, None),
+        AceOutcome::HostFailure { code, message } => refuse(ai_mode, code, message, Some(receipt)),
     }
 }
 
