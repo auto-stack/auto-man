@@ -565,19 +565,37 @@ fn c1_config_commit_failure_keeps_the_old_workspace() {
         config_before,
         "config bytes unchanged on commit failure"
     );
-    let first_receipt = service.shutdown();
-    let (_av_first, combined_first) = receipt_counts(&first_receipt);
-    assert!(
-        combined_first >= 1,
-        "POST dispatches must run through the combined text entry: {first_receipt}"
-    );
-
+    // 修复（恢复可写）后**下一次提交/读取必须成功**——坏配置零写 → 修复 →
+    // 新值落地并持久（V-CFG-HANDOFF「修复后下一次读取」，同一服务实例）。
     let mut perms = std::fs::metadata(&config).unwrap().permissions();
     perms.set_readonly(false);
     std::fs::set_permissions(&config, perms).unwrap();
+    let reply = service.post_open(&target_text);
+    assert!(reply.starts_with("HTTP/1.1 200"), "post-fix open succeeds: {reply}");
+    let target_body = body_of(&reply).to_string();
+    let reply = service.get_workspace();
+    assert_eq!(body_of(&reply), target_body, "post-fix GET returns the new root: {reply}");
+    let config_after = std::fs::read_to_string(&config).expect("config rewritten");
+    let cfg_value: serde_json::Value = serde_json::from_str(&config_after).expect("config JSON");
+    let opened: serde_json::Value = serde_json::from_str(&target_body).expect("reply JSON");
+    assert_eq!(
+        cfg_value["workspace_root"].as_str().unwrap(),
+        opened["root"].as_str().unwrap(),
+        "config now persists the fixed root"
+    );
+    let receipt = service.shutdown();
+    let (_av, combined) = receipt_counts(&receipt);
+    assert!(
+        combined >= 1,
+        "POST dispatches must run through the combined text entry: {receipt}"
+    );
     let service = Service::start(&source, project.path(), &config_text, &slash(&target));
     let reply = service.get_workspace();
-    assert_eq!(body_of(&reply), old_body, "restart keeps old workspace: {reply}");
+    assert_eq!(
+        body_of(&reply),
+        target_body,
+        "restart keeps the last successful commit (post-fix root): {reply}"
+    );
     let _ = service.shutdown();
 }
 
